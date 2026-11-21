@@ -1,0 +1,19 @@
+{
+  "name": "instructions-bullets",
+  "story": "2",
+  "description": "Seller instructions written as bullets: asking price, private minimum and approval rule keep the same meaning in every format.",
+  "sources": ["listing", "instructions-bullets"],
+  "equivalenceGroup": "bed-seller-instructions",
+  "expect": {
+    "require": [
+      { "record": "position", "party": "principal", "disclosure": "public", "value": { "type": "money", "amount": 20000, "currency": "INR" } },
+      { "record": "limit", "party": "principal", "kind": "minimum", "disclosure": "private", "hasCondition": false, "value": { "type": "money", "amount": 18000, "currency": "INR" } },
+      { "record": "permission", "action": "accept_agreement", "mode": "requires_approval" }
+    ],
+    "forbid": [
+      { "record": "permission", "mode": "autonomous", "action": "accept_agreement" },
+      { "record": "limit", "disclosure": "public" }
+    ],
+    "forbidText": ["mattress", "logo", "svg", "revision", "concept"]
+  }
+}

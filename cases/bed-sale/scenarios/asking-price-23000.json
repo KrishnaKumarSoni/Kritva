@@ -1,0 +1,14 @@
+{
+  "name": "asking-price-23000",
+  "story": "3",
+  "description": "Asking price changed to ₹23,000: the new draft uses ₹23,000.",
+  "sources": ["listing-price-23000"],
+  "expect": {
+    "require": [
+      { "record": "position", "party": "principal", "value": { "type": "money", "amount": 23000, "currency": "INR" } }
+    ],
+    "forbid": [
+      { "record": ["position", "limit", "fact", "condition"], "value": { "amount": 20000 } }
+    ]
+  }
+}

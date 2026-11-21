@@ -1,0 +1,16 @@
+{
+  "name": "listing-only",
+  "story": "2",
+  "description": "Bed listing only: asking price kept; no invented minimum, mattress inclusion or acceptance authority.",
+  "sources": ["listing"],
+  "expect": {
+    "require": [
+      { "record": "position", "party": "principal", "disclosure": "public", "value": { "type": "money", "amount": 20000, "currency": "INR" } }
+    ],
+    "forbid": [
+      { "record": "limit", "kind": "minimum" },
+      { "record": "permission" }
+    ],
+    "forbidText": ["mattress", "logo", "svg", "revision", "concept"]
+  }
+}

@@ -1,0 +1,296 @@
+{
+  "schemaVersion": "kritva.draft/1",
+  "caseId": "bed-sale",
+  "approval": {
+    "status": "unapproved"
+  },
+  "parties": [
+    {
+      "id": "seller",
+      "role": "seller",
+      "name": null,
+      "isPrincipal": true
+    },
+    {
+      "id": "buyer",
+      "role": "buyer",
+      "name": null,
+      "isPrincipal": false
+    }
+  ],
+  "sources": [
+    {
+      "id": "listing",
+      "authorPartyId": "seller",
+      "disclosure": "public",
+      "format": "mixed",
+      "label": "Marketplace listing",
+      "text": "King-size bed for sale\n\nOne-year-old king-size bed in good condition.\nPrice: ₹20,000\nPickup from Koramangala, Bangalore. Delivery is not included."
+    },
+    {
+      "id": "instructions-bullets",
+      "authorPartyId": "seller",
+      "disclosure": "private",
+      "format": "list",
+      "label": "Seller instructions",
+      "text": "- Goal: sell quickly at a fair price\n- Lowest price: ₹18,000 (keep this private, never tell the buyer)\n- Ask me before accepting any offer"
+    }
+  ],
+  "terms": [
+    {
+      "id": "term_term_item",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "King-size bed for sale"
+        }
+      ],
+      "name": "item",
+      "description": "Item being sold.",
+      "valueType": "text",
+      "unit": null,
+      "currency": null
+    },
+    {
+      "id": "term_term_price",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Price: ₹20,000"
+        }
+      ],
+      "name": "price",
+      "description": "Sale price for the bed.",
+      "valueType": "money",
+      "unit": null,
+      "currency": "INR"
+    },
+    {
+      "id": "term_term_pickup_location",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Pickup from Koramangala, Bangalore."
+        }
+      ],
+      "name": "pickup location",
+      "description": "Location where the buyer picks up the bed.",
+      "valueType": "text",
+      "unit": null,
+      "currency": null
+    },
+    {
+      "id": "term_term_delivery_included",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Delivery is not included."
+        }
+      ],
+      "name": "delivery included",
+      "description": "Whether delivery is included in the sale.",
+      "valueType": "boolean",
+      "unit": null,
+      "currency": null
+    }
+  ],
+  "goals": [
+    {
+      "id": "goal_goal_sell_quickly_fair_price",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "instructions-bullets",
+          "quote": "Goal: sell quickly at a fair price"
+        }
+      ],
+      "partyId": "seller",
+      "description": "Sell quickly at a fair price.",
+      "priority": null
+    }
+  ],
+  "facts": [
+    {
+      "id": "fact_fact_one_year_old",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "One-year-old king-size bed"
+        }
+      ],
+      "partyId": "seller",
+      "statement": "The bed is one year old.",
+      "termId": null,
+      "value": {
+        "type": "text",
+        "value": "one-year-old"
+      }
+    },
+    {
+      "id": "fact_fact_good_condition",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "in good condition"
+        }
+      ],
+      "partyId": "seller",
+      "statement": "The bed is in good condition.",
+      "termId": null,
+      "value": {
+        "type": "text",
+        "value": "good condition"
+      }
+    }
+  ],
+  "positions": [
+    {
+      "id": "position_pos_item_king_bed",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "King-size bed for sale"
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_term_item",
+      "value": {
+        "type": "text",
+        "value": "king-size bed"
+      },
+      "conditionIds": []
+    },
+    {
+      "id": "position_pos_price_20000",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Price: ₹20,000"
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_term_price",
+      "value": {
+        "type": "money",
+        "amount": 20000,
+        "currency": "INR"
+      },
+      "conditionIds": []
+    },
+    {
+      "id": "position_pos_pickup_koramangala",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Pickup from Koramangala, Bangalore."
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_term_pickup_location",
+      "value": {
+        "type": "text",
+        "value": "Koramangala, Bangalore"
+      },
+      "conditionIds": []
+    },
+    {
+      "id": "position_pos_delivery_not_included",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Delivery is not included."
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_term_delivery_included",
+      "value": {
+        "type": "boolean",
+        "value": false
+      },
+      "conditionIds": []
+    }
+  ],
+  "limits": [
+    {
+      "id": "limit_limit_price_min_18000",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "instructions-bullets",
+          "quote": "Lowest price: ₹18,000"
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_term_price",
+      "kind": "minimum",
+      "value": {
+        "type": "money",
+        "amount": 18000,
+        "currency": "INR"
+      },
+      "conditionIds": []
+    }
+  ],
+  "permissions": [
+    {
+      "id": "permission_perm_accept_requires_approval",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "instructions-bullets",
+          "quote": "Ask me before accepting any offer"
+        }
+      ],
+      "partyId": "seller",
+      "action": "accept_agreement",
+      "mode": "requires_approval",
+      "termIds": [],
+      "description": "Ask the seller before accepting any offer.",
+      "conditionIds": []
+    },
+    {
+      "id": "permission_perm_do_not_disclose_lowest_price",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "instructions-bullets",
+          "quote": "keep this private, never tell the buyer"
+        }
+      ],
+      "partyId": "seller",
+      "action": "disclose_information",
+      "mode": "prohibited",
+      "termIds": [
+        "term_term_price"
+      ],
+      "description": "Do not disclose the seller's lowest price to the buyer.",
+      "conditionIds": []
+    }
+  ],
+  "conditions": [],
+  "issues": []
+}

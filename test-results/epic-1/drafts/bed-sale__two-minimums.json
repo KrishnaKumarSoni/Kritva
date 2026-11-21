@@ -1,0 +1,370 @@
+{
+  "schemaVersion": "kritva.draft/1",
+  "caseId": "bed-sale",
+  "approval": {
+    "status": "unapproved"
+  },
+  "parties": [
+    {
+      "id": "seller",
+      "role": "seller",
+      "name": null,
+      "isPrincipal": true
+    },
+    {
+      "id": "buyer",
+      "role": "buyer",
+      "name": null,
+      "isPrincipal": false
+    }
+  ],
+  "sources": [
+    {
+      "id": "listing",
+      "authorPartyId": "seller",
+      "disclosure": "public",
+      "format": "mixed",
+      "label": "Marketplace listing",
+      "text": "King-size bed for sale\n\nOne-year-old king-size bed in good condition.\nPrice: ₹20,000\nPickup from Koramangala, Bangalore. Delivery is not included."
+    },
+    {
+      "id": "instructions-two-minimums",
+      "authorPartyId": "seller",
+      "disclosure": "private",
+      "format": "list",
+      "label": "Seller instructions",
+      "text": "My minimum is ₹18,000.\nDon't accept anything below ₹17,500."
+    }
+  ],
+  "terms": [
+    {
+      "id": "term_t_item",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "King-size bed for sale"
+        }
+      ],
+      "name": "item",
+      "description": "The item being sold.",
+      "valueType": "text",
+      "unit": null,
+      "currency": null
+    },
+    {
+      "id": "term_t_price",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Price: ₹20,000"
+        },
+        {
+          "sourceId": "instructions-two-minimums",
+          "quote": "My minimum is ₹18,000."
+        }
+      ],
+      "name": "price",
+      "description": "Sale price for the bed.",
+      "valueType": "money",
+      "unit": null,
+      "currency": "INR"
+    },
+    {
+      "id": "term_t_pickup_location",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Pickup from Koramangala, Bangalore."
+        }
+      ],
+      "name": "pickup location",
+      "description": "Where the buyer must pick up the bed.",
+      "valueType": "text",
+      "unit": null,
+      "currency": null
+    },
+    {
+      "id": "term_t_delivery_included",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Delivery is not included."
+        }
+      ],
+      "name": "delivery included",
+      "description": "Whether delivery is included in the sale.",
+      "valueType": "boolean",
+      "unit": null,
+      "currency": null
+    }
+  ],
+  "goals": [
+    {
+      "id": "goal_g_sell_bed",
+      "status": "inferred",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "King-size bed for sale"
+        }
+      ],
+      "partyId": "seller",
+      "description": "Sell the king-size bed.",
+      "priority": null
+    }
+  ],
+  "facts": [
+    {
+      "id": "fact_f_bed_age",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "One-year-old king-size bed"
+        }
+      ],
+      "partyId": "seller",
+      "statement": "The bed is one year old.",
+      "termId": null,
+      "value": {
+        "type": "quantity",
+        "amount": 1,
+        "unit": "year"
+      }
+    },
+    {
+      "id": "fact_f_bed_condition",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "good condition"
+        }
+      ],
+      "partyId": "seller",
+      "statement": "The bed is in good condition.",
+      "termId": null,
+      "value": {
+        "type": "text",
+        "value": "good condition"
+      }
+    },
+    {
+      "id": "fact_f_bed_size",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "king-size bed"
+        }
+      ],
+      "partyId": "seller",
+      "statement": "The bed is king-size.",
+      "termId": "term_t_item",
+      "value": {
+        "type": "text",
+        "value": "king-size bed"
+      }
+    }
+  ],
+  "positions": [
+    {
+      "id": "position_p_item",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "King-size bed for sale"
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_item",
+      "value": {
+        "type": "text",
+        "value": "king-size bed"
+      },
+      "conditionIds": []
+    },
+    {
+      "id": "position_p_price_listing",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Price: ₹20,000"
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_price",
+      "value": {
+        "type": "money",
+        "amount": 20000,
+        "currency": "INR"
+      },
+      "conditionIds": []
+    },
+    {
+      "id": "position_p_pickup_location",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Pickup from Koramangala, Bangalore."
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_pickup_location",
+      "value": {
+        "type": "text",
+        "value": "Koramangala, Bangalore"
+      },
+      "conditionIds": []
+    },
+    {
+      "id": "position_p_delivery_not_included",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Delivery is not included."
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_delivery_included",
+      "value": {
+        "type": "boolean",
+        "value": false
+      },
+      "conditionIds": []
+    }
+  ],
+  "limits": [
+    {
+      "id": "limit_l_min_18000",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "instructions-two-minimums",
+          "quote": "My minimum is ₹18,000."
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_price",
+      "kind": "minimum",
+      "value": {
+        "type": "money",
+        "amount": 18000,
+        "currency": "INR"
+      },
+      "conditionIds": []
+    },
+    {
+      "id": "limit_l_min_17500",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "instructions-two-minimums",
+          "quote": "Don't accept anything below ₹17,500."
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_price",
+      "kind": "minimum",
+      "value": {
+        "type": "money",
+        "amount": 17500,
+        "currency": "INR"
+      },
+      "conditionIds": []
+    }
+  ],
+  "permissions": [
+    {
+      "id": "permission_perm_no_accept_below_17500",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "instructions-two-minimums",
+          "quote": "Don't accept anything below ₹17,500."
+        }
+      ],
+      "partyId": "seller",
+      "action": "accept_agreement",
+      "mode": "prohibited",
+      "termIds": [
+        "term_t_price"
+      ],
+      "description": "Do not accept an agreement below ₹17,500.",
+      "conditionIds": [
+        "condition_c_price_below_17500"
+      ]
+    }
+  ],
+  "conditions": [
+    {
+      "id": "condition_c_price_below_17500",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "instructions-two-minimums",
+          "quote": "below ₹17,500"
+        }
+      ],
+      "description": "The price is below ₹17,500.",
+      "termId": "term_t_price",
+      "operator": null,
+      "value": null
+    }
+  ],
+  "issues": [
+    {
+      "id": "issue_1",
+      "kind": "conflict",
+      "message": "The seller gives two different minimum price boundaries: ₹18,000 and ₹17,500. Clarify the true lowest acceptable price.",
+      "relatedIds": [
+        "limit_l_min_18000",
+        "limit_l_min_17500"
+      ],
+      "sourceRefs": [
+        {
+          "sourceId": "instructions-two-minimums",
+          "quote": "My minimum is ₹18,000."
+        },
+        {
+          "sourceId": "instructions-two-minimums",
+          "quote": "Don't accept anything below ₹17,500."
+        }
+      ]
+    },
+    {
+      "id": "issue_2",
+      "kind": "missing",
+      "message": "No explicit authority is stated for the agent to accept an agreement at any price.",
+      "relatedIds": [
+        "term_t_price",
+        "permission_perm_no_accept_below_17500"
+      ],
+      "sourceRefs": []
+    }
+  ]
+}

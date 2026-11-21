@@ -1,0 +1,12 @@
+{
+  "name": "no-age-condition",
+  "story": "3",
+  "description": "Bed age and condition removed: neither is restored from a hidden default.",
+  "sources": ["listing-no-age-condition"],
+  "expect": {
+    "require": [
+      { "record": "position", "party": "principal", "value": { "type": "money", "amount": 20000, "currency": "INR" } }
+    ],
+    "forbidText": ["year", "years", "old", "age", "good", "good condition", "new"]
+  }
+}

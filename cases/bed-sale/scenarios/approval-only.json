@@ -1,0 +1,15 @@
+{
+  "name": "approval-only",
+  "story": "2",
+  "description": "\"Ask me before accepting any offer\": approval rule stored; no minimum required or invented.",
+  "sources": ["listing", "instructions-approval-only"],
+  "expect": {
+    "require": [
+      { "record": "permission", "action": "accept_agreement", "mode": "requires_approval" }
+    ],
+    "forbid": [
+      { "record": "limit", "kind": "minimum" },
+      { "record": "permission", "mode": "autonomous" }
+    ]
+  }
+}

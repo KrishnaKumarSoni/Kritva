@@ -1,0 +1,3 @@
+- Goal: sell quickly at a fair price
+- Lowest price: ₹18,000 (keep this private, never tell the buyer)
+- Ask me before accepting any offer

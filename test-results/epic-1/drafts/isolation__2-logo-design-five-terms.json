@@ -1,0 +1,237 @@
+{
+  "schemaVersion": "kritva.draft/1",
+  "caseId": "logo-design",
+  "approval": {
+    "status": "unapproved"
+  },
+  "parties": [
+    {
+      "id": "client",
+      "role": "buyer",
+      "name": null,
+      "isPrincipal": true
+    },
+    {
+      "id": "designer",
+      "role": "designer",
+      "name": null,
+      "isPrincipal": false
+    }
+  ],
+  "sources": [
+    {
+      "id": "brief",
+      "authorPartyId": "client",
+      "disclosure": "public",
+      "format": "list",
+      "label": "Design brief",
+      "text": "Looking for a logo designer.\n\nBudget: ₹5,000\nTwo logo concepts\nTwo revision rounds\nDelivery five days after kickoff\nFinal files in SVG format"
+    }
+  ],
+  "terms": [
+    {
+      "id": "term_term_budget",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "brief",
+          "quote": "Budget: ₹5,000"
+        }
+      ],
+      "name": "budget",
+      "description": "Budget for the logo design work.",
+      "valueType": "money",
+      "unit": null,
+      "currency": "INR"
+    },
+    {
+      "id": "term_term_concepts",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "brief",
+          "quote": "Two logo concepts"
+        }
+      ],
+      "name": "logo concepts",
+      "description": "Number of logo concepts to be provided.",
+      "valueType": "quantity",
+      "unit": "logo concepts",
+      "currency": null
+    },
+    {
+      "id": "term_term_revisions",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "brief",
+          "quote": "Two revision rounds"
+        }
+      ],
+      "name": "revision rounds",
+      "description": "Number of revision rounds to be provided.",
+      "valueType": "quantity",
+      "unit": "revision rounds",
+      "currency": null
+    },
+    {
+      "id": "term_term_delivery",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "brief",
+          "quote": "Delivery five days after kickoff"
+        }
+      ],
+      "name": "delivery timing",
+      "description": "Timing for delivery after kickoff.",
+      "valueType": "date_text",
+      "unit": null,
+      "currency": null
+    },
+    {
+      "id": "term_term_file_format",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "brief",
+          "quote": "Final files in SVG format"
+        }
+      ],
+      "name": "final file format",
+      "description": "Format for final files.",
+      "valueType": "text",
+      "unit": null,
+      "currency": null
+    }
+  ],
+  "goals": [
+    {
+      "id": "goal_goal_logo_designer",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "brief",
+          "quote": "Looking for a logo designer."
+        }
+      ],
+      "partyId": "client",
+      "description": "Find a logo designer.",
+      "priority": null
+    }
+  ],
+  "facts": [],
+  "positions": [
+    {
+      "id": "position_pos_budget",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "brief",
+          "quote": "Budget: ₹5,000"
+        }
+      ],
+      "partyId": "client",
+      "termId": "term_term_budget",
+      "value": {
+        "type": "money",
+        "amount": 5000,
+        "currency": "INR"
+      },
+      "conditionIds": []
+    },
+    {
+      "id": "position_pos_concepts",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "brief",
+          "quote": "Two logo concepts"
+        }
+      ],
+      "partyId": "client",
+      "termId": "term_term_concepts",
+      "value": {
+        "type": "quantity",
+        "amount": 2,
+        "unit": "logo concepts"
+      },
+      "conditionIds": []
+    },
+    {
+      "id": "position_pos_revisions",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "brief",
+          "quote": "Two revision rounds"
+        }
+      ],
+      "partyId": "client",
+      "termId": "term_term_revisions",
+      "value": {
+        "type": "quantity",
+        "amount": 2,
+        "unit": "revision rounds"
+      },
+      "conditionIds": []
+    },
+    {
+      "id": "position_pos_delivery",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "brief",
+          "quote": "Delivery five days after kickoff"
+        }
+      ],
+      "partyId": "client",
+      "termId": "term_term_delivery",
+      "value": {
+        "type": "date_text",
+        "value": "five days after kickoff"
+      },
+      "conditionIds": []
+    },
+    {
+      "id": "position_pos_file_format",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "brief",
+          "quote": "Final files in SVG format"
+        }
+      ],
+      "partyId": "client",
+      "termId": "term_term_file_format",
+      "value": {
+        "type": "text",
+        "value": "SVG format"
+      },
+      "conditionIds": []
+    }
+  ],
+  "limits": [],
+  "permissions": [],
+  "conditions": [],
+  "issues": [
+    {
+      "id": "issue_1",
+      "kind": "missing",
+      "message": "No explicit authority is stated for the agent to accept an agreement, make concessions, or vary the listed terms.",
+      "relatedIds": [],
+      "sourceRefs": []
+    }
+  ]
+}

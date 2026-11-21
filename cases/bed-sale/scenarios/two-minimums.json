@@ -1,0 +1,14 @@
+{
+  "name": "two-minimums",
+  "story": "2",
+  "description": "Two minimum prices without a correction: conflict returned, and neither is selected.",
+  "sources": ["listing", "instructions-two-minimums"],
+  "expect": {
+    "require": [
+      { "record": "issue", "kind": "conflict" }
+    ],
+    "notSingle": [
+      { "record": "limit", "party": "principal", "kind": "minimum" }
+    ]
+  }
+}

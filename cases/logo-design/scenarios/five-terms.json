@@ -1,0 +1,23 @@
+{
+  "name": "five-terms",
+  "story": "3",
+  "description": "Buying a logo design: five terms (price, concepts, revision rounds, delivery time, file format) map with the same schema and mapper.",
+  "sources": ["brief"],
+  "expect": {
+    "minTerms": 5,
+    "require": [
+      { "record": ["position", "limit"], "party": "principal", "value": { "type": "money", "amount": 5000, "currency": "INR" } },
+      { "record": ["position", "limit"], "party": "principal", "termNameIncludesAny": ["concept"], "value": { "type": "quantity", "amount": 2 } },
+      { "record": ["position", "limit"], "party": "principal", "termNameIncludesAny": ["revision"], "value": { "type": "quantity", "amount": 2 } },
+      { "record": ["position", "limit"], "party": "principal", "value": { "textIncludes": "svg" } }
+    ],
+    "requireAny": [
+      [{ "record": ["position", "limit"], "party": "principal", "value": { "type": "quantity", "amount": 5, "unitIncludes": "day" } }],
+      [{ "record": ["position", "limit"], "party": "principal", "value": { "type": "date_text", "textIncludes": "five days" } }]
+    ],
+    "forbid": [
+      { "record": "permission" }
+    ],
+    "forbidText": ["bed", "koramangala", "bangalore", "pickup", "mattress"]
+  }
+}

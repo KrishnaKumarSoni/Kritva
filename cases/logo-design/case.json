@@ -1,0 +1,11 @@
+{
+  "caseId": "logo-design",
+  "description": "Buying a logo design. The principal is the buyer, not a seller.",
+  "parties": [
+    { "id": "client", "role": "buyer", "name": null, "isPrincipal": true },
+    { "id": "designer", "role": "designer", "name": null, "isPrincipal": false }
+  ],
+  "sources": {
+    "brief": { "file": "sources/brief.md", "authorPartyId": "client", "disclosure": "public", "format": "list", "label": "Design brief" }
+  }
+}

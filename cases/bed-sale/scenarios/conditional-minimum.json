@@ -1,0 +1,16 @@
+{
+  "name": "conditional-minimum",
+  "story": "2",
+  "description": "\"₹18,000 only if collection is Saturday\": the condition stays attached, or the rule is flagged as unsupported.",
+  "sources": ["listing", "instructions-conditional-minimum"],
+  "expect": {
+    "requireAny": [
+      [{ "record": "limit", "party": "principal", "kind": "minimum", "hasCondition": true, "value": { "type": "money", "amount": 18000 } }],
+      [{ "record": "position", "party": "principal", "hasCondition": true, "value": { "type": "money", "amount": 18000 } }],
+      [{ "record": "issue", "kind": "unsupported" }]
+    ],
+    "forbid": [
+      { "record": ["limit", "position"], "party": "principal", "hasCondition": false, "value": { "type": "money", "amount": 18000 } }
+    ]
+  }
+}
