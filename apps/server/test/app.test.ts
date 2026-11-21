@@ -79,6 +79,20 @@ describe("slice API", () => {
     expect(operator).toContain("decision");
   });
 
+  it("the operator sees term status and checks; the buyer sees neither", async () => {
+    const { call, llm, offer } = setup();
+    const id = (await call("POST", "/api/operator/sessions", { mandateId: "bed-sale/conditional-test" })).json.session.id as string;
+    llm.interpretations.push(offer(18_000));
+    await call("POST", `/api/buyer/sessions/${id}/messages`, { text: "₹18,000?" });
+    const operator = (await call("GET", `/api/operator/sessions/${id}`)).json;
+    expect(operator.mandateId).toBe("bed-sale/conditional-test");
+    expect(operator.dealSpace.terms.map((t: { kind: string }) => t.kind)).toContain("range");
+    expect(operator.dealSpace.lastBuyerCheck.result).toBe("needs_clarification");
+    expect(operator.events.map((e: { type: string }) => e.type)).toContain("proposal_checked");
+    const buyer = JSON.stringify((await call("GET", `/api/buyer/sessions/${id}`)).json);
+    expect(buyer).not.toMatch(/proposal_checked|dealSpace|19,?000|Saturday/i);
+  });
+
   it("request bodies cannot choose the actor: a buyer cannot approve", async () => {
     const { call, llm, offer } = setup();
     const id = (await call("POST", "/api/operator/sessions", {})).json.session.id as string;

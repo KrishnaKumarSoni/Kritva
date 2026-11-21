@@ -15,11 +15,19 @@ export function describeTerms(view: MandateView, terms: OfferTerm[], locale: str
     .join("; ");
 }
 
+function joinNames(names: string[]): string {
+  return names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
+
 export function templateReply(view: MandateView, plan: Plan, locale: string): string {
   const n = view.negotiable;
   const amountText = (() => {
     const t = n && plan.offer?.terms.find((x) => x.termId === n.termId);
-    return t ? formatValue(t.value, locale) : null;
+    if (!t) return null;
+    // Name any extra term the amount is tied to, so a conditional concession never travels without its condition.
+    const extras = (plan.offer?.terms ?? []).filter((x) => x.termId !== n!.termId && !view.defaultPackage.some((d) => d.termId === x.termId));
+    const tied = extras.map((x) => `${view.terms.get(x.termId)?.name ?? x.termId}: ${formatValue(x.value, locale)}`).join(", ");
+    return tied ? `${formatValue(t.value, locale)} (${tied})` : formatValue(t.value, locale);
   })();
   const parts: string[] = [];
 
@@ -31,6 +39,13 @@ export function templateReply(view: MandateView, plan: Plan, locale: string): st
   for (const d of plan.declined) {
     const name = view.terms.get(d.termId)?.name ?? "that term";
     parts.push(`I'm not able to change the ${name}.`);
+  }
+
+  if (plan.unresolved.length > 0) {
+    parts.push(`I'll need to check with the person I represent about ${joinNames(plan.unresolved)}. I can't promise that or quote a price for it yet.`);
+  }
+  if (plan.clarify.length > 0) {
+    parts.push(`Could you tell me the ${joinNames(plan.clarify)} you have in mind?`);
   }
 
   switch (plan.move) {

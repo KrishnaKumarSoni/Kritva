@@ -1,27 +1,27 @@
 # Epic 1 live mapping results
 
-- Run at: 2026-11-21T12:45:47.392Z
-- Commit: f9589b7 + uncommitted changes
+- Run at: 2026-11-21T13:58:18.571Z
+- Commit: 56b98e0 + uncommitted changes
 - Model: gpt-5.5
-- Prompt: mapping/2
+- Prompt: mapping/3
 - Result: **16 of 16 passed**
 
 | Scenario | Story | Result | Calls | Repaired | Latency | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| bed-sale/approval-only | 2 | pass | 1 | no | 23.6s |  |
-| bed-sale/asking-price-23000 | 3 | pass | 1 | no | 22.2s |  |
-| bed-sale/buyer-override | 2 | pass | 1 | no | 40.9s |  |
-| bed-sale/conditional-minimum | 2 | pass | 1 | no | 19.4s |  |
-| bed-sale/instructions-bullets | 2 | pass | 1 | no | 22.8s |  |
-| bed-sale/instructions-key-value | 2 | pass | 1 | no | 21.6s |  |
-| bed-sale/instructions-prose | 2 | pass | 1 | no | 25.3s |  |
-| bed-sale/listing-only | 2 | pass | 1 | no | 23.5s |  |
-| bed-sale/no-age-condition | 3 | pass | 1 | no | 18.7s |  |
-| bed-sale/two-minimums | 2 | pass | 1 | no | 47.1s |  |
-| logo-design/five-terms | 3 | pass | 1 | no | 19.8s |  |
-| isolation/1-bed-sale-listing-only | 2 | pass | 1 | no | 22.0s |  |
-| isolation/2-logo-design-five-terms | 3 | pass | 1 | no | 19.2s |  |
-| isolation/3-bed-sale-listing-only | 2 | pass | 1 | no | 21.9s |  |
+| bed-sale/approval-only | 2 | pass | 1 | no | 18.9s |  |
+| bed-sale/asking-price-23000 | 3 | pass | 1 | no | 17.7s |  |
+| bed-sale/buyer-override | 2 | pass | 1 | no | 12.2s |  |
+| bed-sale/conditional-minimum | 2 | pass | 1 | no | 32.9s |  |
+| bed-sale/instructions-bullets | 2 | pass | 1 | no | 22.3s |  |
+| bed-sale/instructions-key-value | 2 | pass | 1 | no | 18.3s |  |
+| bed-sale/instructions-prose | 2 | pass | 1 | no | 11.8s |  |
+| bed-sale/listing-only | 2 | pass | 1 | no | 17.1s |  |
+| bed-sale/no-age-condition | 3 | pass | 1 | no | 19.1s |  |
+| bed-sale/two-minimums | 2 | pass | 1 | no | 38.0s |  |
+| logo-design/five-terms | 3 | pass | 1 | no | 27.8s |  |
+| isolation/1-bed-sale-listing-only | 2 | pass | 1 | no | 22.1s |  |
+| isolation/2-logo-design-five-terms | 3 | pass | 1 | no | 35.2s |  |
+| isolation/3-bed-sale-listing-only | 2 | pass | 1 | no | 21.4s |  |
 
 | Cross-scenario check | Story | Result | Detail |
 | --- | --- | --- | --- |

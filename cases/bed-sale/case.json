@@ -92,6 +92,13 @@
       "disclosure": "private",
       "format": "prose",
       "label": "Seller instructions for the demo"
+    },
+    "conditional-test-instructions": {
+      "file": "sources/conditional-test-instructions.md",
+      "authorPartyId": "seller",
+      "disclosure": "private",
+      "format": "prose",
+      "label": "Seller instructions (conditional test data)"
     }
   },
   "mandates": {
@@ -101,7 +108,17 @@
         "demo-instructions"
       ],
       "file": "mandates/demo.confirmed.json",
-      "description": "The seller mandate used for the hackathon demo and the buyer scenarios."
+      "description": "The seller mandate used for the hackathon demo and the buyer scenarios.",
+      "label": "Demo seller mandate"
+    },
+    "conditional-test": {
+      "sources": [
+        "listing",
+        "conditional-test-instructions"
+      ],
+      "file": "mandates/conditional-test.confirmed.json",
+      "description": "Test data only: a minimum of ₹19,000, with ₹18,000 allowed only for Saturday collection.",
+      "label": "Conditional test mandate"
     }
   }
 }

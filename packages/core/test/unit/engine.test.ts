@@ -61,6 +61,8 @@ const planFor = (move: Plan["move"], amount: number | null): Plan => ({
   questions: [],
   respondingTo: null,
   notice: null,
+  clarify: [],
+  unresolved: [],
 });
 
 describe("outgoing reply check (code, not prompt)", () => {

@@ -7,6 +7,7 @@
  */
 import type { ConfirmedMandate, Term, Value } from "../schema/records.ts";
 import type { OfferTerm } from "../record/events.ts";
+import { sameValue } from "../dealspace/check.ts";
 
 export interface NegotiableTerm {
   termId: string;
@@ -121,17 +122,12 @@ export function readMandate(mandate: ConfirmedMandate): MandateView {
   };
 }
 
-/** Does a value satisfy the mandate's fixed rules for its term? */
+/** Does a value break the mandate's fixed rules for its term? Uses the deal space's value comparison. */
 export function violatesFixedRule(view: MandateView, termId: string, value: Value): boolean {
   return (view.fixedRules.get(termId) ?? []).some((rule) => {
-    const same = JSON.stringify(normalize(rule.value)) === JSON.stringify(normalize(value));
+    const same = sameValue(rule.value, value);
     return rule.kind === "must_equal" ? !same : same;
   });
-}
-
-function normalize(v: Value): unknown {
-  if (v.type === "text" || v.type === "date_text") return [v.type, v.value.trim().toLowerCase()];
-  return v;
 }
 
 /** Formats a value for people to read. Locale comes from the host application. */

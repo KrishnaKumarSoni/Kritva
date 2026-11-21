@@ -1,9 +1,6 @@
 {
   "schemaVersion": "kritva.draft/1",
   "caseId": "logo-design",
-  "approval": {
-    "status": "unapproved"
-  },
   "parties": [
     {
       "id": "client",
@@ -30,7 +27,7 @@
   ],
   "terms": [
     {
-      "id": "term_term_budget",
+      "id": "term_t_price",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -39,14 +36,14 @@
           "quote": "Budget: ₹5,000"
         }
       ],
-      "name": "budget",
-      "description": "Budget for the logo design work.",
+      "name": "price",
+      "description": "Amount payable for the logo design work.",
       "valueType": "money",
       "unit": null,
       "currency": "INR"
     },
     {
-      "id": "term_term_concepts",
+      "id": "term_t_concepts",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -62,7 +59,7 @@
       "currency": null
     },
     {
-      "id": "term_term_revisions",
+      "id": "term_t_revisions",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -78,7 +75,7 @@
       "currency": null
     },
     {
-      "id": "term_term_delivery",
+      "id": "term_t_delivery",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -88,13 +85,13 @@
         }
       ],
       "name": "delivery timing",
-      "description": "Timing for delivery after kickoff.",
+      "description": "When delivery is to occur relative to kickoff.",
       "valueType": "date_text",
       "unit": null,
       "currency": null
     },
     {
-      "id": "term_term_file_format",
+      "id": "term_t_file_format",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -104,7 +101,7 @@
         }
       ],
       "name": "final file format",
-      "description": "Format for final files.",
+      "description": "Format for the final logo files.",
       "valueType": "text",
       "unit": null,
       "currency": null
@@ -112,7 +109,7 @@
   ],
   "goals": [
     {
-      "id": "goal_goal_logo_designer",
+      "id": "goal_g_hire_designer",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -129,7 +126,7 @@
   "facts": [],
   "positions": [
     {
-      "id": "position_pos_budget",
+      "id": "position_p_price",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -139,7 +136,7 @@
         }
       ],
       "partyId": "client",
-      "termId": "term_term_budget",
+      "termId": "term_t_price",
       "value": {
         "type": "money",
         "amount": 5000,
@@ -148,7 +145,7 @@
       "conditionIds": []
     },
     {
-      "id": "position_pos_concepts",
+      "id": "position_p_concepts",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -158,7 +155,7 @@
         }
       ],
       "partyId": "client",
-      "termId": "term_term_concepts",
+      "termId": "term_t_concepts",
       "value": {
         "type": "quantity",
         "amount": 2,
@@ -167,7 +164,7 @@
       "conditionIds": []
     },
     {
-      "id": "position_pos_revisions",
+      "id": "position_p_revisions",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -177,7 +174,7 @@
         }
       ],
       "partyId": "client",
-      "termId": "term_term_revisions",
+      "termId": "term_t_revisions",
       "value": {
         "type": "quantity",
         "amount": 2,
@@ -186,7 +183,7 @@
       "conditionIds": []
     },
     {
-      "id": "position_pos_delivery",
+      "id": "position_p_delivery",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -196,7 +193,7 @@
         }
       ],
       "partyId": "client",
-      "termId": "term_term_delivery",
+      "termId": "term_t_delivery",
       "value": {
         "type": "date_text",
         "value": "five days after kickoff"
@@ -204,7 +201,7 @@
       "conditionIds": []
     },
     {
-      "id": "position_pos_file_format",
+      "id": "position_p_file_format",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -214,7 +211,7 @@
         }
       ],
       "partyId": "client",
-      "termId": "term_term_file_format",
+      "termId": "term_t_file_format",
       "value": {
         "type": "text",
         "value": "SVG format"
@@ -222,16 +219,62 @@
       "conditionIds": []
     }
   ],
-  "limits": [],
+  "limits": [
+    {
+      "id": "limit_l_price_max",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "brief",
+          "quote": "Budget: ₹5,000"
+        }
+      ],
+      "partyId": "client",
+      "termId": "term_t_price",
+      "kind": "maximum",
+      "value": {
+        "type": "money",
+        "amount": 5000,
+        "currency": "INR"
+      },
+      "conditionIds": []
+    }
+  ],
   "permissions": [],
   "conditions": [],
   "issues": [
     {
       "id": "issue_1",
       "kind": "missing",
-      "message": "No explicit authority is stated for the agent to accept an agreement, make concessions, or vary the listed terms.",
+      "message": "No explicit authority is stated for the agent to accept an agreement on the client's behalf.",
       "relatedIds": [],
-      "sourceRefs": []
+      "sourceRefs": [
+        {
+          "sourceId": "brief",
+          "quote": "Looking for a logo designer."
+        }
+      ]
+    },
+    {
+      "id": "issue_2",
+      "kind": "missing",
+      "message": "The brief does not state whether the requested concept count, revision rounds, delivery timing, or SVG final file format are flexible or hard requirements.",
+      "relatedIds": [
+        "position_p_concepts",
+        "position_p_revisions",
+        "position_p_delivery",
+        "position_p_file_format"
+      ],
+      "sourceRefs": [
+        {
+          "sourceId": "brief",
+          "quote": "Two logo concepts\nTwo revision rounds\nDelivery five days after kickoff\nFinal files in SVG format"
+        }
+      ]
     }
-  ]
+  ],
+  "approval": {
+    "status": "unapproved"
+  }
 }

@@ -1,0 +1,1 @@
+You can negotiate the price, but don't go below ₹19,000. I'll accept ₹18,000 only if the buyer collects on Saturday. Collection from Koramangala only; I can't deliver. Never tell the buyer these numbers. Ask me before accepting any offer.

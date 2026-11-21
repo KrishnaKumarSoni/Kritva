@@ -85,6 +85,39 @@ export const PAYLOADS = {
     terms: OfferTerms,
     termsHash: z.string().length(64),
   }),
+  /** A term the counterparty asked about that the mandate does not cover (e.g. an added service). */
+  term_requested: z.strictObject({
+    sourceMessageId: Id,
+    byPartyId: Id,
+    name: ShortText.max(120),
+    description: z.string().max(500).nullable(),
+    value: Value.nullable(),
+  }),
+  /**
+   * A deal-space check of one proposal against the mandate revision in force. Bound to the
+   * exact terms checked; a later change needs a new check. Passing is not permission.
+   */
+  proposal_checked: z.strictObject({
+    offerId: Id,
+    checkedTerms: OfferTerms,
+    termsHash: z.string().length(64),
+    mandateRevision: z.number().int().min(1),
+    requestedTermIds: z.array(Id).max(20),
+    result: z.enum(["fits", "conflicts", "needs_clarification"]),
+    findings: z
+      .array(
+        z.strictObject({
+          termId: Id.nullable(),
+          termName: z.string().min(1).max(120),
+          status: z.enum(["fits", "conflict", "needs_clarification"]),
+          basis: z.enum(["rule", "condition", "principal_value", "unaddressed", "new_term", "issue", "descriptive"]),
+          ruleId: Id.nullable(),
+          relatedTermId: Id.nullable(),
+          detail: ShortText,
+        }),
+      )
+      .max(100),
+  }),
   /** A short, user-facing reason. Hidden model reasoning is never stored. */
   decision: z.strictObject({
     kind: DecisionKind,
@@ -157,6 +190,7 @@ export const PUBLIC_EVENT_TYPES = new Set<EventType>([
   "message",
   "transcript_fragment",
   "offer_extracted",
+  "term_requested",
   "acceptance_recorded",
   "agreement_recorded",
   "delivery_reported",

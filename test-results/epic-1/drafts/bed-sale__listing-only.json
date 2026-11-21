@@ -1,9 +1,6 @@
 {
   "schemaVersion": "kritva.draft/1",
   "caseId": "bed-sale",
-  "approval": {
-    "status": "unapproved"
-  },
   "parties": [
     {
       "id": "seller",
@@ -30,22 +27,6 @@
   ],
   "terms": [
     {
-      "id": "term_t_item",
-      "status": "stated",
-      "disclosure": "public",
-      "sourceRefs": [
-        {
-          "sourceId": "listing",
-          "quote": "King-size bed for sale"
-        }
-      ],
-      "name": "item",
-      "description": "Item being sold.",
-      "valueType": "text",
-      "unit": null,
-      "currency": null
-    },
-    {
       "id": "term_t_price",
       "status": "stated",
       "disclosure": "public",
@@ -62,7 +43,7 @@
       "currency": "INR"
     },
     {
-      "id": "term_t_pickup_location",
+      "id": "term_t_pickup_place",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -71,8 +52,8 @@
           "quote": "Pickup from Koramangala, Bangalore."
         }
       ],
-      "name": "pickup location",
-      "description": "Location where the buyer must pick up the bed.",
+      "name": "pickup place",
+      "description": "Place where the buyer would pick up the bed.",
       "valueType": "text",
       "unit": null,
       "currency": null
@@ -112,7 +93,7 @@
   ],
   "facts": [
     {
-      "id": "fact_f_king_size",
+      "id": "fact_f_bed_size",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -123,14 +104,14 @@
       ],
       "partyId": "seller",
       "statement": "The item is a king-size bed.",
-      "termId": "term_t_item",
+      "termId": null,
       "value": {
         "type": "text",
         "value": "king-size bed"
       }
     },
     {
-      "id": "fact_f_one_year_old",
+      "id": "fact_f_bed_age",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -143,13 +124,12 @@
       "statement": "The bed is one year old.",
       "termId": null,
       "value": {
-        "type": "quantity",
-        "amount": 1,
-        "unit": "year"
+        "type": "text",
+        "value": "One-year-old"
       }
     },
     {
-      "id": "fact_f_good_condition",
+      "id": "fact_f_bed_condition",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -169,25 +149,7 @@
   ],
   "positions": [
     {
-      "id": "position_p_item",
-      "status": "stated",
-      "disclosure": "public",
-      "sourceRefs": [
-        {
-          "sourceId": "listing",
-          "quote": "King-size bed for sale"
-        }
-      ],
-      "partyId": "seller",
-      "termId": "term_t_item",
-      "value": {
-        "type": "text",
-        "value": "king-size bed"
-      },
-      "conditionIds": []
-    },
-    {
-      "id": "position_p_price",
+      "id": "position_p_asking_price",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -206,7 +168,7 @@
       "conditionIds": []
     },
     {
-      "id": "position_p_pickup_location",
+      "id": "position_p_pickup_place",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -216,7 +178,7 @@
         }
       ],
       "partyId": "seller",
-      "termId": "term_t_pickup_location",
+      "termId": "term_t_pickup_place",
       "value": {
         "type": "text",
         "value": "Koramangala, Bangalore"
@@ -256,9 +218,10 @@
     {
       "id": "issue_2",
       "kind": "missing",
-      "message": "No lowest acceptable price or discount authority is stated for negotiating the listed price.",
+      "message": "No minimum acceptable price or negotiation boundary is stated for the listed price.",
       "relatedIds": [
-        "position_p_price"
+        "term_t_price",
+        "position_p_asking_price"
       ],
       "sourceRefs": [
         {
@@ -267,5 +230,8 @@
         }
       ]
     }
-  ]
+  ],
+  "approval": {
+    "status": "unapproved"
+  }
 }

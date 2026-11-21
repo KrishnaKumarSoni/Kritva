@@ -1,9 +1,9 @@
 /**
  * Buyer scenario script. Runs every scenario in cases/<case>/buyer-scenarios through the
  * same HTTP routes the chat page uses (in process), with the real turn model, and records
- * the results in test-results/epic-2a/.
+ * the results in test-results/scenarios/<label>/.
  *
- *   node --env-file=.env apps/server/scripts/run-scenarios.ts [--runs N] [--only name]
+ *   node --env-file=.env apps/server/scripts/run-scenarios.ts [--runs N] [--only name] [--label epic-3]
  */
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -28,6 +28,8 @@ const only = args.includes("--only") ? args[args.indexOf("--only") + 1] : null;
 
 interface Scenario {
   name: string;
+  /** Confirmed mandate to run against; defaults to the demo mandate. */
+  mandate?: string;
   description: string;
   turns: Array<{ buyer: string } | { seller: "approved" | "rejected" }>;
   expect: {
@@ -38,21 +40,28 @@ interface Scenario {
     agentMustNotSay: string[];
     /** At least one Kritva reply must match each pattern. */
     agentMustSay?: string[];
+    /** Agreed terms must include these term-name → value pairs. */
+    agreedTermEquals?: Record<string, string>;
+    /** Each listed result must appear among the checks of the buyer's proposals. */
+    buyerCheckResults?: Array<"fits" | "conflicts" | "needs_clarification">;
+    /** No accepted terms below this amount, unless the named term has the named value. */
+    noAcceptedOfferBelow?: { amount: number; unlessTerm: Record<string, string> };
   };
 }
 
 const scenarioDir = join(ROOT, "cases/bed-sale/buyer-scenarios");
 const scenarios: Scenario[] = readdirSync(scenarioDir)
   .filter((f) => f.endsWith(".json"))
-  .sort()
+  .sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
   .map((f) => JSON.parse(readFileSync(join(scenarioDir, f), "utf8")) as Scenario)
   .filter((s) => !only || s.name === only);
 
 const mandates = loadConfirmedMandates(join(ROOT, "cases"));
-const demo = mandates.find((m) => m.id === "bed-sale/demo");
-if (!demo) throw new Error("Demo mandate not found.");
-const view = readMandate(demo.mandate);
-const limit = view.negotiable!.limit;
+const viewFor = (id: string) => {
+  const entry = mandates.find((m) => m.id === id);
+  if (!entry) throw new Error(`Mandate ${id} not found.`);
+  return readMandate(entry.mandate);
+};
 
 const record = new NegotiationRecord(new SqliteRecordBackend(join(mkdtempSync(join(tmpdir(), "kritva-scenarios-")), "record.sqlite")));
 const llm = createTurnLlmFromEnv();
@@ -81,7 +90,9 @@ interface RunResult {
 }
 
 async function runScenario(s: Scenario, run: number): Promise<RunResult> {
-  const created = await call("POST", "/api/operator/sessions", { mandateId: "bed-sale/demo" });
+  const mandateId = s.mandate ?? "bed-sale/demo";
+  const view = viewFor(mandateId);
+  const created = await call("POST", "/api/operator/sessions", { mandateId });
   const id = created.json.session.id as string;
   const transcript: RunResult["transcript"] = [];
   const turnMs: number[] = [];
@@ -127,8 +138,11 @@ async function runScenario(s: Scenario, run: number): Promise<RunResult> {
   const amountOf = (terms: Array<{ termId: string; value: { amount?: number } }>) => terms.find((t) => t.termId === view.negotiable!.termId)?.value.amount;
 
   // ---- Checks every scenario must pass ----
-  const proposals = events.filter((e) => e.type === "offer_proposed").map((e) => amountOf((e.payload as any).terms) ?? Infinity);
-  checks.push({ check: "never proposes below the private minimum", pass: proposals.every((a) => a >= limit), detail: `proposed ${proposals.join(", ") || "nothing"}` });
+  const proposed = events.filter((e) => e.type === "offer_proposed");
+  const proposals = proposed.map((e) => amountOf((e.payload as any).terms) ?? Infinity);
+  const checkEvents = events.filter((e) => e.type === "proposal_checked").map((e) => e.payload as any);
+  const unchecked = proposed.filter((o) => !checkEvents.some((c) => c.offerId === o.id && c.result === "fits"));
+  checks.push({ check: "every Kritva offer fits the deal space (checked in code)", pass: unchecked.length === 0, detail: `proposed ${proposals.join(", ") || "nothing"}` });
 
   const offered = new Set(proposals);
   const leaked = agentTexts.some((t) => findAmounts(t).some((a) => view.privateAmounts.includes(a) && !offered.has(a)));
@@ -148,7 +162,36 @@ async function runScenario(s: Scenario, run: number): Promise<RunResult> {
   const undelivered = events.filter((e) => e.type === "message" && (e.payload as any).direction === "outbound").filter((m) => !events.some((d) => d.type === "delivery_reported" && (d.payload as any).messageId === m.id));
   checks.push({ check: "every reply was delivered and recorded", pass: undelivered.length === 0 });
 
+  const nameOfTerm = (id: string) => view.terms.get(id)?.name ?? id;
+  const termValue = (terms: any[], name: string) => {
+    const t = terms.find((x) => nameOfTerm(x.termId).toLowerCase() === name.toLowerCase());
+    return t ? String(t.value.value ?? t.value.amount ?? "") : undefined;
+  };
+
   // ---- Scenario expectations ----
+  if (s.expect.agreedTermEquals) {
+    for (const [name, value] of Object.entries(s.expect.agreedTermEquals)) {
+      const got = state.outcome.terms ? termValue(state.outcome.terms as any[], name) : undefined;
+      checks.push({ check: `agreed ${name} is ${value}`, pass: got?.toLowerCase() === value.toLowerCase(), detail: `got ${got ?? "nothing"}` });
+    }
+  }
+  if (s.expect.buyerCheckResults) {
+    const buyerOfferIds = new Set(events.filter((e) => e.type === "offer_extracted").map((e) => e.id));
+    const results = checkEvents.filter((c) => buyerOfferIds.has(c.offerId)).map((c) => c.result as string);
+    for (const expected of s.expect.buyerCheckResults) {
+      checks.push({ check: `a buyer proposal was checked as ${expected}`, pass: results.includes(expected), detail: `results: ${results.join(", ") || "none"}` });
+    }
+  }
+  if (s.expect.noAcceptedOfferBelow) {
+    const rule = s.expect.noAcceptedOfferBelow;
+    const accepted = events.filter((e) => e.type === "acceptance_recorded").map((a) => events.find((o) => o.id === (a.payload as any).offerId)!.payload as any);
+    const bad = accepted.filter((o) => {
+      const amount = amountOf(o.terms) ?? Infinity;
+      const exempt = Object.entries(rule.unlessTerm).every(([name, value]) => termValue(o.terms, name)?.toLowerCase() === value.toLowerCase());
+      return amount < rule.amount && !exempt;
+    });
+    checks.push({ check: `no accepted terms below ${rule.amount} without the required condition`, pass: bad.length === 0, detail: `${accepted.length} accepted` });
+  }
   checks.push({ check: `outcome is ${s.expect.outcome.join(" or ")}`, pass: s.expect.outcome.includes(state.outcome.kind), detail: `got ${state.outcome.kind}` });
 
   for (const pattern of s.expect.agentMustNotSay) {
@@ -200,7 +243,8 @@ for (let run = 1; run <= runs; run += 1) {
 }
 
 // ---- Report ----
-const outDir = join(ROOT, "test-results/epic-2a");
+const label = args.includes("--label") ? args[args.indexOf("--label") + 1]! : "latest";
+const outDir = join(ROOT, "test-results/scenarios", label);
 mkdirSync(outDir, { recursive: true });
 let commit = "unknown";
 try {
@@ -222,7 +266,7 @@ const summary = {
 writeFileSync(join(outDir, "scenario-results.json"), `${JSON.stringify(summary, null, 2)}\n`);
 
 const lines = [
-  "# Epic 2A buyer scenarios",
+  `# Buyer scenarios (${label})`,
   "",
   `- Run at: ${summary.runAt}`,
   `- Commit: ${commit}`,

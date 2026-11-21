@@ -1,9 +1,6 @@
 {
   "schemaVersion": "kritva.draft/1",
   "caseId": "bed-sale",
-  "approval": {
-    "status": "unapproved"
-  },
   "parties": [
     {
       "id": "seller",
@@ -68,7 +65,7 @@
         }
       ],
       "name": "pickup location",
-      "description": "Pickup location for the bed.",
+      "description": "Location where the bed is to be picked up.",
       "valueType": "text",
       "unit": null,
       "currency": null
@@ -88,22 +85,6 @@
       "valueType": "boolean",
       "unit": null,
       "currency": null
-    },
-    {
-      "id": "term_t_bed_size",
-      "status": "stated",
-      "disclosure": "public",
-      "sourceRefs": [
-        {
-          "sourceId": "listing",
-          "quote": "King-size bed for sale"
-        }
-      ],
-      "name": "bed size",
-      "description": "Size of the bed being sold.",
-      "valueType": "text",
-      "unit": null,
-      "currency": null
     }
   ],
   "goals": [
@@ -118,7 +99,7 @@
         }
       ],
       "partyId": "seller",
-      "description": "Sell the bed quickly.",
+      "description": "Sell quickly.",
       "priority": null
     },
     {
@@ -138,7 +119,7 @@
   ],
   "facts": [
     {
-      "id": "fact_f_bed_for_sale",
+      "id": "fact_f_bed_type",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -148,11 +129,11 @@
         }
       ],
       "partyId": "seller",
-      "statement": "The seller is offering a king-size bed for sale.",
-      "termId": "term_t_bed_size",
+      "statement": "The item for sale is a king-size bed.",
+      "termId": null,
       "value": {
         "type": "text",
-        "value": "King-size"
+        "value": "king-size bed"
       }
     },
     {
@@ -273,7 +254,7 @@
   ],
   "permissions": [
     {
-      "id": "permission_perm_accept_offers_approval",
+      "id": "permission_perm_accept_offers",
       "status": "stated",
       "disclosure": "private",
       "sourceRefs": [
@@ -286,11 +267,11 @@
       "action": "accept_agreement",
       "mode": "requires_approval",
       "termIds": [],
-      "description": "The seller must be asked before accepting every offer.",
+      "description": "Ask the seller first before accepting every offer.",
       "conditionIds": []
     },
     {
-      "id": "permission_perm_do_not_share_minimum",
+      "id": "permission_perm_disclose_minimum_price",
       "status": "stated",
       "disclosure": "private",
       "sourceRefs": [
@@ -305,25 +286,13 @@
       "termIds": [
         "term_t_price"
       ],
-      "description": "Do not disclose the private minimum price to the buyer.",
+      "description": "Do not disclose the seller's minimum price to the buyer.",
       "conditionIds": []
     }
   ],
   "conditions": [],
-  "issues": [
-    {
-      "id": "issue_1",
-      "kind": "missing",
-      "message": "No explicit authority is stated for making counteroffers or concessions; the only stated offer-handling authority is to ask the seller first before accepting every offer.",
-      "relatedIds": [
-        "permission_perm_accept_offers_approval"
-      ],
-      "sourceRefs": [
-        {
-          "sourceId": "instructions-key-value",
-          "quote": "accepting_offers: ask me first, for every offer"
-        }
-      ]
-    }
-  ]
+  "issues": [],
+  "approval": {
+    "status": "unapproved"
+  }
 }

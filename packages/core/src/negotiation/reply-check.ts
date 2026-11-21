@@ -9,13 +9,14 @@
  * - missing_offer: a reply that carries an offer must state the offered amount.
  * - false_commitment: no claim of agreement or principal approval that the record does not hold.
  * - private_text: no passage copied from private instructions.
+ * - missing_condition: an offer tied to an extra term (e.g. a day) must name it.
  */
 import { normalizeForQuoteMatch } from "../schema/quotes.ts";
 import type { MandateView } from "./mandate-view.ts";
 import type { Plan } from "./policy.ts";
 
 export interface ReplyViolation {
-  rule: "private_amount" | "unplanned_amount" | "crosses_limit" | "missing_offer" | "false_commitment" | "private_text";
+  rule: "private_amount" | "unplanned_amount" | "crosses_limit" | "missing_offer" | "missing_condition" | "false_commitment" | "private_text";
   detail: string;
 }
 
@@ -56,6 +57,17 @@ export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
   const mentioned = new Set(sentences.flatMap(findAmounts));
   for (const amount of offered) {
     if (!mentioned.has(amount)) violations.push({ rule: "missing_offer", detail: "Does not state the amount being offered." });
+  }
+
+  // A concession must never travel without the condition it depends on.
+  if (plan.offer && plan.move !== "request_approval" && plan.move !== "await_approval") {
+    const normalized = normalizeForQuoteMatch(text);
+    for (const t of plan.offer.terms) {
+      if (view.defaultPackage.some((d) => d.termId === t.termId) || t.termId === n?.termId) continue;
+      if ((t.value.type === "text" || t.value.type === "date_text") && !normalized.includes(normalizeForQuoteMatch(t.value.value))) {
+        violations.push({ rule: "missing_condition", detail: "Leaves out a term the offer depends on." });
+      }
+    }
   }
 
   if (plan.move !== "confirm_agreement") {

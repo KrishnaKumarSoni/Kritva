@@ -1,9 +1,6 @@
 {
   "schemaVersion": "kritva.draft/1",
   "caseId": "bed-sale",
-  "approval": {
-    "status": "unapproved"
-  },
   "parties": [
     {
       "id": "seller",
@@ -30,23 +27,7 @@
   ],
   "terms": [
     {
-      "id": "term_term_item",
-      "status": "stated",
-      "disclosure": "public",
-      "sourceRefs": [
-        {
-          "sourceId": "listing-price-23000",
-          "quote": "King-size bed for sale"
-        }
-      ],
-      "name": "item",
-      "description": "Item offered for sale.",
-      "valueType": "text",
-      "unit": null,
-      "currency": null
-    },
-    {
-      "id": "term_term_price",
+      "id": "term_price",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -62,7 +43,7 @@
       "currency": "INR"
     },
     {
-      "id": "term_term_pickup_location",
+      "id": "term_pickup_place",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -71,14 +52,14 @@
           "quote": "Pickup from Koramangala, Bangalore."
         }
       ],
-      "name": "pickup location",
-      "description": "Location where the buyer must pick up the bed.",
+      "name": "pickup place",
+      "description": "Place where the buyer would pick up the bed.",
       "valueType": "text",
       "unit": null,
       "currency": null
     },
     {
-      "id": "term_term_delivery_included",
+      "id": "term_delivery_included",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -96,8 +77,8 @@
   ],
   "goals": [
     {
-      "id": "goal_goal_sell_bed",
-      "status": "stated",
+      "id": "goal_sell_bed",
+      "status": "inferred",
       "disclosure": "public",
       "sourceRefs": [
         {
@@ -112,31 +93,31 @@
   ],
   "facts": [
     {
-      "id": "fact_fact_item_king_bed",
+      "id": "fact_bed_type_size",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
         {
           "sourceId": "listing-price-23000",
-          "quote": "King-size bed"
+          "quote": "King-size bed for sale"
         }
       ],
       "partyId": "seller",
       "statement": "The item is a king-size bed.",
-      "termId": "term_term_item",
+      "termId": null,
       "value": {
         "type": "text",
         "value": "king-size bed"
       }
     },
     {
-      "id": "fact_fact_age_one_year",
+      "id": "fact_bed_age",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
         {
           "sourceId": "listing-price-23000",
-          "quote": "One-year-old"
+          "quote": "One-year-old king-size bed"
         }
       ],
       "partyId": "seller",
@@ -149,7 +130,7 @@
       }
     },
     {
-      "id": "fact_fact_condition_good",
+      "id": "fact_bed_condition",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -169,25 +150,7 @@
   ],
   "positions": [
     {
-      "id": "position_pos_item_king_bed",
-      "status": "stated",
-      "disclosure": "public",
-      "sourceRefs": [
-        {
-          "sourceId": "listing-price-23000",
-          "quote": "King-size bed for sale"
-        }
-      ],
-      "partyId": "seller",
-      "termId": "term_term_item",
-      "value": {
-        "type": "text",
-        "value": "king-size bed"
-      },
-      "conditionIds": []
-    },
-    {
-      "id": "position_pos_price_23000",
+      "id": "position_asking_price",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -197,7 +160,7 @@
         }
       ],
       "partyId": "seller",
-      "termId": "term_term_price",
+      "termId": "term_price",
       "value": {
         "type": "money",
         "amount": 23000,
@@ -206,7 +169,7 @@
       "conditionIds": []
     },
     {
-      "id": "position_pos_pickup_koramangala",
+      "id": "position_pickup_koramangala",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -216,7 +179,7 @@
         }
       ],
       "partyId": "seller",
-      "termId": "term_term_pickup_location",
+      "termId": "term_pickup_place",
       "value": {
         "type": "text",
         "value": "Koramangala, Bangalore"
@@ -224,7 +187,7 @@
       "conditionIds": []
     },
     {
-      "id": "position_pos_delivery_not_included",
+      "id": "position_delivery_not_included",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -234,7 +197,7 @@
         }
       ],
       "partyId": "seller",
-      "termId": "term_term_delivery_included",
+      "termId": "term_delivery_included",
       "value": {
         "type": "boolean",
         "value": false
@@ -249,17 +212,9 @@
     {
       "id": "issue_1",
       "kind": "missing",
-      "message": "No explicit authority is stated for the agent to accept an agreement on the seller's behalf.",
-      "relatedIds": [],
-      "sourceRefs": []
-    },
-    {
-      "id": "issue_2",
-      "kind": "missing",
-      "message": "No lowest acceptable price or concession authority is stated for negotiating below the listed price.",
+      "message": "No minimum acceptable price or discount authority is stated, so the agent cannot know how far it may negotiate below the listed price.",
       "relatedIds": [
-        "term_term_price",
-        "position_pos_price_23000"
+        "position_asking_price"
       ],
       "sourceRefs": [
         {
@@ -267,6 +222,21 @@
           "quote": "Price: ₹23,000"
         }
       ]
+    },
+    {
+      "id": "issue_2",
+      "kind": "missing",
+      "message": "No explicit authority is stated for the agent to accept an agreement on the seller's behalf.",
+      "relatedIds": [],
+      "sourceRefs": [
+        {
+          "sourceId": "listing-price-23000",
+          "quote": "King-size bed for sale"
+        }
+      ]
     }
-  ]
+  ],
+  "approval": {
+    "status": "unapproved"
+  }
 }

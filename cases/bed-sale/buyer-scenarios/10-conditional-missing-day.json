@@ -1,0 +1,14 @@
+{
+  "name": "conditional-missing-day",
+  "mandate": "bed-sale/conditional-test",
+  "description": "Test data: the same price with no collection day needs clarification. Kritva asks for the day without suggesting one.",
+  "turns": [
+    { "buyer": "Would you take ₹18,000 for it?" }
+  ],
+  "expect": {
+    "outcome": ["in_progress"],
+    "buyerCheckResults": ["needs_clarification"],
+    "agentMustSay": ["(collection|pickup|pick-up|collect).{0,40}(day|when)|which day|what day|when (would|could|can) you"],
+    "agentMustNotSay": ["saturday"]
+  }
+}

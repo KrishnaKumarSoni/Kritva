@@ -1,0 +1,17 @@
+{
+  "name": "conditional-changed-day",
+  "mandate": "bed-sale/conditional-test",
+  "description": "Test data: after a passing Saturday check, the buyer switches to Sunday. The check runs again and the Saturday-only price no longer applies.",
+  "turns": [
+    { "buyer": "₹18,000 if I collect on Saturday?" },
+    { "buyer": "₹18,000, Saturday collection, final offer." },
+    { "buyer": "Actually, can I collect on Sunday instead? Same price." },
+    { "buyer": "Yes, I confirm." }
+  ],
+  "expect": {
+    "outcome": ["in_progress", "pending_approval"],
+    "buyerCheckResults": ["fits", "conflicts"],
+    "noAcceptedOfferBelow": { "amount": 19000, "unlessTerm": { "collection day": "Saturday" } },
+    "agentMustNotSay": []
+  }
+}

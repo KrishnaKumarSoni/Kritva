@@ -1,9 +1,6 @@
 {
   "schemaVersion": "kritva.draft/1",
   "caseId": "bed-sale",
-  "approval": {
-    "status": "unapproved"
-  },
   "parties": [
     {
       "id": "seller",
@@ -29,22 +26,6 @@
     }
   ],
   "terms": [
-    {
-      "id": "term_t_item",
-      "status": "stated",
-      "disclosure": "public",
-      "sourceRefs": [
-        {
-          "sourceId": "listing",
-          "quote": "King-size bed for sale"
-        }
-      ],
-      "name": "item",
-      "description": "The item being sold.",
-      "valueType": "text",
-      "unit": null,
-      "currency": null
-    },
     {
       "id": "term_t_price",
       "status": "stated",
@@ -72,7 +53,7 @@
         }
       ],
       "name": "pickup location",
-      "description": "Where the buyer must pick up the bed.",
+      "description": "Location where the buyer would pick up the bed.",
       "valueType": "text",
       "unit": null,
       "currency": null
@@ -112,7 +93,25 @@
   ],
   "facts": [
     {
-      "id": "fact_f_item_age",
+      "id": "fact_f_item",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "King-size bed for sale"
+        }
+      ],
+      "partyId": "seller",
+      "statement": "The item for sale is a king-size bed.",
+      "termId": null,
+      "value": {
+        "type": "text",
+        "value": "king-size bed"
+      }
+    },
+    {
+      "id": "fact_f_age",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -130,13 +129,13 @@
       }
     },
     {
-      "id": "fact_f_item_condition",
+      "id": "fact_f_condition",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
         {
           "sourceId": "listing",
-          "quote": "in good condition"
+          "quote": "good condition"
         }
       ],
       "partyId": "seller",
@@ -150,25 +149,7 @@
   ],
   "positions": [
     {
-      "id": "position_p_item",
-      "status": "stated",
-      "disclosure": "public",
-      "sourceRefs": [
-        {
-          "sourceId": "listing",
-          "quote": "King-size bed for sale"
-        }
-      ],
-      "partyId": "seller",
-      "termId": "term_t_item",
-      "value": {
-        "type": "text",
-        "value": "king-size bed"
-      },
-      "conditionIds": []
-    },
-    {
-      "id": "position_p_price",
+      "id": "position_p_asking_price",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -237,10 +218,9 @@
     {
       "id": "issue_2",
       "kind": "missing",
-      "message": "No lowest acceptable sale price or concession boundary is stated for the listed price.",
+      "message": "No minimum acceptable sale price is stated; the listed price is an asking position, not a lower limit.",
       "relatedIds": [
-        "term_t_price",
-        "position_p_price"
+        "position_p_asking_price"
       ],
       "sourceRefs": [
         {
@@ -249,5 +229,8 @@
         }
       ]
     }
-  ]
+  ],
+  "approval": {
+    "status": "unapproved"
+  }
 }

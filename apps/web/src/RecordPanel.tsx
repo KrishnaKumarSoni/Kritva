@@ -1,11 +1,12 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { OperatorView, RecordEvent } from "./api.ts";
+import { DealSpace } from "./DealSpace.tsx";
 import { LockIcon, ShieldIcon } from "./icons.tsx";
 
 const spring = { type: "spring", duration: 0.35, bounce: 0 } as const;
 
-type Filter = "all" | "conversation" | "commitments" | "blocked";
+type Filter = "all" | "conversation" | "commitments" | "blocked" | "checks";
 const FILTERS: Array<{ id: Filter; label: string; match: (e: RecordEvent) => boolean }> = [
   { id: "all", label: "All", match: () => true },
   { id: "conversation", label: "Messages", match: (e) => e.type === "message" || e.type === "delivery_reported" },
@@ -16,6 +17,13 @@ const FILTERS: Array<{ id: Filter; label: string; match: (e: RecordEvent) => boo
       ["offer_extracted", "offer_proposed", "decision", "acceptance_recorded", "approval_requested", "approval_responded", "agreement_recorded", "status_changed"].includes(e.type),
   },
   { id: "blocked", label: "Blocked", match: (e) => e.type === "reply_blocked" },
+  { id: "checks", label: "Checks", match: (e) => e.type === "proposal_checked" || e.type === "term_requested" || e.type === "mandate_revised" },
+];
+
+type Tab = "record" | "deal";
+const TABS: Array<{ id: Tab; label: string }> = [
+  { id: "record", label: "Record" },
+  { id: "deal", label: "Deal space" },
 ];
 
 const ACTOR_LABEL: Record<RecordEvent["actor"], string> = {
@@ -42,6 +50,16 @@ interface RecordPanelProps {
 
 export function RecordPanel({ view, responding, onRespond }: RecordPanelProps) {
   const [filter, setFilter] = useState<Filter>("all");
+  const [tab, setTab] = useState<Tab>("record");
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  // Tabs follow the APG pattern: arrow keys move between tabs, and only the active tab is in the tab order.
+  const onTabKey = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const next = e.key === "ArrowRight" ? (index + 1) % TABS.length : e.key === "ArrowLeft" ? (index - 1 + TABS.length) % TABS.length : e.key === "Home" ? 0 : e.key === "End" ? TABS.length - 1 : -1;
+    if (next < 0) return;
+    e.preventDefault();
+    setTab(TABS[next]!.id);
+    tabRefs.current[next]?.focus();
+  };
   const reduced = useReducedMotion();
   const events = view?.events ?? [];
   const visible = useMemo(() => {
@@ -110,6 +128,36 @@ export function RecordPanel({ view, responding, onRespond }: RecordPanelProps) {
         )}
       </AnimatePresence>
 
+      <div className="tabs" role="tablist" aria-label="Console views">
+        {TABS.map((t, i) => (
+          <button
+            key={t.id}
+            ref={(el) => {
+              tabRefs.current[i] = el;
+            }}
+            type="button"
+            role="tab"
+            id={`tab-${t.id}`}
+            aria-selected={tab === t.id}
+            aria-controls={`panel-${t.id}`}
+            tabIndex={tab === t.id ? 0 : -1}
+            className="tab"
+            onClick={() => setTab(t.id)}
+            onKeyDown={(e) => onTabKey(e, i)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "deal" && view && (
+        <div role="tabpanel" id="panel-deal" aria-labelledby="tab-deal" className="tabpanel">
+          <DealSpace view={view.dealSpace} />
+        </div>
+      )}
+
+      {tab === "record" && (
+      <div role="tabpanel" id="panel-record" aria-labelledby="tab-record" className="tabpanel">
       <div className="filters" role="group" aria-label="Filter events">
         {FILTERS.map((f) => (
           <button key={f.id} type="button" className="filter" aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>
@@ -120,7 +168,11 @@ export function RecordPanel({ view, responding, onRespond }: RecordPanelProps) {
       </div>
 
       <ol className="events" aria-label="Recorded events, newest first">
-        {visible.length === 0 && <li className="events-empty">{filter === "blocked" ? "No replies were blocked in this session." : "Nothing recorded yet."}</li>}
+        {visible.length === 0 && (
+          <li className="events-empty">
+            {filter === "blocked" ? "No replies were blocked in this session." : filter === "checks" ? "No proposals checked yet." : "Nothing recorded yet."}
+          </li>
+        )}
         <AnimatePresence initial={false}>
           {visible.map((e) => (
             <motion.li
@@ -164,6 +216,8 @@ export function RecordPanel({ view, responding, onRespond }: RecordPanelProps) {
           ))}
         </AnimatePresence>
       </ol>
+      </div>
+      )}
     </section>
   );
 }

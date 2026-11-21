@@ -191,6 +191,33 @@ export function validateNewEvent(event: NewEvent, actorInput: unknown, ctx: Sess
       checkTerms(p.terms, p.termsHash, "payload");
       break;
     }
+    case "term_requested": {
+      const p = parsed.data as PayloadOf<"term_requested">;
+      if (!isAgentSide) add("actor.kind", "term requests are extracted by the agent or system");
+      const source = refOf("payload.sourceMessageId", p.sourceMessageId, ["message"]);
+      if (source) {
+        const m = ctx.payloadOf(source.id, "message")!;
+        if (m.direction !== "inbound" || m.speakerPartyId !== p.byPartyId) add("payload.sourceMessageId", "must be the requesting party's own message");
+      }
+      if (p.byPartyId === principalId) add("payload.byPartyId", "term requests come from the counterparty");
+      break;
+    }
+    case "proposal_checked": {
+      const p = parsed.data as PayloadOf<"proposal_checked">;
+      if (!isAgentSide) add("actor.kind", "checks are recorded by the agent or system");
+      const offer = ctx.offerTerms(p.offerId);
+      if (!offer) add("payload.offerId", "references an offer that is not in this session");
+      else if (offer.type === "offer_proposed" && offer.termsHash !== p.termsHash) add("payload.termsHash", "an agent proposal is checked exactly as proposed");
+      checkTerms(p.checkedTerms, p.termsHash, "payload.checkedTerms");
+      checkCurrentRevision(p.mandateRevision, "payload.mandateRevision");
+      p.requestedTermIds.forEach((id, i) => refOf(`payload.requestedTermIds[${i}]`, id, ["term_requested"]));
+      p.findings.forEach((f, i) => {
+        if (f.termId !== null && !termTypes.has(f.termId) && f.basis !== "new_term") add(`payload.findings[${i}].termId`, "references a term that is not in the current mandate");
+      });
+      const expected = p.findings.some((f) => f.status === "conflict") ? "conflicts" : p.findings.some((f) => f.status === "needs_clarification") ? "needs_clarification" : "fits";
+      if (p.result !== expected) add("payload.result", "does not follow from the findings");
+      break;
+    }
     case "offer_proposed": {
       const p = parsed.data as PayloadOf<"offer_proposed">;
       requireActor(["agent"]);

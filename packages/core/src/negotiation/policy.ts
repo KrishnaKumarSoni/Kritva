@@ -7,8 +7,9 @@
  */
 import type { DecisionKind, OfferTerm } from "../record/events.ts";
 import type { Value } from "../schema/records.ts";
+import { applicableLimit, type DealCheck } from "../dealspace/check.ts";
 import { numericValue, violatesFixedRule, withTerm, type MandateView } from "./mandate-view.ts";
-import type { NegotiationState, StatedOffer } from "./state.ts";
+import { fitsNow, type NegotiationState, type StatedOffer } from "./state.ts";
 
 export interface Interpretation {
   intent: "offer" | "accept_stated_terms" | "question" | "request_change" | "reject" | "greeting" | "other";
@@ -18,6 +19,14 @@ export interface Interpretation {
   asksPrivateInfo: boolean;
   claimsAuthority: boolean;
   questions: string[];
+  /** Things the counterparty asked for that no mandate term covers (e.g. an added service). */
+  newTerms: Array<{ name: string; description: string | null; value: Value | null }>;
+}
+
+/** The counterparty's proposal as a whole: their terms on top of the agent's current package, and its deal-space check. */
+export interface DealInput {
+  package: OfferTerm[];
+  check: DealCheck;
 }
 
 export type Move =
@@ -44,11 +53,16 @@ export interface Plan {
   respondingTo: number | null;
   /** Something the reply must tell the counterparty first. */
   notice: "approval_rejected" | "terms_changed" | "rephrase" | null;
+  /** Term names to ask the counterparty about (missing details a rule depends on). Values are never suggested. */
+  clarify: string[];
+  /** Requests the mandate does not address: taken to the principal, never promised or priced. */
+  unresolved: string[];
 }
 
-export function decide(state: NegotiationState, interp: Interpretation): Plan {
+export function decide(state: NegotiationState, interp: Interpretation, deal: DealInput): Plan {
   const view = state.view;
   const n = view.negotiable;
+  const nameOf = (id: string) => state.space.terms.find((t) => t.termId === id)?.name ?? id;
   const plan: Plan = {
     move: "answer",
     decision: { kind: "answer", reason: "Answer the counterparty." },
@@ -60,6 +74,8 @@ export function decide(state: NegotiationState, interp: Interpretation): Plan {
     questions: interp.questions,
     respondingTo: null,
     notice: null,
+    clarify: [],
+    unresolved: interp.newTerms.map((t) => t.name),
   };
 
   if (state.outcome.kind === "agreement") {
@@ -75,29 +91,48 @@ export function decide(state: NegotiationState, interp: Interpretation): Plan {
       })
     : interp.offerTerms;
 
-  // Split the counterparty's terms into the negotiable amount and requests on other terms.
+  // Sort the counterparty's terms by what the deal-space check says about each one.
   let amount: number | null = null;
+  const extras: OfferTerm[] = [];
+  const findingsFor = (termId: string) => deal.check.findings.filter((f) => f.termId === termId);
   for (const t of proposedTerms) {
     if (n && t.termId === n.termId && "amount" in t.value) {
       amount = t.value.amount as number;
       continue;
     }
     const current = view.defaultPackage.find((d) => d.termId === t.termId);
-    const unchanged = current && JSON.stringify(current.value) === JSON.stringify(t.value);
-    if (!unchanged) plan.declined.push({ termId: t.termId, requested: t.value });
+    if (current && JSON.stringify(current.value) === JSON.stringify(t.value)) continue;
+    const findings = findingsFor(t.termId);
+    if (findings.some((f) => f.status === "conflict")) plan.declined.push({ termId: t.termId, requested: t.value });
+    else if (findings.some((f) => f.status === "needs_clarification" && f.basis === "condition")) extras.push(t);
+    else if (findings.some((f) => f.status === "needs_clarification")) plan.unresolved.push(nameOf(t.termId));
+    else extras.push(t);
+  }
+  // Details a rule depends on that the proposal leaves out: ask for them, without suggesting values.
+  for (const f of deal.check.findings) {
+    if (f.status === "needs_clarification" && f.basis === "condition" && f.relatedTermId && !deal.package.some((t) => t.termId === f.relatedTermId)) {
+      const name = nameOf(f.relatedTermId);
+      if (!plan.clarify.includes(name)) plan.clarify.push(name);
+    }
+  }
+  // A change to another term can break the price it was tied to: treat that price as the offer to answer.
+  if (amount === null && n && proposedTerms.length > 0 && findingsFor(n.termId).some((f) => f.status !== "fits")) {
+    const tied = deal.package.find((t) => t.termId === n.termId);
+    if (tied && "amount" in tied.value) amount = tied.value.amount as number;
   }
   plan.respondingTo = amount;
   const declineReason = plan.declined.length > 0 ? " Requested changes to other terms are outside the mandate." : "";
 
   // Already waiting on the principal: repeating acceptance changes nothing.
-  if (state.status === "awaiting_approval" && amount === null && plan.declined.length === 0) {
+  if (state.status === "awaiting_approval" && amount === null && plan.declined.length === 0 && extras.length === 0) {
     return { ...plan, move: "await_approval", decision: { kind: "hold", reason: "Waiting for the principal's approval." } };
   }
 
   // Accepting the stated terms, with nothing changed.
-  if (interp.acceptsStatedTerms && amount === null && plan.declined.length === 0) {
+  if (interp.acceptsStatedTerms && amount === null && plan.declined.length === 0 && extras.length === 0 && plan.unresolved.length === 0) {
     const final = state.pendingFinal;
-    if (final && final.communicated) {
+    // Accept only terms that were delivered and still pass a check against the mandate in force.
+    if (final && final.communicated && fitsNow(state, final.offerId, final.termsHash)) {
       if (view.acceptRequiresApproval) {
         return { ...plan, move: "request_approval", acceptanceOf: final, decision: { kind: "request_approval", reason: "Counterparty accepted the stated terms; the mandate requires the principal's approval." } };
       }
@@ -106,38 +141,52 @@ export function decide(state: NegotiationState, interp: Interpretation): Plan {
     return {
       ...plan,
       move: "state_final_terms",
-      offer: { terms: finalPackage(view, state.currentAsk), basis: "final_terms" },
+      offer: { terms: finalPackage(view, state.currentAsk === null ? null : Math.max(state.currentAsk, n?.limit ?? -Infinity), packageExtras(state, extras)), basis: "final_terms" },
       decision: { kind: "state_final_terms", reason: "Counterparty agreed in principle; state the complete terms for confirmation." },
     };
   }
 
   if (amount !== null && n && state.currentAsk !== null) {
-    const ask = state.currentAsk;
     const atLeast = (x: number, y: number) => (n.direction === "up" ? x >= y : x <= y);
+    // An ask below the limit now in force (after a mandate change) is raised back to it.
+    const ask = atLeast(state.currentAsk, n.limit) ? state.currentAsk : n.limit;
     const step = niceStep(n.opening);
+    const keep = packageExtras(state, extras);
+    // How far this particular package may go: conditional relaxations apply only when their conditions hold.
+    const limit = applicableLimit(state.space, n.termId, deal.package)?.amount ?? n.limit;
+    const settled = !findingsFor(n.termId).some((f) => f.status === "needs_clarification" && f.basis === "condition");
+    if (!settled && !atLeast(amount, n.limit)) {
+      return { ...plan, move: "answer", decision: { kind: "answer", reason: "The offer depends on a detail the counterparty has not given; ask for it." } };
+    }
 
     if (atLeast(amount, ask)) {
-      return finalAt(plan, view, ask, `Offer meets the current ask.${declineReason}`);
+      return finalAt(plan, view, ask, keep, `Offer meets the current ask.${declineReason}`);
     }
     if (!n.canConcede) {
-      return holdAt(plan, view, ask, `No authority to move from the current ask.${declineReason}`);
+      return holdAt(plan, view, ask, keep, `No authority to move from the current ask.${declineReason}`);
     }
-    if (!atLeast(amount, n.limit)) {
-      if (ask === n.limit) return holdAt(plan, view, ask, `Offer is outside the limit; the ask is already at the limit.${declineReason}`);
-      const next = clampToLimit(n, roundToward(n, ask - towardSign(n) * Math.abs(ask - n.limit) / 2, step));
-      return counterAt(plan, view, next === ask ? n.limit : next, `Offer is outside the limit; counter without revealing it.${declineReason}`);
+    if (!atLeast(amount, limit)) {
+      if (ask === limit) return holdAt(plan, view, ask, keep, `Offer is outside the limit; the ask is already at the limit.${declineReason}`);
+      const next = clampToLimit({ ...n, limit }, roundToward(n, ask - towardSign(n) * Math.abs(ask - limit) / 2, step));
+      return counterAt(plan, view, next === ask ? limit : next, keep, `Offer is outside the limit; counter without revealing it.${declineReason}`);
     }
     const repeated = state.counterpartyAmounts.slice(0, -1).includes(amount);
     if (state.countersMade >= 2 || repeated || Math.abs(ask - amount) <= step) {
-      return finalAt(plan, view, amount, `Offer is within the mandate; state complete terms.${declineReason}`);
+      return finalAt(plan, view, amount, keep, `Offer is within the mandate; state complete terms.${declineReason}`);
     }
     const middle = roundToward(n, (ask + amount) / 2, step);
-    if (middle === ask || middle === amount) return finalAt(plan, view, amount, `Offer is within the mandate; state complete terms.${declineReason}`);
-    return counterAt(plan, view, middle, `Offer is within the mandate but below the ask; counter in between.${declineReason}`);
+    if (middle === ask || middle === amount) return finalAt(plan, view, amount, keep, `Offer is within the mandate; state complete terms.${declineReason}`);
+    return counterAt(plan, view, middle, keep, `Offer is within the mandate but below the ask; counter in between.${declineReason}`);
   }
 
   if (plan.declined.length > 0) {
     return { ...plan, move: "answer", decision: { kind: "decline_request", reason: "Requested term changes are outside the mandate." } };
+  }
+  if (plan.unresolved.length > 0) {
+    return { ...plan, move: "answer", decision: { kind: "answer", reason: "The request is not covered by the mandate; take it to the principal without promising anything." } };
+  }
+  if (plan.clarify.length > 0) {
+    return { ...plan, move: "answer", decision: { kind: "answer", reason: "A detail the terms depend on is missing; ask for it." } };
   }
   if (interp.asksPrivateInfo) {
     return { ...plan, move: "answer", decision: { kind: "decline_request", reason: "Private limits are never disclosed." } };
@@ -145,22 +194,33 @@ export function decide(state: NegotiationState, interp: Interpretation): Plan {
   return plan;
 }
 
-function finalPackage(view: MandateView, amount: number | null): OfferTerm[] {
+/** The principal's package with the negotiated amount and any counterparty terms that fit. */
+function finalPackage(view: MandateView, amount: number | null, extras: OfferTerm[] = []): OfferTerm[] {
   const n = view.negotiable;
-  const base = [...view.defaultPackage].sort((a, b) => a.termId.localeCompare(b.termId));
-  return n && amount !== null ? withTerm(base, n.termId, numericValue(n, amount)) : base;
+  let pkg = [...view.defaultPackage].sort((a, b) => a.termId.localeCompare(b.termId));
+  for (const t of extras) pkg = withTerm(pkg, t.termId, t.value);
+  return n && amount !== null ? withTerm(pkg, n.termId, numericValue(n, amount)) : pkg;
 }
 
-function finalAt(plan: Plan, view: MandateView, amount: number, reason: string): Plan {
-  return { ...plan, move: "state_final_terms", offer: { terms: finalPackage(view, amount), basis: "final_terms" }, decision: { kind: "state_final_terms", reason } };
+/** Counterparty terms already agreed into the agent's package earlier, plus new ones that fit. */
+function packageExtras(state: NegotiationState, extras: OfferTerm[]): OfferTerm[] {
+  const n = state.view.negotiable;
+  const earlier = (state.lastProposed?.terms ?? []).filter((t) => t.termId !== n?.termId && !state.view.defaultPackage.some((d) => d.termId === t.termId));
+  const merged = new Map(earlier.map((t) => [t.termId, t]));
+  for (const t of extras) merged.set(t.termId, t);
+  return [...merged.values()];
 }
 
-function counterAt(plan: Plan, view: MandateView, amount: number, reason: string): Plan {
-  return { ...plan, move: "counter", offer: { terms: finalPackage(view, amount), basis: "counter" }, decision: { kind: "counter", reason } };
+function finalAt(plan: Plan, view: MandateView, amount: number, extras: OfferTerm[], reason: string): Plan {
+  return { ...plan, move: "state_final_terms", offer: { terms: finalPackage(view, amount, extras), basis: "final_terms" }, decision: { kind: "state_final_terms", reason } };
 }
 
-function holdAt(plan: Plan, view: MandateView, amount: number, reason: string): Plan {
-  return { ...plan, move: "hold", offer: { terms: finalPackage(view, amount), basis: "counter" }, decision: { kind: "hold", reason } };
+function counterAt(plan: Plan, view: MandateView, amount: number, extras: OfferTerm[], reason: string): Plan {
+  return { ...plan, move: "counter", offer: { terms: finalPackage(view, amount, extras), basis: "counter" }, decision: { kind: "counter", reason } };
+}
+
+function holdAt(plan: Plan, view: MandateView, amount: number, extras: OfferTerm[], reason: string): Plan {
+  return { ...plan, move: "hold", offer: { terms: finalPackage(view, amount, extras), basis: "counter" }, decision: { kind: "hold", reason } };
 }
 
 /** A round increment for the term's scale: 500 for tens of thousands, 50 for thousands, and so on. */
@@ -181,16 +241,19 @@ function clampToLimit(n: { direction: "up" | "down"; limit: number }, value: num
 }
 
 /** Plan-level check: every value the agent offers satisfies the mandate. Runs before wording. */
-export function planViolations(view: MandateView, plan: Plan): string[] {
+export function planViolations(state: NegotiationState, plan: Plan): string[] {
   const problems: string[] = [];
   if (!plan.offer) return problems;
+  const view = state.view;
   const n = view.negotiable;
   for (const t of plan.offer.terms) {
     if (!view.terms.has(t.termId)) problems.push(`offer names an unknown term ${t.termId}`);
     if (violatesFixedRule(view, t.termId, t.value)) problems.push(`offer breaks a fixed rule on ${view.terms.get(t.termId)?.name ?? t.termId}`);
     if (n && t.termId === n.termId && "amount" in t.value) {
       const amount = t.value.amount as number;
-      if (n.direction === "up" ? amount < n.limit : amount > n.limit) problems.push("offer crosses the principal's limit");
+      // The limit that applies to this exact package, conditional relaxations included only when they hold.
+      const limit = applicableLimit(state.space, n.termId, plan.offer.terms)?.amount ?? n.limit;
+      if (n.direction === "up" ? amount < limit : amount > limit) problems.push("offer crosses the principal's limit");
     }
   }
   return problems;

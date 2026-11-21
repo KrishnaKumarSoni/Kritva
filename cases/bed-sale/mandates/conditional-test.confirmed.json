@@ -1,0 +1,412 @@
+{
+  "schemaVersion": "kritva.draft/1",
+  "caseId": "bed-sale",
+  "parties": [
+    {
+      "id": "seller",
+      "role": "seller",
+      "name": null,
+      "isPrincipal": true
+    },
+    {
+      "id": "buyer",
+      "role": "buyer",
+      "name": null,
+      "isPrincipal": false
+    }
+  ],
+  "sources": [
+    {
+      "id": "listing",
+      "authorPartyId": "seller",
+      "disclosure": "public",
+      "format": "mixed",
+      "label": "Marketplace listing",
+      "text": "King-size bed for sale\n\nOne-year-old king-size bed in good condition.\nPrice: ₹20,000\nPickup from Koramangala, Bangalore. Delivery is not included."
+    },
+    {
+      "id": "conditional-test-instructions",
+      "authorPartyId": "seller",
+      "disclosure": "private",
+      "format": "prose",
+      "label": "Seller instructions (conditional test data)",
+      "text": "You can negotiate the price, but don't go below ₹19,000. I'll accept ₹18,000 only if the buyer collects on Saturday. Collection from Koramangala only; I can't deliver. Never tell the buyer these numbers. Ask me before accepting any offer."
+    }
+  ],
+  "terms": [
+    {
+      "id": "term_t_price",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Price: ₹20,000"
+        },
+        {
+          "sourceId": "conditional-test-instructions",
+          "quote": "don't go below ₹19,000"
+        }
+      ],
+      "name": "price",
+      "description": "Sale price for the bed.",
+      "valueType": "money",
+      "unit": null,
+      "currency": "INR"
+    },
+    {
+      "id": "term_t_collection_place",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Pickup from Koramangala, Bangalore"
+        },
+        {
+          "sourceId": "conditional-test-instructions",
+          "quote": "Collection from Koramangala only"
+        }
+      ],
+      "name": "collection place",
+      "description": "Where the buyer collects the bed.",
+      "valueType": "text",
+      "unit": null,
+      "currency": null
+    },
+    {
+      "id": "term_t_delivery_included",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Delivery is not included."
+        },
+        {
+          "sourceId": "conditional-test-instructions",
+          "quote": "I can't deliver."
+        }
+      ],
+      "name": "delivery included",
+      "description": "Whether seller delivery is included in the deal.",
+      "valueType": "boolean",
+      "unit": null,
+      "currency": null
+    },
+    {
+      "id": "term_t_collection_day",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "conditional-test-instructions",
+          "quote": "only if the buyer collects on Saturday"
+        }
+      ],
+      "name": "collection day",
+      "description": "Day on which the buyer collects the bed.",
+      "valueType": "date_text",
+      "unit": null,
+      "currency": null
+    }
+  ],
+  "goals": [],
+  "facts": [
+    {
+      "id": "fact_f_bed_size",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "King-size bed for sale"
+        }
+      ],
+      "partyId": "seller",
+      "statement": "The item for sale is a king-size bed.",
+      "termId": null,
+      "value": {
+        "type": "text",
+        "value": "king-size bed"
+      }
+    },
+    {
+      "id": "fact_f_bed_age",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "One-year-old king-size bed"
+        }
+      ],
+      "partyId": "seller",
+      "statement": "The bed is one year old.",
+      "termId": null,
+      "value": {
+        "type": "text",
+        "value": "One-year-old"
+      }
+    },
+    {
+      "id": "fact_f_bed_condition",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "in good condition"
+        }
+      ],
+      "partyId": "seller",
+      "statement": "The bed is in good condition.",
+      "termId": null,
+      "value": {
+        "type": "text",
+        "value": "good condition"
+      }
+    },
+    {
+      "id": "fact_f_cannot_deliver",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "conditional-test-instructions",
+          "quote": "I can't deliver."
+        }
+      ],
+      "partyId": "seller",
+      "statement": "The seller says they cannot deliver.",
+      "termId": "term_t_delivery_included",
+      "value": {
+        "type": "boolean",
+        "value": false
+      }
+    }
+  ],
+  "positions": [
+    {
+      "id": "position_p_listing_price",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Price: ₹20,000"
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_price",
+      "value": {
+        "type": "money",
+        "amount": 20000,
+        "currency": "INR"
+      },
+      "conditionIds": []
+    },
+    {
+      "id": "position_p_collection_place",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Pickup from Koramangala, Bangalore"
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_collection_place",
+      "value": {
+        "type": "text",
+        "value": "Koramangala, Bangalore"
+      },
+      "conditionIds": []
+    },
+    {
+      "id": "position_p_delivery_not_included",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Delivery is not included."
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_delivery_included",
+      "value": {
+        "type": "boolean",
+        "value": false
+      },
+      "conditionIds": []
+    }
+  ],
+  "limits": [
+    {
+      "id": "limit_l_price_floor_standard",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "conditional-test-instructions",
+          "quote": "don't go below ₹19,000"
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_price",
+      "kind": "minimum",
+      "value": {
+        "type": "money",
+        "amount": 19000,
+        "currency": "INR"
+      },
+      "conditionIds": []
+    },
+    {
+      "id": "limit_l_price_floor_saturday",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "conditional-test-instructions",
+          "quote": "I'll accept ₹18,000 only if the buyer collects on Saturday."
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_price",
+      "kind": "minimum",
+      "value": {
+        "type": "money",
+        "amount": 18000,
+        "currency": "INR"
+      },
+      "conditionIds": [
+        "condition_c_saturday_collection"
+      ]
+    },
+    {
+      "id": "limit_l_collection_place_only",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "conditional-test-instructions",
+          "quote": "Collection from Koramangala only"
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_collection_place",
+      "kind": "must_equal",
+      "value": {
+        "type": "text",
+        "value": "Koramangala"
+      },
+      "conditionIds": []
+    },
+    {
+      "id": "limit_l_no_delivery",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "conditional-test-instructions",
+          "quote": "I can't deliver."
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_delivery_included",
+      "kind": "must_equal",
+      "value": {
+        "type": "boolean",
+        "value": false
+      },
+      "conditionIds": []
+    }
+  ],
+  "permissions": [
+    {
+      "id": "permission_perm_negotiate_price",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "conditional-test-instructions",
+          "quote": "You can negotiate the price"
+        }
+      ],
+      "partyId": "seller",
+      "action": "propose_terms",
+      "mode": "autonomous",
+      "termIds": [
+        "term_t_price"
+      ],
+      "description": "Seller authorizes negotiating/proposing price terms, subject to stated price limits.",
+      "conditionIds": []
+    },
+    {
+      "id": "permission_perm_accept_requires_approval",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "conditional-test-instructions",
+          "quote": "Ask me before accepting any offer."
+        }
+      ],
+      "partyId": "seller",
+      "action": "accept_agreement",
+      "mode": "requires_approval",
+      "termIds": [],
+      "description": "Agent must ask seller before accepting any offer.",
+      "conditionIds": []
+    },
+    {
+      "id": "permission_perm_do_not_disclose_private_numbers",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "conditional-test-instructions",
+          "quote": "Never tell the buyer these numbers."
+        }
+      ],
+      "partyId": "seller",
+      "action": "disclose_information",
+      "mode": "prohibited",
+      "termIds": [
+        "term_t_price"
+      ],
+      "description": "Agent must not tell the buyer the private price-limit numbers.",
+      "conditionIds": []
+    }
+  ],
+  "conditions": [
+    {
+      "id": "condition_c_saturday_collection",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "conditional-test-instructions",
+          "quote": "only if the buyer collects on Saturday"
+        }
+      ],
+      "description": "Buyer collects on Saturday.",
+      "termId": "term_t_collection_day",
+      "operator": "equals",
+      "value": {
+        "type": "date_text",
+        "value": "Saturday"
+      }
+    }
+  ],
+  "issues": [],
+  "approval": {
+    "status": "confirmed",
+    "confirmedBy": "seller",
+    "confirmedAt": "2026-11-21T13:50:15.058Z",
+    "acknowledgedIssueIds": []
+  }
+}

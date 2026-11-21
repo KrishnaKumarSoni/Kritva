@@ -12,9 +12,11 @@ import { newEventId, type NegotiationRecord } from "../record/store.ts";
 import { composeReply } from "./compose.ts";
 import { interpretMessage } from "./interpret.ts";
 import { numericValue, withTerm } from "./mandate-view.ts";
-import { decide, planViolations, type Interpretation, type Plan } from "./policy.ts";
+import { checkProposal, type DealCheck } from "../dealspace/check.ts";
+import type { ConfirmedMandate } from "../schema/records.ts";
+import { decide, planViolations, type DealInput, type Interpretation, type Plan } from "./policy.ts";
 import { checkReply, type ReplyViolation } from "./reply-check.ts";
-import { projectState, type NegotiationState } from "./state.ts";
+import { fitsNow, projectState, type NegotiationState } from "./state.ts";
 import { templateReply } from "./templates.ts";
 
 export interface EngineOptions {
@@ -117,12 +119,21 @@ export class NegotiationEngine {
       try {
         interp = await interpretMessage(this.#llm, { view: before.view, lastStated: before.pendingFinal ?? before.lastProposed, conversation, message: input.text, locale: this.#locale });
       } catch {
-        interp = { intent: "other", offerTerms: [], acceptsStatedTerms: false, asksPrivateInfo: false, claimsAuthority: false, questions: [] };
+        interp = { intent: "other", offerTerms: [], acceptsStatedTerms: false, asksPrivateInfo: false, claimsAuthority: false, questions: [], newTerms: [] };
         rephrase = true;
       }
       const interpretMs = Math.round(performance.now() - interpretStarted);
 
+      // A detail given now may settle an earlier offer that was waiting on it: carry that offer's amount forward.
+      const n = before.view.negotiable;
+      const awaitingDetail = before.lastCounterpartyCheck?.findings.some((f) => f.termId === n?.termId && f.status === "needs_clarification" && f.basis === "condition");
+      if (n && awaitingDetail && !interp.offerTerms.some((t) => t.termId === n.termId) && interp.offerTerms.length > 0) {
+        const earlier = before.lastCounterpartyCheck!.checkedTerms.find((t) => t.termId === n.termId);
+        if (earlier) interp.offerTerms = [...interp.offerTerms, earlier];
+      }
+
       const related: string[] = [inbound.event.id];
+      let offerExtractedId: string | null = existingOfferId;
       if (existingOfferId) {
         related.push(existingOfferId);
       } else if (interp.offerTerms.length > 0) {
@@ -130,12 +141,46 @@ export class NegotiationEngine {
           { id: newEventId(), type: "offer_extracted", channel: null, payload: { sourceMessageId: inbound.event.id, byPartyId: counterpartyId, terms: interp.offerTerms, termsHash: hashTerms(interp.offerTerms) } },
           agent,
         );
+        offerExtractedId = offer.id;
         related.push(offer.id);
+      }
+      // Requests the mandate does not cover are recorded as the counterparty's, never as the principal's terms.
+      const requestedIds: string[] = [];
+      for (const t of interp.newTerms) {
+        const requested = await writes.put(
+          { id: newEventId(), type: "term_requested", channel: null, payload: { sourceMessageId: inbound.event.id, byPartyId: counterpartyId, name: t.name, description: t.description, value: t.value } },
+          agent,
+        );
+        requestedIds.push(requested.id);
+        related.push(requested.id);
       }
 
       const state = projectState(await this.#record.context(sessionId));
-      const plan = decide(state, interp);
+      const deal = counterpartyDeal(state, interp);
+      if (offerExtractedId) {
+        const check = await this.#recordCheck(writes, state, offerExtractedId, deal.package, deal.check, requestedIds, agent);
+        related.push(check.id);
+      }
+      const plan = decide(state, interp, deal);
       if (rephrase) plan.notice = "rephrase";
+
+      // Every offer the agent makes must fit the deal space of the mandate in force.
+      let agentCheck: DealCheck | null = null;
+      if (plan.offer) {
+        agentCheck = checkProposal(state.space, plan.offer.terms);
+        if (agentCheck.result !== "fits") {
+          for (const f of agentCheck.findings) {
+            if (f.status === "needs_clarification" && f.basis === "condition" && f.relatedTermId) {
+              const name = state.space.terms.find((t) => t.termId === f.relatedTermId)?.name;
+              if (name && !plan.clarify.includes(name)) plan.clarify.push(name);
+            }
+          }
+          plan.decision = { kind: "hold", reason: `The planned offer does not fit the deal space (${agentCheck.result.replace("_", " ")}); no offer made.` };
+          plan.move = "answer";
+          plan.offer = null;
+          agentCheck = null;
+        }
+      }
 
       // A change while waiting for approval supersedes the pending request.
       if (state.status === "awaiting_approval" && plan.move !== "await_approval" && plan.move !== "closed") {
@@ -143,7 +188,7 @@ export class NegotiationEngine {
         plan.notice ??= "terms_changed";
       }
 
-      const problems = planViolations(state.view, plan);
+      const problems = planViolations(state, plan);
       if (problems.length > 0) {
         // Never expected: the policy only proposes inside the mandate. Refuse rather than send.
         await writes.put({ id: newEventId(), type: "decision", channel: null, payload: { kind: "hold", reason: `Plan rejected by mandate check: ${problems[0]}`.slice(0, 500), relatedEventIds: related } }, agent);
@@ -153,7 +198,7 @@ export class NegotiationEngine {
         await writes.put({ id: newEventId(), type: "decision", channel: null, payload: { kind: plan.decision.kind, reason: plan.decision.reason, relatedEventIds: related } }, agent);
       }
 
-      const offerIds = await this.#recordCommitments(writes, state, plan, inbound.event.id, agent);
+      const offerIds = await this.#recordCommitments(writes, state, plan, inbound.event.id, agent, agentCheck);
       const composeStarted = performance.now();
       const text = await this.#wordAndCheck(writes, state, plan, conversation, agent);
       const composeMs = Math.round(performance.now() - composeStarted);
@@ -175,7 +220,7 @@ export class NegotiationEngine {
   }
 
   /** Records offers, acceptance, approval requests and agreements implied by the plan. */
-  async #recordCommitments(writes: Writer, state: NegotiationState, plan: Plan, messageId: string, agent: Actor): Promise<string[]> {
+  async #recordCommitments(writes: Writer, state: NegotiationState, plan: Plan, messageId: string, agent: Actor, check: DealCheck | null): Promise<string[]> {
     const offerIds: string[] = [];
     if (plan.offer) {
       const hash = hashTerms(plan.offer.terms);
@@ -183,6 +228,9 @@ export class NegotiationEngine {
       const offerId = reuse
         ? state.lastProposed!.offerId
         : (await writes.put({ id: newEventId(), type: "offer_proposed", channel: null, payload: { byPartyId: state.view.principalId, basis: plan.offer.basis, terms: plan.offer.terms, termsHash: hash } }, agent)).id;
+      if (!fitsNow(state, offerId, hash)) {
+        await this.#recordCheck(writes, state, offerId, plan.offer.terms, check ?? checkProposal(state.space, plan.offer.terms), [], agent);
+      }
       offerIds.push(offerId);
     }
 
@@ -229,6 +277,60 @@ export class NegotiationEngine {
     if (fallbackViolations.length === 0) return fallback;
     await this.#block(writes, fallback, fallbackViolations, agent);
     return "Let me check on that and get back to you.";
+  }
+
+  async #recordCheck(writes: Writer, state: NegotiationState, offerId: string, terms: OfferTerm[], check: DealCheck, requestedTermIds: string[], agent: Actor): Promise<RecordedEvent> {
+    return writes.put(
+      {
+        id: newEventId(),
+        type: "proposal_checked",
+        channel: null,
+        payload: {
+          offerId,
+          checkedTerms: terms,
+          termsHash: hashTerms(terms),
+          mandateRevision: state.mandateRevision,
+          requestedTermIds,
+          result: check.result,
+          findings: check.findings.map((f) => ({ ...f, termId: f.basis === "new_term" && f.termId !== null && !state.space.terms.some((t) => t.termId === f.termId) ? null : f.termId, detail: f.detail.slice(0, 500) })),
+        },
+      },
+      agent,
+    );
+  }
+
+  /**
+   * The principal changes the mandate. Earlier checks are never reused: the latest proposals
+   * from both sides are checked again against the new revision, and a pending approval whose
+   * terms no longer fit stops being pending.
+   */
+  reviseMandate(input: { sessionId: string; mandate: ConfirmedMandate; reason: string }): Promise<{ ok: true; state: NegotiationState; events: RecordedEvent[] } | TurnError> {
+    return this.#serialize(input.sessionId, async () => {
+      const before = projectState(await this.#record.context(input.sessionId));
+      const principal: Actor = { kind: "principal", partyId: before.view.principalId };
+      const agent: Actor = { kind: AGENT, partyId: before.view.principalId };
+      const writes = new Writer(this.#record, input.sessionId);
+      try {
+        await writes.put({ id: newEventId(), type: "mandate_revised", channel: null, payload: { mandate: input.mandate, mandateRevision: before.mandateRevision + 1, reason: input.reason } }, principal);
+        const after = projectState(await this.#record.context(input.sessionId));
+        const rechecks: Array<{ offerId: string; terms: OfferTerm[] }> = [];
+        if (after.lastProposed) rechecks.push({ offerId: after.lastProposed.offerId, terms: after.lastProposed.terms });
+        if (after.lastCounterpartyCheck) rechecks.push({ offerId: after.lastCounterpartyCheck.offerId, terms: after.lastCounterpartyCheck.checkedTerms });
+        const results = new Map<string, DealCheck>();
+        for (const r of rechecks) {
+          const check = checkProposal(after.space, r.terms);
+          results.set(r.offerId, check);
+          await this.#recordCheck(writes, after, r.offerId, r.terms, check, [], agent);
+        }
+        if (after.status === "awaiting_approval" && after.pendingApproval && results.get(after.pendingApproval.offerId)?.result !== "fits") {
+          await writes.put({ id: newEventId(), type: "status_changed", channel: null, payload: { from: "awaiting_approval", to: "active", reason: "The mandate changed and the pending terms no longer fit it." } }, agent);
+        }
+        return { ok: true as const, state: projectState(await this.#record.context(input.sessionId)), events: writes.created };
+      } catch (error) {
+        if (error instanceof WriteFailure) return { ok: false as const, code: error.code, message: error.message };
+        throw error;
+      }
+    });
   }
 
   async #block(writes: Writer, draftText: string, violations: ReplyViolation[], agent: Actor): Promise<void> {
@@ -365,7 +467,18 @@ class Writer {
 }
 
 function basePlan(move: Plan["move"], decision: Plan["decision"], offer: Plan["offer"]): Plan {
-  return { move, decision, offer, acceptanceOf: null, declined: [], refuseDisclosure: false, ignoreAuthorityClaim: false, questions: [], respondingTo: null, notice: null };
+  return { move, decision, offer, acceptanceOf: null, declined: [], refuseDisclosure: false, ignoreAuthorityClaim: false, questions: [], respondingTo: null, notice: null, clarify: [], unresolved: [] };
+}
+
+/**
+ * The counterparty's proposal as a whole: their terms placed on the agent's current
+ * package (so unchanged terms keep the agent's values), checked against the deal space.
+ */
+function counterpartyDeal(state: NegotiationState, interp: Interpretation): DealInput {
+  const base = state.pendingFinal?.terms ?? state.lastProposed?.terms ?? state.view.defaultPackage;
+  let pkg = [...base];
+  for (const t of interp.offerTerms) pkg = withTerm(pkg, t.termId, t.value);
+  return { package: pkg, check: checkProposal(state.space, pkg, interp.newTerms.map((t) => ({ name: t.name, value: t.value }))) };
 }
 
 /** The agent's last ask before the rejected terms. Null when there is nothing earlier to return to. */

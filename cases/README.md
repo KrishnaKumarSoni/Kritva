@@ -22,5 +22,5 @@ Each folder holds one negotiation case as plain input data. Core code and shared
 
 | Case | Principal | Purpose |
 | --- | --- | --- |
-| `bed-sale` | seller | The live demonstration case |
+| `bed-sale` | seller | The live demonstration case. `mandates/demo` is the demo mandate; `mandates/conditional-test` is test data for conditional concessions. `buyer-scenarios/` holds the buyer scenarios for `npm run scenarios`. |
 | `logo-design` | buyer | A second case that shows reuse: five terms, and a principal who is buying, not selling |

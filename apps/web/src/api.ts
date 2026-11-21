@@ -53,10 +53,36 @@ export interface OperatorState {
   counterpartyOffers: Array<string | null>;
 }
 
+export interface DealSpaceView {
+  terms: Array<{
+    termId: string;
+    name: string;
+    kind: string;
+    kindLabel: string;
+    value: string | null;
+    valueIsPrivate: boolean;
+    rules: Array<{ id: string; text: string; private: boolean; conditional: boolean }>;
+    inconsistent: boolean;
+    openIssues: number;
+  }>;
+  facts: Array<{ id: string; statement: string; private: boolean }>;
+  requested: Array<{ id: string; name: string; value: string | null }>;
+  lastBuyerCheck: { result: "fits" | "conflicts" | "needs_clarification"; terms: string[]; findings: Array<{ term: string; status: string; detail: string }> } | null;
+}
+
 export interface OperatorView {
   session: { id: string; caseId: string; createdAt: string; previousSessionId: string | null };
+  mandateId: string | null;
   state: OperatorState;
+  dealSpace: DealSpaceView;
   events: RecordEvent[];
+}
+
+export interface MandateOption {
+  id: string;
+  title: string;
+  description: string | null;
+  caseId: string;
 }
 
 export interface SessionRow {
@@ -92,8 +118,9 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 
 export const api = {
   listSessions: () => call<SessionRow[]>("GET", "/api/operator/sessions"),
-  startSession: (previousSessionId: string | null) =>
-    call<{ session: SessionRow }>("POST", "/api/operator/sessions", { mandateId: "bed-sale/demo", previousSessionId }),
+  listMandates: () => call<MandateOption[]>("GET", "/api/operator/mandates"),
+  startSession: (mandateId: string, previousSessionId: string | null) =>
+    call<{ session: SessionRow }>("POST", "/api/operator/sessions", { mandateId, previousSessionId }),
   operatorView: (id: string) => call<OperatorView>("GET", `/api/operator/sessions/${id}`),
   respond: (id: string, requestId: string, decision: "approved" | "rejected") =>
     call<unknown>("POST", `/api/operator/sessions/${id}/approvals/${requestId}`, { decision }),

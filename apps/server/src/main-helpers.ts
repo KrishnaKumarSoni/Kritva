@@ -10,7 +10,7 @@ export function loadConfirmedMandates(casesDir: string): MandateEntry[] {
     if (!caseDir.isDirectory()) continue;
     const caseFile = JSON.parse(readFileSync(join(casesDir, caseDir.name, "case.json"), "utf8")) as {
       description?: string;
-      mandates?: Record<string, { file: string; description?: string }>;
+      mandates?: Record<string, { file: string; description?: string; label?: string }>;
     };
     for (const [name, spec] of Object.entries(caseFile.mandates ?? {})) {
       const path = join(casesDir, caseDir.name, spec.file);
@@ -20,7 +20,7 @@ export function loadConfirmedMandates(casesDir: string): MandateEntry[] {
         console.warn(`Skipping ${caseDir.name}/${name}: not a valid confirmed mandate.`);
         continue;
       }
-      entries.push({ id: `${caseDir.name}/${name}`, title: spec.description ?? caseFile.description ?? caseDir.name, mandate: checked.mandate });
+      entries.push({ id: `${caseDir.name}/${name}`, title: spec.label ?? spec.description ?? caseDir.name, description: spec.description ?? null, mandate: checked.mandate });
     }
   }
   return entries;

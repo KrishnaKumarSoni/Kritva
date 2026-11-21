@@ -1,0 +1,18 @@
+{
+  "name": "conditional-saturday",
+  "mandate": "bed-sale/conditional-test",
+  "description": "Test data: ₹18,000 is allowed only with Saturday collection. The buyer offers exactly that; the condition stays attached through to the agreement.",
+  "turns": [
+    { "buyer": "I can do ₹18,000 if I collect it on Saturday." },
+    { "buyer": "₹18,000 with Saturday collection is my final offer." },
+    { "buyer": "Yes, I confirm those terms." },
+    { "seller": "approved" }
+  ],
+  "expect": {
+    "outcome": ["agreement"],
+    "agreedAmountAtLeast": 18000,
+    "agreedTermEquals": { "collection day": "Saturday" },
+    "buyerCheckResults": ["fits"],
+    "agentMustNotSay": []
+  }
+}

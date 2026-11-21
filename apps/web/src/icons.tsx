@@ -49,7 +49,19 @@ export const RefreshIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M19 5v4h-4" />
   </svg>
 );
-export const AlertIcon = (p: SVGProps<SVGSVGElement>) => (
+export const HelpIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="12" r="8" />
+    <path d="M9.75 9.5a2.25 2.25 0 1 1 3.1 2.08c-.5.2-.85.68-.85 1.22V13.5" />
+    <path d="M12 16.5h.01" />
+  </svg>
+);
+export const ChevronIcon =(p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="m7 10 5 5 5-5" />
+  </svg>
+);
+export const AlertIcon =(p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}>
     <circle cx="12" cy="12" r="8" />
     <path d="M12 8v4.5" />

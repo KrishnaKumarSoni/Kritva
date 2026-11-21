@@ -1,9 +1,6 @@
 {
   "schemaVersion": "kritva.draft/1",
   "caseId": "bed-sale",
-  "approval": {
-    "status": "unapproved"
-  },
   "parties": [
     {
       "id": "seller",
@@ -56,7 +53,7 @@
         }
       ],
       "name": "pickup location",
-      "description": "Location where the buyer must pick up the bed.",
+      "description": "Where the buyer would pick up the bed.",
       "valueType": "text",
       "unit": null,
       "currency": null
@@ -81,7 +78,7 @@
   "goals": [
     {
       "id": "goal_g_sell_bed",
-      "status": "inferred",
+      "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
         {
@@ -96,7 +93,7 @@
   ],
   "facts": [
     {
-      "id": "fact_f_item",
+      "id": "fact_f_item_bed",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -106,7 +103,7 @@
         }
       ],
       "partyId": "seller",
-      "statement": "The item for sale is a king-size bed.",
+      "statement": "The item is a king-size bed.",
       "termId": null,
       "value": {
         "type": "text",
@@ -114,21 +111,39 @@
       }
     },
     {
-      "id": "fact_f_age_condition",
+      "id": "fact_f_age",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
         {
           "sourceId": "listing",
-          "quote": "One-year-old king-size bed in good condition."
+          "quote": "One-year-old king-size bed"
         }
       ],
       "partyId": "seller",
-      "statement": "The bed is one year old and in good condition.",
+      "statement": "The bed is one year old.",
       "termId": null,
       "value": {
         "type": "text",
-        "value": "One-year-old king-size bed in good condition."
+        "value": "One-year-old"
+      }
+    },
+    {
+      "id": "fact_f_condition",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "in good condition"
+        }
+      ],
+      "partyId": "seller",
+      "statement": "The bed is in good condition.",
+      "termId": null,
+      "value": {
+        "type": "text",
+        "value": "good condition"
       }
     }
   ],
@@ -196,14 +211,7 @@
     {
       "id": "issue_1",
       "kind": "missing",
-      "message": "No explicit authority is stated for the agent to accept an agreement on the seller's behalf.",
-      "relatedIds": [],
-      "sourceRefs": []
-    },
-    {
-      "id": "issue_2",
-      "kind": "missing",
-      "message": "No minimum acceptable price or concession authority is stated for negotiating below the listed price.",
+      "message": "No minimum acceptable sale price or discount authority is stated for the seller.",
       "relatedIds": [
         "term_t_price",
         "position_p_price"
@@ -214,6 +222,16 @@
           "quote": "Price: ₹20,000"
         }
       ]
+    },
+    {
+      "id": "issue_2",
+      "kind": "missing",
+      "message": "No explicit authority is stated for the agent to accept an agreement on the seller's behalf.",
+      "relatedIds": [],
+      "sourceRefs": []
     }
-  ]
+  ],
+  "approval": {
+    "status": "unapproved"
+  }
 }

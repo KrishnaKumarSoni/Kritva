@@ -67,7 +67,7 @@ export interface ExtractedLimit {
   ref: string;
   party_id: string;
   term_ref: string;
-  kind: "minimum" | "maximum" | "must_equal" | "must_not_equal";
+  kind: "minimum" | "maximum" | "must_equal" | "must_not_equal" | "allowed_value";
   value: ExtractedValue | null;
   condition_refs: string[];
   status: Status;
@@ -187,7 +187,7 @@ export function buildExtractionJsonSchema(partyIds: string[], sourceIds: string[
         ref: str,
         party_id: partyId,
         term_ref: str,
-        kind: enumOf(["minimum", "maximum", "must_equal", "must_not_equal"]),
+        kind: enumOf(["minimum", "maximum", "must_equal", "must_not_equal", "allowed_value"]),
         value: nullableValue,
         condition_refs: arr(str),
         status,

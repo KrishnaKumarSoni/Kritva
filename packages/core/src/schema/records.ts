@@ -133,7 +133,11 @@ export const Position = z.strictObject({
 });
 export type Position = z.infer<typeof Position>;
 
-export const LimitKind = z.enum(["minimum", "maximum", "must_equal", "must_not_equal"]);
+/**
+ * minimum / maximum: a bound on a numeric term. must_equal / must_not_equal: a fixed value or an
+ * excluded one. allowed_value: one permitted option; several on the same term form an option set.
+ */
+export const LimitKind = z.enum(["minimum", "maximum", "must_equal", "must_not_equal", "allowed_value"]);
 /** A boundary the agent must not cross, such as a minimum acceptable price. */
 export const Limit = z.strictObject({
   ...recordBase,

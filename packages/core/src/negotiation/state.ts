@@ -4,6 +4,8 @@
  */
 import type { OfferTerm, PayloadOf, RecordedEvent, SessionStatus } from "../record/events.ts";
 import type { SessionContext } from "../record/rules.ts";
+import { buildDealSpace, type DealSpace } from "../dealspace/catalog.ts";
+import type { Value } from "../schema/records.ts";
 import { readMandate, type MandateView } from "./mandate-view.ts";
 
 export interface StatedOffer {
@@ -40,6 +42,22 @@ export interface NegotiationState {
   pendingApproval: { requestId: string; offerId: string; termsHash: string; acceptanceId: string | null } | null;
   acceptances: Array<{ id: string; offerId: string; termsHash: string }>;
   outcome: Outcome;
+  /** Deal space of the mandate revision in force. */
+  space: DealSpace;
+  /** The counterparty's latest value per term (their requests, not the principal's terms). */
+  counterpartyTerms: Map<string, Value>;
+  /** Terms the counterparty asked about that the mandate does not cover. */
+  requestedTerms: Array<{ id: string; name: string; value: Value | null }>;
+  /** Latest deal-space check per offer, with the revision it was made against. */
+  checks: Map<string, { eventId: string; result: "fits" | "conflicts" | "needs_clarification"; mandateRevision: number; termsHash: string; checkedTerms: OfferTerm[] }>;
+  /** The most recent check of a counterparty proposal. */
+  lastCounterpartyCheck: { offerId: string; checkedTerms: OfferTerm[]; result: "fits" | "conflicts" | "needs_clarification"; findings: PayloadOf<"proposal_checked">["findings"] } | null;
+}
+
+/** True only for a passing check made against the mandate revision now in force. */
+export function fitsNow(state: NegotiationState, offerId: string, termsHash: string): boolean {
+  const c = state.checks.get(offerId);
+  return Boolean(c && c.result === "fits" && c.mandateRevision === state.mandateRevision && c.termsHash === termsHash);
 }
 
 export function projectState(ctx: SessionContext): NegotiationState {
@@ -58,6 +76,10 @@ export function projectState(ctx: SessionContext): NegotiationState {
   const acceptances: NegotiationState["acceptances"] = [];
   let agreement: { id: string; payload: PayloadOf<"agreement_recorded"> } | null = null;
   const answered = new Set<string>();
+  const counterpartyTerms = new Map<string, Value>();
+  const requestedTerms: NegotiationState["requestedTerms"] = [];
+  const checks: NegotiationState["checks"] = new Map();
+  let lastCounterpartyCheck: NegotiationState["lastCounterpartyCheck"] = null;
 
   const amountOf = (terms: OfferTerm[]) => {
     const t = n ? terms.find((x) => x.termId === n.termId) : undefined;
@@ -66,8 +88,20 @@ export function projectState(ctx: SessionContext): NegotiationState {
 
   for (const e of ctx.events as RecordedEvent[]) {
     switch (e.type) {
+      case "term_requested": {
+        const p = e.payload as PayloadOf<"term_requested">;
+        requestedTerms.push({ id: e.id, name: p.name, value: p.value });
+        break;
+      }
+      case "proposal_checked": {
+        const p = e.payload as PayloadOf<"proposal_checked">;
+        checks.set(p.offerId, { eventId: e.id, result: p.result, mandateRevision: p.mandateRevision, termsHash: p.termsHash, checkedTerms: p.checkedTerms });
+        if (ctx.byId.get(p.offerId)?.type === "offer_extracted") lastCounterpartyCheck = { offerId: p.offerId, checkedTerms: p.checkedTerms, result: p.result, findings: p.findings };
+        break;
+      }
       case "offer_extracted": {
         const p = ctx.effective.get(e.id) as PayloadOf<"offer_extracted">;
+        for (const t of p.terms) counterpartyTerms.set(t.termId, t.value);
         const amount = amountOf(p.terms);
         if (amount !== null) counterpartyAmounts.push(amount);
         break;
@@ -138,5 +172,10 @@ export function projectState(ctx: SessionContext): NegotiationState {
     pendingApproval,
     acceptances,
     outcome,
+    space: buildDealSpace(ctx.mandate),
+    counterpartyTerms,
+    requestedTerms,
+    checks,
+    lastCounterpartyCheck,
   };
 }

@@ -322,7 +322,8 @@ export function findConflicts(draft: Pick<MandateDraft, "positions" | "limits">)
   ) => {
     const byKey = new Map<string, { ids: string[]; values: Set<string>; firstIndex: number }>();
     records.forEach((r, i) => {
-      if (r.status === "unknown" || r.value === null) return;
+      // Several allowed values on one term are an option set, not a conflict.
+      if (r.status === "unknown" || r.value === null || r.kind === "allowed_value") return;
       const key = [r.partyId, r.termId, r.kind ?? "", [...r.conditionIds].sort().join(",")].join("|");
       const entry = byKey.get(key) ?? { ids: [], values: new Set<string>(), firstIndex: i };
       entry.ids.push(r.id);

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiError, type BuyerView, type OperatorView } from "./api.ts";
+import { api, ApiError, type BuyerView, type MandateOption, type OperatorView } from "./api.ts";
 import { Chat } from "./Chat.tsx";
 import { RefreshIcon } from "./icons.tsx";
 import { RecordPanel } from "./RecordPanel.tsx";
+import { Select } from "./Select.tsx";
 
 const POLL_MS = 2500;
 
@@ -22,6 +23,18 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [consoleError, setConsoleError] = useState<string | null>(null);
   const reported = useRef(new Set<string>());
+  const [mandates, setMandates] = useState<MandateOption[]>([]);
+  const [mandateId, setMandateId] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .listMandates()
+      .then((list) => {
+        setMandates(list);
+        setMandateId((current) => current ?? list[0]?.id ?? null);
+      })
+      .catch(() => setConsoleError("Unable to load mandates."));
+  }, []);
 
   // Recover the last session after a refresh; otherwise start one.
   useEffect(() => {
@@ -30,7 +43,7 @@ export function App() {
       try {
         const sessions = await api.listSessions();
         const latest = sessions.at(-1);
-        const id = latest ? latest.id : (await api.startSession(null)).session.id;
+        const id = latest ? latest.id : (await api.startSession("bed-sale/demo", null)).session.id;
         setSessionId(id);
       } catch (e) {
         setConsoleError(e instanceof ApiError ? e.message : "Unable to load sessions.");
@@ -113,7 +126,7 @@ export function App() {
   const newSession = async () => {
     setStarting(true);
     try {
-      const { session } = await api.startSession(sessionId);
+      const { session } = await api.startSession(mandateId ?? "bed-sale/demo", sessionId);
       reported.current.clear();
       setBuyer(null);
       setOperator(null);
@@ -133,14 +146,22 @@ export function App() {
           <span className="wordmark" aria-label="Kritva">
             Kritva<span className="wordmark-dot" aria-hidden="true" />
           </span>
-          <span className="brand-context">Negotiation slice · Bed sale, confirmed seller mandate</span>
+          <span className="brand-context">
+            Negotiation slice · {mandates.find((m) => m.id === operator?.mandateId)?.title ?? "Confirmed seller mandate"}
+          </span>
         </div>
         <div className="topbar-actions">
           {sessionId && (
-            <span className="mono" title={sessionId} style={{ color: "var(--color-text-tertiary)" }}>
+            <span className="mono session-id" title={`Session ${sessionId}${operator?.mandateId ? `, mandate ${operator.mandateId}` : ""}`}>
               {sessionId.slice(0, 12)}
             </span>
           )}
+          <Select
+            label="Mandate for new sessions"
+            value={mandateId}
+            options={mandates.map((m) => ({ value: m.id, label: m.title, description: m.description }))}
+            onChange={setMandateId}
+          />
           <button type="button" className="button button-secondary" onClick={newSession} disabled={starting}>
             {starting ? <span className="spinner" aria-hidden="true" /> : <RefreshIcon />}
             New session

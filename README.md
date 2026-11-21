@@ -9,8 +9,9 @@ Kritva is a reusable AI negotiation capability for apps and assistants. It repre
 | 1. Shared schema and mandate mapping | Supplied case text becomes a validated mandate draft through one reusable core. |
 | 2. Shared negotiation record | One validated, append-only, durable event record per session. Text, voice, the console, strategy and evaluations all read it. |
 | 2A. Thin end-to-end slice | A buyer chat page, checked replies, an operator event panel, an agreement card, and a seven-scenario script on the same negotiation path. |
+| 3. Deal space | Terms classified from the confirmed mandate. Every proposal is checked deterministically, linked conditions included, and the running chat uses the checks. |
 
-Next: deepen the core (Epics 3–8) inside the running slice, then evaluation, the Kritva interface, browser voice and the demo interface.
+Next: deepen the core (Epics 4–8) inside the running slice, then evaluation, the Kritva interface, browser voice and the demo interface. Strategy belongs to Epics 4, 5, 6 and 8, so the slice's policy stays minimal until then.
 
 ## Repository layout
 
@@ -20,6 +21,7 @@ packages/core/            the reusable core (TypeScript)
   src/mapping/            text → draft mapper, shared prompt, model output format
   src/mandate/            mandate confirmation (only confirmed mandates start sessions)
   src/record/             Epic 2: event types, append rules, SQLite storage
+  src/dealspace/          Epic 3: term catalog and the deterministic proposal checker
   src/negotiation/        Epic 2A: state projection, policy, reply check, turn engine
   src/llm/                provider-neutral model contract and the OpenAI adapter
   scripts/                operator tools (prepare and confirm a mandate)
@@ -27,8 +29,8 @@ apps/server/              HTTP API for the slice (Hono); buyer and operator rout
   scripts/run-scenarios.ts  the seven buyer scenarios, through the same routes as the chat page
 apps/web/                 buyer chat, seller console and outcome card (React + Vite)
 cases/                    case content, kept outside the core
-  bed-sale/mandates/      the confirmed demo mandate
-  bed-sale/buyer-scenarios/  the seven buyer scenarios
+  bed-sale/mandates/      confirmed mandates: the demo one, and a conditional test one (test data)
+  bed-sale/buyer-scenarios/  the buyer scenarios (seven core, plus four conditional-concession ones)
 test-results/             recorded evidence per epic
 ```
 
@@ -88,7 +90,7 @@ npm run typecheck
 ```
 
 - `npm test` runs the deterministic suites. They make no model calls.
-- `npm run scenarios` runs the seven buyer scenarios with the real turn model and writes `test-results/epic-2a/`. Add `-- --runs 3` for repeated runs.
+- `npm run scenarios` runs every buyer scenario with the real turn model and writes `test-results/scenarios/latest/`. Add `-- --runs 3` for repeated runs, or `-- --label epic-4` to keep a named copy.
 - `npm run test:live` re-runs Epic 1 mapping against the real model and writes `test-results/epic-1/`.
 
 To re-map and confirm the demo mandate after editing `cases/bed-sale/sources/demo-instructions.md`:
@@ -114,6 +116,14 @@ node --env-file=.env packages/core/scripts/prepare-mandate.ts bed-sale demo --co
 - **Delivery counts, not drafts.** An offer counts as communicated only after the channel reports delivery, and an interrupted voice offer does not count.
 - **Safe retries and corrections.** Retries never duplicate. Corrections append, and the original stays. Reset starts a new session and keeps the old one.
 - **Private stays private.** Counterparty reads include public events only: no mandate, limits, decisions or blocked replies.
+
+**Deal space (Epic 3)**
+- **Terms are classified, not assumed.** Each term is a negotiable range, options, fixed, restricted, stated by the principal, a condition detail, a description, or unresolved. Facts like age and size are never concessions. An asking price is never a minimum.
+- **Proposals are checked in code.** The result is **fits known constraints**, **conflicts** or **needs clarification**, with each finding naming its term and source rule. The same inputs always give the same result, with no model call.
+- **Linked conditions travel together.** A concession such as "₹18,000 only with Saturday collection" fits only when the same proposal holds the condition. A missing day means clarification, a different day means conflict, and an unsupported condition is kept and never passes. Offers and replies must name the condition they depend on.
+- **Checks bind to exact terms and the mandate revision.** A changed proposal or a revised mandate is checked again, and an earlier pass is never reused.
+- **Buyer requests stay the buyer's.** New terms (for example assembly) are recorded as requests, never promised or priced, and never written into the mandate.
+- **A pass is not permission.** Authority and agreement still follow the mandate's permissions and the seller's approval.
 
 **Negotiation turns (Epic 2A)**
 - **One path for every surface.** The chat page, the scenario script and, later, voice all call the same engine.

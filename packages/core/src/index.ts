@@ -35,3 +35,6 @@ export { readMandate, formatValue, orderTerms, type MandateView, type Negotiable
 export { checkReply, findAmounts, type ReplyViolation } from "./negotiation/reply-check.ts";
 export { decide, type Plan, type Interpretation } from "./negotiation/policy.ts";
 export { createTurnLlmFromEnv, DEFAULT_TURN_MODEL } from "./llm/config.ts";
+export { buildDealSpace, termEntry, type DealSpace, type TermEntry, type TermKind, type RuleRef, type ConditionRef, type FactEntry } from "./dealspace/catalog.ts";
+export { checkProposal, applicableLimit, sameValue, type DealCheck, type Finding, type CheckResult } from "./dealspace/check.ts";
+export { fitsNow } from "./negotiation/state.ts";

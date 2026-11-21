@@ -1,9 +1,6 @@
 {
   "schemaVersion": "kritva.draft/1",
   "caseId": "bed-sale",
-  "approval": {
-    "status": "unapproved"
-  },
   "parties": [
     {
       "id": "seller",
@@ -58,7 +55,7 @@
       "currency": "INR"
     },
     {
-      "id": "term_t_pickup_location",
+      "id": "term_t_collection_place",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -67,8 +64,8 @@
           "quote": "Pickup from Koramangala, Bangalore."
         }
       ],
-      "name": "pickup location",
-      "description": "Location where the buyer is to collect the bed.",
+      "name": "collection place",
+      "description": "Place where the buyer collects the bed.",
       "valueType": "text",
       "unit": null,
       "currency": null
@@ -84,7 +81,7 @@
         }
       ],
       "name": "delivery included",
-      "description": "Whether delivery is included in the sale.",
+      "description": "Whether delivery is included in the deal.",
       "valueType": "boolean",
       "unit": null,
       "currency": null
@@ -100,7 +97,7 @@
         }
       ],
       "name": "collection day",
-      "description": "Day when the bed is collected.",
+      "description": "Day when the buyer collects the bed.",
       "valueType": "date_text",
       "unit": null,
       "currency": null
@@ -109,7 +106,7 @@
   "goals": [
     {
       "id": "goal_g_sell_bed",
-      "status": "inferred",
+      "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
         {
@@ -124,25 +121,7 @@
   ],
   "facts": [
     {
-      "id": "fact_f_bed_age_condition",
-      "status": "stated",
-      "disclosure": "public",
-      "sourceRefs": [
-        {
-          "sourceId": "listing",
-          "quote": "One-year-old king-size bed in good condition."
-        }
-      ],
-      "partyId": "seller",
-      "statement": "The bed is one year old and in good condition.",
-      "termId": null,
-      "value": {
-        "type": "text",
-        "value": "One-year-old king-size bed in good condition."
-      }
-    },
-    {
-      "id": "fact_f_bed_size",
+      "id": "fact_f_item_bed",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -152,11 +131,47 @@
         }
       ],
       "partyId": "seller",
-      "statement": "The bed is king-size.",
+      "statement": "The item for sale is a king-size bed.",
       "termId": null,
       "value": {
         "type": "text",
-        "value": "king-size bed"
+        "value": "King-size bed"
+      }
+    },
+    {
+      "id": "fact_f_item_age",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "One-year-old king-size bed"
+        }
+      ],
+      "partyId": "seller",
+      "statement": "The bed is one year old.",
+      "termId": null,
+      "value": {
+        "type": "text",
+        "value": "One-year-old"
+      }
+    },
+    {
+      "id": "fact_f_item_condition",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "in good condition"
+        }
+      ],
+      "partyId": "seller",
+      "statement": "The bed is in good condition.",
+      "termId": null,
+      "value": {
+        "type": "text",
+        "value": "good condition"
       }
     }
   ],
@@ -181,7 +196,7 @@
       "conditionIds": []
     },
     {
-      "id": "position_p_pickup_location",
+      "id": "position_p_collection_place",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -191,7 +206,7 @@
         }
       ],
       "partyId": "seller",
-      "termId": "term_t_pickup_location",
+      "termId": "term_t_collection_place",
       "value": {
         "type": "text",
         "value": "Koramangala, Bangalore"
@@ -219,7 +234,7 @@
   ],
   "limits": [
     {
-      "id": "limit_l_min_price_saturday",
+      "id": "limit_l_min_price_if_saturday",
       "status": "stated",
       "disclosure": "private",
       "sourceRefs": [
@@ -253,7 +268,7 @@
           "quote": "only if collection is on Saturday"
         }
       ],
-      "description": "Collection is on Saturday.",
+      "description": "The minimum price of ₹18,000 applies only if collection is on Saturday.",
       "termId": "term_t_collection_day",
       "operator": "equals",
       "value": {
@@ -266,24 +281,14 @@
     {
       "id": "issue_1",
       "kind": "missing",
-      "message": "No explicit authority is stated for the agent to accept an agreement.",
-      "relatedIds": [],
-      "sourceRefs": []
-    },
-    {
-      "id": "issue_2",
-      "kind": "missing",
-      "message": "No lowest acceptable price is stated for collection on any day other than Saturday.",
+      "message": "No explicit authority is stated for the agent to accept an agreement or make concessions; the recorded price floor is a limit, not acceptance authority.",
       "relatedIds": [
-        "limit_l_min_price_saturday",
-        "condition_c_collection_saturday"
+        "limit_l_min_price_if_saturday"
       ],
-      "sourceRefs": [
-        {
-          "sourceId": "instructions-conditional-minimum",
-          "quote": "I'll go down to ₹18,000 only if collection is on Saturday."
-        }
-      ]
+      "sourceRefs": []
     }
-  ]
+  ],
+  "approval": {
+    "status": "unapproved"
+  }
 }
