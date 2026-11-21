@@ -213,7 +213,7 @@ export function IntakeChat({ view, examples, onChange, onSaved, onUse }: Props) 
               {phase === "preparing" ? (
                 <>
                   <span className="spinner" aria-hidden="true" />
-                  Putting it together. This can take up to a minute.
+                  Putting it together. This takes about 10 seconds.
                 </>
               ) : (
                 <>

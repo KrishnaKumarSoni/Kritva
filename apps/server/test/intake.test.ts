@@ -90,7 +90,6 @@ function setup() {
     agent.turns.push(() => ({ reply: "Lovely, putting it together.", fields: fullInput, checklist: all("known"), ready: true }));
     await call("POST", `/api/operator/intake/${started.id}/messages`, { text: "Selling my bed for 20k, lowest 18k", images: [] });
     llm.mappings.push(bedMapping());
-    agent.turns.push(() => ({ reply: "All set! Make it live when you're happy.", fields: fullInput, checklist: all("known"), ready: false }));
     const prepared = (await call("POST", `/api/operator/intake/${started.id}/prepare`)).json;
     const card = prepared.messages.at(-1).card;
     return (await call("POST", `/api/operator/intake/${started.id}/live`, { versionId: card.versionId, draftHash: card.draftHash })).json;
@@ -99,6 +98,18 @@ function setup() {
 }
 
 describe("Intake agent: a mandate from a conversation", () => {
+  it("two prepare requests at once map the input only once", async () => {
+    const { call, agent, llm, library } = setup();
+    const started = (await call("POST", "/api/operator/intake")).json;
+    agent.turns.push(() => ({ reply: "Putting it together.", fields: fullInput, checklist: all("known"), ready: true }));
+    await call("POST", `/api/operator/intake/${started.id}/messages`, { text: "Selling my bed", images: [] });
+    llm.mappings.push(bedMapping());
+    const [a, b] = await Promise.all([call("POST", `/api/operator/intake/${started.id}/prepare`), call("POST", `/api/operator/intake/${started.id}/prepare`)]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    expect(library.list()).toHaveLength(1);
+  });
+
   it("starts with a greeting and no progress, and a reply fills the checklist and the bar", async () => {
     const { call, agent } = setup();
     const started = await call("POST", "/api/operator/intake");
@@ -150,9 +161,11 @@ describe("Intake agent: a mandate from a conversation", () => {
     expect(sent.progress).toBe(0.9);
 
     llm.mappings.push(bedMapping());
-    agent.turns.push(() => ({ reply: "All set! Make it live when you're happy.", fields: fullInput, checklist: all("known"), ready: false }));
+    const turnsBefore = agent.inputs.length;
     const prepared = (await call("POST", `/api/operator/intake/${started.id}/prepare`)).json;
-    expect(agent.inputs.at(-1)!.event).toContain("ready to go live");
+    // A ready draft replies at once, without another model turn.
+    expect(agent.inputs.length).toBe(turnsBefore);
+    expect(prepared.messages.at(-1).text).toMatch(/Make it live/);
     const card = prepared.messages.at(-1).card;
     expect(card).toMatchObject({ kind: "ready", mode: "new", actionable: true });
     expect(card.review.sections.find((s: any) => s.id === "limits").items[0].private).toBe(true);
@@ -203,10 +216,10 @@ describe("Intake agent: a mandate from a conversation", () => {
     });
     await call("POST", `/api/operator/intake/${live.id}/messages`, { text: "I can go to 17k now", images: [] });
     llm.mappings.push(bedMapping([minimum(17_000, "don't go below ₹17,000")]));
-    agent.turns.push(() => ({ reply: "Ready when you are.", fields: changed, checklist: all("known"), ready: false }));
     const prepared = (await call("POST", `/api/operator/intake/${live.id}/prepare`)).json;
     const card = prepared.messages.at(-1).card;
     expect(card.mode).toBe("update");
+    expect(prepared.messages.at(-1).text).toMatch(/Apply them/);
     const applied = (await call("POST", `/api/operator/intake/${live.id}/live`, { versionId: card.versionId, draftHash: card.draftHash })).json;
     expect(applied.messages.at(-1).card.revision).toBe(2);
     expect(applied.appliedToSessions).toEqual([session.id]);

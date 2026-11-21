@@ -13,7 +13,7 @@
 import { randomUUID } from "node:crypto";
 import type { ConfirmedMandate } from "../schema/records.ts";
 import type { LibraryDetail, LibraryInput, MandateLibrary } from "../mandate/library.ts";
-import type { IntakeAgent } from "./agent.ts";
+import type { IntakeAgent, IntakeTurnOutput } from "./agent.ts";
 import { CHECKLIST_ITEMS, EMPTY_CHECKLIST, EMPTY_FIELDS, type Checklist, type IntakeConversation, type IntakeMessage, type IntakeStore, type ReadyCard } from "./store.ts";
 
 export type IntakeResult<T> = { ok: true; value: T } | { ok: false; code: string; message: string };
@@ -144,11 +144,17 @@ export class IntakeService {
     const event = latest.blockers.length > 0
       ? `The brief was mapped, but it can't go live until this is sorted: ${latest.blockers.join(" ")}${notes.length ? ` Also worth checking: ${notes.map((n) => n.message).join(" ")}` : ""} Ask the person about the first problem in plain words, update the brief, and call mark_ready again.`
       : `The brief is mapped and ready to go live${detail!.active ? " as an update to the live mandate" : ""}. ${notes.length ? `The card will show these notes, which the person accepts by making it live: ${notes.map((n) => n.message).join(" ")}` : "There are no open notes."} Write one or two short, warm sentences.`;
-    let out;
-    try {
-      out = await this.#agent.run({ conversation: next.messages, fields: next.fields, checklist: next.checklist, context: this.#context(next), event }, signal);
-    } catch {
-      out = { reply: latest.blockers.length > 0 ? `One thing needs sorting before this can go live: ${plain(latest.blockers[0]!)}` : "All set. Have a look and make it live when you're happy.", fields: next.fields, checklist: next.checklist, ready: false };
+    // A ready draft needs no model turn: the card says it all, so the reply is immediate. Problems go
+    // back to the agent, which asks about them in plain words.
+    let out: IntakeTurnOutput;
+    if (latest.blockers.length === 0) {
+      out = { reply: detail!.active ? "Here are your changes. Apply them when you're happy, or tell me what to adjust." : "All set! Here's what I'll work with. Make it live when you're happy, or tell me anything you'd like to change.", fields: next.fields, checklist: next.checklist, ready: false };
+    } else {
+      try {
+        out = await this.#agent.run({ conversation: next.messages, fields: next.fields, checklist: next.checklist, context: this.#context(next), event }, signal);
+      } catch {
+        out = { reply: `One thing needs sorting before this can go live: ${plain(latest.blockers[0]!)}`, fields: next.fields, checklist: next.checklist, ready: false };
+      }
     }
     const changed = !sameFields(out.fields, next.fields);
     this.#apply(next, out.fields, out.checklist);

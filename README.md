@@ -89,6 +89,8 @@ KRITVA_LOCALE=en-IN
 # Mandate intake agent (the setup chat on the Mandates page)
 KRITVA_INTAKE_MODEL=gpt-5.4-mini
 KRITVA_INTAKE_REASONING_EFFORT=low
+# Mapping the intake brief; mid-negotiation changes keep KRITVA_MAPPING_REASONING_EFFORT
+KRITVA_INTAKE_MAPPING_REASONING_EFFORT=low
 KRITVA_DEFAULT_CURRENCY=Indian rupees (₹)
 # Case-specific guidance is selected in cases/<case>/case.json. KRITVA_GUIDANCE=none disables it.
 # Browser voice (Epic 13)
@@ -117,7 +119,7 @@ The console has two views. **Negotiation** shows the conversation (you write as 
 
 `?view=buyer#session=<id>` opens a session as the counterparty sees it: the conversation only, with the AI disclosure and no private data. **Talk by voice** in the composer starts browser voice on the same session. Use `localhost` for development and HTTPS for the deployed demo.
 
-**Mandates** (top bar) opens the mandate library. Select **New** and tell Kritva's setup agent what to negotiate: one sentence, or a picture or screenshot of a listing (attach, paste or drop it). The agent asks only for what it can't work out, usually your limit and the details the other side will want to know. When everything is in place, it maps the brief into a draft (this takes up to a minute) and shows a card with what Kritva will use; private items carry a lock. **Make it live** is the only step that gives it authority. To change a live mandate, open it and say what to change; **Apply changes** makes the next revision and applies it to open negotiations. Each mandate's menu pauses, resumes, closes, reopens or deletes it. Pausing or closing also pauses its open negotiations; only live mandates can start new ones. Deleting hides it and keeps the history of negotiations that used it. The demo listing's mandate can be paused but not deleted. "Use for the next negotiation" selects a live mandate; **New negotiation** then starts from its active revision.
+**Mandates** (top bar) opens the mandate library. Select **New** and tell Kritva's setup agent what to negotiate: one sentence, or a picture or screenshot of a listing (attach, paste or drop it). The agent asks only for what it can't work out, usually your limit and the details the other side will want to know. When everything is in place, it maps the brief into a draft (about 10 seconds) and shows a card with what Kritva will use; private items carry a lock. **Make it live** is the only step that gives it authority. To change a live mandate, open it and say what to change; **Apply changes** makes the next revision and applies it to open negotiations. Each mandate's menu pauses, resumes, closes, reopens or deletes it. Pausing or closing also pauses its open negotiations; only live mandates can start new ones. Deleting hides it and keeps the history of negotiations that used it. The demo listing's mandate can be paused but not deleted. "Use for the next negotiation" selects a live mandate; **New negotiation** then starts from its active revision.
 
 ## Commands
 

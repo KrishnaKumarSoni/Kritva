@@ -15,7 +15,10 @@ const record = new NegotiationRecord(new SqliteRecordBackend(join(dataDir, "krit
 const locale = process.env.KRITVA_LOCALE ?? "en-IN";
 const mappingLlm = createMappingLlmFromEnv();
 // Case-level mandates live in their own tables, so they exist before any session starts.
-const library = new MandateLibrary({ backend: new SqliteLibraryBackend(join(dataDir, "kritva.sqlite")), mappingLlm });
+// The library maps the intake agent's plain-prose brief, which low reasoning effort handles as well as the
+// default in the live mapping suite at about half the time. Mid-negotiation changes keep mappingLlm.
+const libraryMappingLlm = createMappingLlmFromEnv({ ...process.env, KRITVA_MAPPING_REASONING_EFFORT: process.env.KRITVA_INTAKE_MAPPING_REASONING_EFFORT ?? "low" });
+const library = new MandateLibrary({ backend: new SqliteLibraryBackend(join(dataDir, "kritva.sqlite")), mappingLlm: libraryMappingLlm });
 const { mandates, examples, listings, guidanceByCase, subjectFacts, listingDetails } = loadCaseRuntime(ROOT, library);
 // Kritva runs each turn as an agent (OpenAI Agents SDK); the turn model reviews its wording.
 const engine = new NegotiationEngine({ record, llm: createTurnLlmFromEnv(), ...createAgentFromEnv(), locale, guidanceByCase, subjectFacts, listingDetails });
