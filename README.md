@@ -13,8 +13,10 @@ Kritva is a reusable AI negotiation capability for apps and assistants. It repre
 | 4. Principal | Goals, needs, targets, preferences and alternatives kept distinct; permissions and limit exceptions read in code; changed instructions become drafts that only the principal can confirm. |
 | 5. Counterparty | Buyer needs, constraints, claims and stated authority kept as quoted claims; limit estimates only with a stated basis; questions prepared from session context. |
 | 6. Governance | Every outgoing action passes a two-phase gate (terms, then wording) against the active mandate; privacy and unsupported-claim checks; scoped exception approvals; pause. |
+| 7. Commitments and outcomes | Every offer is versioned with its party, kind (offer, enquiry, interest), conditions and status; blocked offers stay internal; agreement cards with pending obligations; truthful negotiating, paused, pending-approval, agreement and no-agreement outcomes; ending by the buyer, Kritva or the seller. |
+| 8. Strategy | Whole-package assessment (hard limits, then stated interests, then stated alternatives); one recorded action per turn (ask, clarify, propose, counter, accept, decline, request approval, pause, end); tactic parameters loaded as data from the strategy document. |
 
-Next: deepen the core (Epics 7–8) inside the running slice, then evaluation, the Kritva interface, browser voice and the demo interface. Strategy belongs to Epics 4, 5, 6 and 8, so the slice's policy stays minimal until then.
+Next: evaluation, the Kritva interface, browser voice and the demo interface.
 
 ## Repository layout
 
@@ -28,15 +30,18 @@ packages/core/            the reusable core (TypeScript)
   src/governance/         Epic 4/6: authority, the outgoing gate, claim checks, model language check
   src/counterparty/       Epic 5: buyer context projection and question preparation
   src/mandate/            confirmation and mid-session revisions (drafts)
-  src/negotiation/        Epic 2A: state projection, policy, reply check, turn engine
+  src/commitments/        Epic 7: offer versions and statuses, outcomes, agreement obligations
+  src/strategy/           Epic 8: package assessment and the strategy-guidance schema
+  src/negotiation/        Epic 2A/8: state projection, the strategy chooser, reply check, turn engine
   src/llm/                provider-neutral model contract and the OpenAI adapter
   scripts/                operator tools (prepare and confirm a mandate)
 apps/server/              HTTP API for the slice (Hono); buyer and operator routes
-  scripts/run-scenarios.ts  the seven buyer scenarios, through the same routes as the chat page
+  scripts/run-scenarios.ts  the buyer scenarios, through the same routes as the chat page
 apps/web/                 buyer chat, seller console and outcome card (React + Vite)
 cases/                    case content, kept outside the core
   bed-sale/mandates/      confirmed mandates: the demo one, plus conditional and exception test ones (test data)
-  bed-sale/buyer-scenarios/  the buyer scenarios (seven core, plus four conditional-concession ones)
+  bed-sale/buyer-scenarios/  the buyer scenarios (seven core, plus conditional, exception, pause and Epic 7–8 ones)
+  bed-sale/strategy-guidance.json  tactic parameters from the seller strategy document (data, not code)
 test-results/             recorded evidence per epic
 ```
 
@@ -61,6 +66,8 @@ KRITVA_MAPPING_MODEL=gpt-5.5
 KRITVA_TURN_MODEL=gpt-5.4-mini
 KRITVA_TURN_REASONING_EFFORT=none
 KRITVA_LOCALE=en-IN
+# Strategy guidance file, relative to the repository root; "none" uses the built-in minimal guidance
+KRITVA_GUIDANCE=cases/bed-sale/strategy-guidance.json
 ```
 
 ## Run the chat page
@@ -146,7 +153,7 @@ node --env-file=.env packages/core/scripts/prepare-mandate.ts bed-sale demo --co
 - **Buyer statements stay claims.** Needs, constraints, reasons, preferences, authority, claims, budgets and "final" statements each quote the buyer's exact words, keep the agent's reading separate, and stay in this session only.
 - **Offers keep their package.** Amounts with different terms are never compared.
 - **Estimates need a basis.** A limit estimate exists only with a stated basis and assumptions. An offer is willingness, not a maximum, and contradictions stay visible.
-- **Questions come from context.** They are generated from the session in code: one clear thing each, never repeated once answered or refused. Strategy (Epic 8) decides whether to ask; the slice only asks at most one, while holding.
+- **Questions come from context.** They are generated from the session in code: one clear thing each, never repeated once answered or refused. Strategy (Epic 8) decides whether to ask.
 
 **Governance (Epic 6)**
 - **Every outgoing action passes two gate phases.**
@@ -164,3 +171,17 @@ node --env-file=.env packages/core/scripts/prepare-mandate.ts bed-sale demo --co
 - **Code decides, the model words.** The model only interprets the buyer's message and words the reply, and it never sees private limits. Every offer comes from a deterministic policy that reads the confirmed mandate.
 - **Every reply is checked in code before display.** It catches private amounts, amounts outside the plan, offers past the limit, missing offer amounts, claims of agreement or approval, and copied private text. A failing reply is blocked, recorded, and replaced by checked template wording.
 - **Agreement needs both sides on the same terms.** Kritva states the complete terms, and the buyer confirms them. If the mandate requires it, the seller approves the same terms hash. Missing approval produces "pending approval", not an agreement.
+
+**Commitments (Epic 7)**
+- **Offers come from the record.** Each offer has a party, terms, source message, mandate revision, kind (offer, enquiry, interest) and any conditions the buyer attached. A changed offer is a new version linked to the previous one, and history is kept. Statuses are derived from events, so a replayed event never changes one twice.
+- **Internal is not delivered.** An offer the gate blocks is recorded as internal and never counts as the seller's offer. Only delivered offers move the ask.
+- **Agreement needs the same current terms.** Acceptance and approval bind to one offer version and mandate revision. Changed terms cancel a pending approval, and the record refuses an agreement for any other terms or after the negotiation ended.
+- **The agreement card comes from saved records.** Payment and each agreed logistics term are listed as pending obligations, never as done.
+- **Outcomes are truthful.** Negotiating, paused, pending approval, agreement or no agreement. An end records who stopped (buyer, Kritva or seller), why, and what was left open. A no-agreement summary shows each side's last offer and the difference, never a private limit. Nothing reopens an ended session.
+
+**Strategy (Epic 8)**
+- **Assess the whole package.** Hard constraints first (a better price never overrides one), then the principal's stated targets and preferences, then a stated alternative. Unknown preferences and alternatives stay unknown, with no invented weights. Assessment is separate from authority: an acceptable package may still need approval.
+- **One action per turn, with a reason.** Ask, clarify, propose, counter, accept, decline, request approval, pause or end, recorded with the assessment, the mandate revision and the guidance in use. A strategy failure holds and offers nothing.
+- **Guidance is data.** Concession steps, the increment, the counteroffer cap, split-the-difference, pressure questions and the walk-away line come from `strategy-guidance.json`. Guidance never grants authority: every move still passes the gate, and no step goes past a limit.
+- **Ask before conceding.** A non-price reason (a pickup cost, a partner who must agree, a condition like "if I get a truck") gets a question before any price move. A conditional offer stays conditional. Repeated offers earn no reduction. "What's your lowest?" gets the current offer again and a question.
+- **Close or stop.** An offer at or above the lower of the current ask and the target closes. After the last counteroffer, or when the buyer stays below an offer already at the limit, Kritva accepts within authority or ends without agreement.

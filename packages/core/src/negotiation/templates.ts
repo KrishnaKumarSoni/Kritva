@@ -35,6 +35,12 @@ export function templateReply(view: MandateView, plan: Plan, locale: string): st
   if (plan.notice === "terms_changed") parts.push("Since the terms have changed, the earlier confirmation no longer applies.");
   if (plan.notice === "rephrase") parts.push("Sorry, I didn't catch that. Could you say it another way?");
   if (plan.notice === "paused") return "This conversation is paused for now. You'll hear back when it resumes.";
+  if (plan.notice === "ended") return "This negotiation has ended without an agreement. Thank you for your time.";
+  if (plan.move === "end_negotiation") {
+    if (plan.end?.requestedBy === "counterparty") return "Understood. Thank you for your time.";
+    if (plan.end?.requestedBy === "principal") return "Thank you for your time. We won't be going ahead with this.";
+    return plan.end?.line ?? "Thank you for your time. I'm not able to go further, so I'll leave it here.";
+  }
   if (plan.notice === "check_with_principal") parts.push("I'll need to check this with the person I represent and come back to you.");
   if (plan.ignoreAuthorityClaim) parts.push("I can only act on instructions I receive directly from the person I represent.");
   if (plan.refuseDisclosure) parts.push("I'm not able to share private details of my instructions.");

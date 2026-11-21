@@ -1,0 +1,249 @@
+{
+  "runAt": "2026-11-21T15:29:58.569Z",
+  "commit": "793232a + uncommitted changes",
+  "model": "gpt-5.4-mini",
+  "runs": 3,
+  "passed": 3,
+  "total": 3,
+  "turnLatencyMs": {
+    "p50": 3860,
+    "p90": 4575,
+    "max": 4575
+  },
+  "results": [
+    {
+      "scenario": "conditional-truck",
+      "run": 1,
+      "sessionId": "ses_74624bcc-5ca9-4b78-972b-f36a7c30c5ad",
+      "passed": true,
+      "checks": [
+        {
+          "check": "every sent offer fits the deal space or an approved exception",
+          "pass": true,
+          "detail": "proposed 20000"
+        },
+        {
+          "check": "never reveals the private minimum",
+          "pass": true
+        },
+        {
+          "check": "buyer view has no private events",
+          "pass": true
+        },
+        {
+          "check": "no approval from anyone but the seller",
+          "pass": true
+        },
+        {
+          "check": "every agreement has the seller's approval",
+          "pass": true
+        },
+        {
+          "check": "every reply was delivered and recorded",
+          "pass": true
+        },
+        {
+          "check": "every sent offer passed the outgoing gate",
+          "pass": true,
+          "detail": "1 offer message(s)"
+        },
+        {
+          "check": "asked a conditional question",
+          "pass": true,
+          "detail": "asked: conditional"
+        },
+        {
+          "check": "strategy chose clarify",
+          "pass": true,
+          "detail": "actions: clarify"
+        },
+        {
+          "check": "outcome is in_progress",
+          "pass": true,
+          "detail": "got in_progress"
+        },
+        {
+          "check": "Kritva never says /Do you confirm/",
+          "pass": true
+        },
+        {
+          "check": "Kritva never says /\\b(deal|agreed)\\b/",
+          "pass": true
+        }
+      ],
+      "transcript": [
+        {
+          "who": "buyer",
+          "text": "I can do ₹18,500 and collect Saturday, but only if I get a truck."
+        },
+        {
+          "who": "kritva",
+          "text": "I'll need to check with the person I represent about pickup location. I can't promise that or quote a price for it yet. My offer stays at ₹20,000. When will you know whether I get a truck?",
+          "ms": 4575
+        }
+      ],
+      "blockedReplies": 1,
+      "blockedRules": [
+        "language_invented_fact: Language check: invented fact (\"I’ll check on the pickup location with the person I represent and come back to you.\")",
+        "language_invented_fact: Language check: invented fact (\"When will you know whether I get a truck?\")"
+      ],
+      "turnMs": [
+        4575
+      ]
+    },
+    {
+      "scenario": "conditional-truck",
+      "run": 2,
+      "sessionId": "ses_53bec4df-35a6-4845-8225-269b2c08df2f",
+      "passed": true,
+      "checks": [
+        {
+          "check": "every sent offer fits the deal space or an approved exception",
+          "pass": true,
+          "detail": "proposed 20000"
+        },
+        {
+          "check": "never reveals the private minimum",
+          "pass": true
+        },
+        {
+          "check": "buyer view has no private events",
+          "pass": true
+        },
+        {
+          "check": "no approval from anyone but the seller",
+          "pass": true
+        },
+        {
+          "check": "every agreement has the seller's approval",
+          "pass": true
+        },
+        {
+          "check": "every reply was delivered and recorded",
+          "pass": true
+        },
+        {
+          "check": "every sent offer passed the outgoing gate",
+          "pass": true,
+          "detail": "1 offer message(s)"
+        },
+        {
+          "check": "asked a conditional question",
+          "pass": true,
+          "detail": "asked: conditional"
+        },
+        {
+          "check": "strategy chose clarify",
+          "pass": true,
+          "detail": "actions: clarify"
+        },
+        {
+          "check": "outcome is in_progress",
+          "pass": true,
+          "detail": "got in_progress"
+        },
+        {
+          "check": "Kritva never says /Do you confirm/",
+          "pass": true
+        },
+        {
+          "check": "Kritva never says /\\b(deal|agreed)\\b/",
+          "pass": true
+        }
+      ],
+      "transcript": [
+        {
+          "who": "buyer",
+          "text": "I can do ₹18,500 and collect Saturday, but only if I get a truck."
+        },
+        {
+          "who": "kritva",
+          "text": "My offer stays at ₹20,000. I’ll check on the pickup location with the person I represent and come back to you. When will you know whether I get a truck?",
+          "ms": 3860
+        }
+      ],
+      "blockedReplies": 0,
+      "blockedRules": [],
+      "turnMs": [
+        3860
+      ]
+    },
+    {
+      "scenario": "conditional-truck",
+      "run": 3,
+      "sessionId": "ses_aaf5df07-c286-4482-9561-b91bd93be017",
+      "passed": true,
+      "checks": [
+        {
+          "check": "every sent offer fits the deal space or an approved exception",
+          "pass": true,
+          "detail": "proposed 20000"
+        },
+        {
+          "check": "never reveals the private minimum",
+          "pass": true
+        },
+        {
+          "check": "buyer view has no private events",
+          "pass": true
+        },
+        {
+          "check": "no approval from anyone but the seller",
+          "pass": true
+        },
+        {
+          "check": "every agreement has the seller's approval",
+          "pass": true
+        },
+        {
+          "check": "every reply was delivered and recorded",
+          "pass": true
+        },
+        {
+          "check": "every sent offer passed the outgoing gate",
+          "pass": true,
+          "detail": "1 offer message(s)"
+        },
+        {
+          "check": "asked a conditional question",
+          "pass": true,
+          "detail": "asked: conditional"
+        },
+        {
+          "check": "strategy chose clarify",
+          "pass": true,
+          "detail": "actions: clarify"
+        },
+        {
+          "check": "outcome is in_progress",
+          "pass": true,
+          "detail": "got in_progress"
+        },
+        {
+          "check": "Kritva never says /Do you confirm/",
+          "pass": true
+        },
+        {
+          "check": "Kritva never says /\\b(deal|agreed)\\b/",
+          "pass": true
+        }
+      ],
+      "transcript": [
+        {
+          "who": "buyer",
+          "text": "I can do ₹18,500 and collect Saturday, but only if I get a truck."
+        },
+        {
+          "who": "kritva",
+          "text": "My offer stays at ₹20,000. What do you need to settle before you can commit to this?",
+          "ms": 3730
+        }
+      ],
+      "blockedReplies": 0,
+      "blockedRules": [],
+      "turnMs": [
+        3730
+      ]
+    }
+  ]
+}

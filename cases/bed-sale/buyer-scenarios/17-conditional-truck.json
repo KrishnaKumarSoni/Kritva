@@ -1,0 +1,24 @@
+{
+  "name": "conditional-truck",
+  "description": "The buyer's offer depends on getting a truck. The offer stays conditional and Kritva asks about the condition instead of stating final terms.",
+  "turns": [
+    {
+      "buyer": "I can do ₹18,500 and collect Saturday, but only if I get a truck."
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "in_progress"
+    ],
+    "questionKindsAsked": [
+      "conditional"
+    ],
+    "decisionActions": [
+      "clarify"
+    ],
+    "agentMustNotSay": [
+      "Do you confirm",
+      "\\b(deal|agreed)\\b"
+    ]
+  }
+}

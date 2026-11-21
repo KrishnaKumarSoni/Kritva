@@ -49,7 +49,7 @@ export function gateTerms(state: NegotiationState, plan: Plan, preparedRevision:
     reasons.push({ rule: "paused", detail: "The principal paused the negotiation." });
     return result("block");
   }
-  if (state.status === "no_agreement" || state.status === "ended") {
+  if ((state.status === "no_agreement" || state.status === "ended") && plan.move !== "closed") {
     reasons.push({ rule: "ended", detail: "The negotiation has ended." });
     return result("block");
   }

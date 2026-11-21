@@ -38,24 +38,26 @@ export function prepareQuestions(model: CounterpartyModel, termName: (termId: st
           });
         }
         break;
+      case "reason":
       case "constraint":
       case "need":
-        if (item.condition) addConditional(add, item);
-        else if (item.termId && !item.value) {
+        if (item.condition && item.kind !== "reason") addConditional(add, item);
+        else if (item.kind !== "need" && item.value && "amount" in item.value && !model.offers.some((o) => o.amount === (item.value as { amount: number }).amount)) {
+          // An amount named as a reason or constraint (e.g. a transport cost behind a price objection):
+          // ask what is left for the item. The term the model attached is not trusted for this.
+          add({
+            issueKey: `budget_scope:cost:${item.id}`,
+            issueKind: "budget_scope",
+            purpose: "Understand how a cost or limit the counterparty mentioned affects what they can pay for the item.",
+            text: `With that in mind, what amount could you pay for the item itself?`,
+            relatedEventIds: [item.eventId],
+          });
+        } else if (item.kind !== "reason" && item.termId && !item.value) {
           add({
             issueKey: `obstacle:${item.termId}`,
             issueKind: "obstacle",
             purpose: `Find out which part of the ${termName(item.termId)} prevents agreement.`,
             text: `Which part of the ${termName(item.termId)} doesn't work for you?`,
-            relatedEventIds: [item.eventId],
-          });
-        } else if (item.value && "amount" in item.value && item.termId === null) {
-          // A stated extra cost (e.g. transport) that may be behind a price objection.
-          add({
-            issueKey: `budget_scope:cost:${item.id}`,
-            issueKind: "budget_scope",
-            purpose: "Understand how a separate cost the counterparty mentioned affects what they can pay for the item.",
-            text: `With that extra cost in mind, what amount could you pay for the item itself?`,
             relatedEventIds: [item.eventId],
           });
         }

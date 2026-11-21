@@ -1,0 +1,15 @@
+{
+  "id": "seller-strategy/1",
+  "source": "Kritva seller negotiation strategy (Kritva_Negotiation_Strategy.pdf): controls, concessions, pressure, closing and walking away.",
+  "increment": 100,
+  "concessionSteps": [1500, 800, 300],
+  "maxCounteroffers": 3,
+  "splitTheDifference": true,
+  "askBeforeConceding": true,
+  "walkAwayAfterMaxCounteroffers": true,
+  "walkAwayLine": "Thank you. Please contact me if your terms change.",
+  "pressureQuestions": {
+    "lowestPrice": "What price and collection time can you accept?",
+    "cheaperElsewhere": "Are the condition and delivery the same?"
+  }
+}

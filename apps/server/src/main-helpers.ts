@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { validateConfirmedMandate } from "@kritva/core";
+import { MINIMAL_GUIDANCE, parseGuidance, validateConfirmedMandate, type StrategyGuidance } from "@kritva/core";
 import type { MandateEntry } from "./app.ts";
 
 /** Loads every confirmed mandate listed in cases/<case>/case.json. Invalid ones are skipped. */
@@ -24,4 +24,19 @@ export function loadConfirmedMandates(casesDir: string): MandateEntry[] {
     }
   }
   return entries;
+}
+
+/**
+ * Strategy guidance (tactic parameters as data). KRITVA_GUIDANCE names the file; "none" uses the
+ * built-in minimal guidance. An invalid file is refused loudly rather than half-applied.
+ */
+export function loadGuidance(root: string): StrategyGuidance {
+  const setting = process.env.KRITVA_GUIDANCE ?? "cases/bed-sale/strategy-guidance.json";
+  if (setting === "none") return MINIMAL_GUIDANCE;
+  const path = join(root, setting);
+  if (!existsSync(path)) {
+    console.warn(`Strategy guidance ${setting} not found; using the built-in minimal guidance.`);
+    return MINIMAL_GUIDANCE;
+  }
+  return parseGuidance(JSON.parse(readFileSync(path, "utf8")));
 }

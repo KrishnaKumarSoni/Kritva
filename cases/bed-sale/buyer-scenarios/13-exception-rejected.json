@@ -1,20 +1,39 @@
 {
   "name": "exception-rejected",
   "mandate": "bed-sale/exception-test",
-  "description": "Test data: the seller rejects the exception. No agreement is recorded and Kritva never offers below ₹18,000.",
+  "description": "Test data: the seller rejects the exception. No agreement is recorded and Kritva never offers below ₹18,000. After the rejection, a buyer staying below the limit may end the negotiation without agreement.",
   "turns": [
-    { "buyer": "Would you take ₹16,000?" },
-    { "buyer": "₹17,000 then?" },
-    { "buyer": "₹17,500 is really the most I can do." },
-    { "buyer": "Sorry, ₹17,500 is my limit." },
-    { "seller": "rejected" },
-    { "buyer": "Yes, I accept ₹17,500." }
+    {
+      "buyer": "Would you take ₹16,000?"
+    },
+    {
+      "buyer": "₹17,000 then?"
+    },
+    {
+      "buyer": "₹17,500 is really the most I can do."
+    },
+    {
+      "buyer": "Sorry, ₹17,500 is my limit."
+    },
+    {
+      "seller": "rejected"
+    },
+    {
+      "buyer": "Yes, I accept ₹17,500."
+    }
   ],
   "expect": {
-    "outcome": ["in_progress", "pending_approval"],
+    "outcome": [
+      "in_progress",
+      "pending_approval",
+      "no_agreement"
+    ],
     "standingMinimum": 18000,
     "exceptionRequested": true,
-    "noAcceptedOfferBelow": { "amount": 18000, "unlessTerm": {} },
+    "noAcceptedOfferBelow": {
+      "amount": 18000,
+      "unlessTerm": {}
+    },
     "agentMustNotSay": []
   }
 }

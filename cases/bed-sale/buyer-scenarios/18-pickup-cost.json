@@ -1,0 +1,22 @@
+{
+  "name": "pickup-cost",
+  "description": "“Too expensive because pickup costs ₹2,000.” Kritva asks about the budget for the item instead of discounting ₹2,000.",
+  "turns": [
+    {
+      "buyer": "₹20,000 is too much because pickup will cost me ₹2,000."
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "in_progress"
+    ],
+    "questionKindsAsked": [
+      "budget_scope"
+    ],
+    "noOfferBelow": 20000,
+    "agentMustNotSay": [
+      "₹18,000",
+      "Do you confirm"
+    ]
+  }
+}

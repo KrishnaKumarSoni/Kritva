@@ -36,6 +36,10 @@ export interface NegotiationState {
   /** The counterparty's offers on the negotiable term, oldest first. */
   counterpartyAmounts: number[];
   countersMade: number;
+  /** The agent has already offered to split the difference (guidance allows it once). */
+  splitUsed: boolean;
+  /** Counterparty offers on the negotiable term since the agent's ask last changed, this one included. */
+  offersSinceAsk: number;
   lastProposed: StatedOffer | null;
   /** The latest complete terms the agent stated for confirmation. */
   pendingFinal: StatedOffer | null;
@@ -93,6 +97,8 @@ export function projectState(ctx: SessionContext): NegotiationState {
   const askHistory: number[] = currentAsk === null ? [] : [currentAsk];
   const counterpartyAmounts: number[] = [];
   let countersMade = 0;
+  let splitUsed = false;
+  let offersSinceAsk = 0;
   let lastProposed: StatedOffer | null = null;
   let pendingFinal: StatedOffer | null = null;
   let pendingApproval: NegotiationState["pendingApproval"] = null;
@@ -113,7 +119,16 @@ export function projectState(ctx: SessionContext): NegotiationState {
     return t && "amount" in t.value ? (t.value.amount as number) : null;
   };
 
+  // Offers the terms gate blocked were never sent; they stay in the record as internal offers only.
+  const blocked = new Set<string>();
+  for (const e of ctx.events) {
+    if (e.type !== "action_checked") continue;
+    const c = e.payload as PayloadOf<"action_checked">;
+    if (c.phase === "terms" && c.decision !== "allow" && c.offerId) blocked.add(c.offerId);
+  }
+
   for (const e of ctx.events as RecordedEvent[]) {
+    if (e.type === "offer_proposed" && blocked.has(e.id)) continue;
     switch (e.type) {
       case "term_requested": {
         const p = e.payload as PayloadOf<"term_requested">;
@@ -131,7 +146,10 @@ export function projectState(ctx: SessionContext): NegotiationState {
         const p = ctx.effective.get(e.id) as PayloadOf<"offer_extracted">;
         for (const t of p.terms) counterpartyTerms.set(t.termId, t.value);
         const amount = amountOf(p.terms);
-        if (amount !== null) counterpartyAmounts.push(amount);
+        if (amount !== null) {
+          counterpartyAmounts.push(amount);
+          offersSinceAsk += 1;
+        }
         break;
       }
       case "offer_proposed": {
@@ -143,8 +161,10 @@ export function projectState(ctx: SessionContext): NegotiationState {
         if (amount !== null && amount !== currentAsk && ctx.isCommunicated(e.id)) {
           currentAsk = amount;
           askHistory.push(amount);
+          offersSinceAsk = 0;
           if (p.basis === "counter") countersMade += 1;
         }
+        if (p.tactic === "split_difference" && ctx.isCommunicated(e.id)) splitUsed = true;
         if (p.basis === "final_terms") pendingFinal = lastProposed;
         break;
       }
@@ -222,6 +242,8 @@ export function projectState(ctx: SessionContext): NegotiationState {
     askHistory,
     counterpartyAmounts,
     countersMade,
+    splitUsed,
+    offersSinceAsk,
     lastProposed,
     pendingFinal,
     pendingApproval,

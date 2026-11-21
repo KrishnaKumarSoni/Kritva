@@ -12,6 +12,10 @@ import {
   orderTerms,
   numericValue,
   projectCounterparty,
+  projectCommitments,
+  noAgreementSummary,
+  type CommitmentsModel,
+  type SessionContext,
   type CounterpartyModel,
   type DraftView,
   type MandateRevisions,
@@ -94,6 +98,7 @@ export function createApp(deps: AppDeps): Hono {
       dealSpace: dealSpaceView(state, locale),
       principal: principalView(state, locale),
       counterparty: counterpartyView(projectCounterparty(ctx, state.view.negotiable?.termId ?? null), state, locale),
+      commitments: commitmentsView(ctx, state, locale, engine.guidance.id),
       drafts: (await revisions.drafts(id)).map((d) => draftView(d, locale)),
       events: events.map((e) => describeEvent(e, state.view, locale)),
     });
@@ -103,6 +108,15 @@ export function createApp(deps: AppDeps): Hono {
     const body = await c.req.json<{ decision?: string; note?: string }>().catch(() => ({}) as Record<string, never>);
     if (body.decision !== "approved" && body.decision !== "rejected") return c.json({ error: "invalid_decision" }, 400);
     const result = await engine.respondToApproval({ sessionId: c.req.param("id"), requestId: c.req.param("requestId"), decision: body.decision, note: body.note ?? null });
+    if (!result.ok) return c.json({ error: result.code, message: result.message }, result.code === "not_pending" ? 409 : 400);
+    return c.json({ reply: result.reply, state: operatorState(result.state, locale) });
+  });
+
+  /** End without agreement. Records who stopped and why; an agreement already recorded cannot be ended. */
+  app.post("/api/operator/sessions/:id/end", async (c) => {
+    const body = await c.req.json<{ reason?: string }>().catch(() => ({}) as Record<string, never>);
+    const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 500) : null;
+    const result = await engine.endNegotiation({ sessionId: c.req.param("id"), reason });
     if (!result.ok) return c.json({ error: result.code, message: result.message }, result.code === "not_pending" ? 409 : 400);
     return c.json({ reply: result.reply, state: operatorState(result.state, locale) });
   });
@@ -151,7 +165,7 @@ export function createApp(deps: AppDeps): Hono {
       // Public listing content only: the principal's public package and public facts.
       listing: { terms: termsView(state.view, state.view.defaultPackage, locale) ?? [], facts: state.view.publicFacts },
       messages: buyerMessages(events),
-      outcome: buyerOutcome(state, locale),
+      outcome: buyerOutcome(state, await record.context(id), locale),
     });
   });
 
@@ -168,7 +182,7 @@ export function createApp(deps: AppDeps): Hono {
     if (!result.ok) return c.json({ error: result.code, message: result.message }, result.code === "session_not_found" ? 404 : 400);
     return c.json({
       reply: result.reply ? { messageId: result.reply.messageId, text: result.reply.text } : null,
-      outcome: buyerOutcome(result.state, locale),
+      outcome: buyerOutcome(result.state, await record.context(c.req.param("id")), locale),
       timings: result.timings,
     });
   });
@@ -363,8 +377,105 @@ function termsView(view: MandateView, terms: OfferTerm[] | null, locale: string)
 }
 
 /** What the buyer may see about the outcome: the kind and the stated terms. Nothing internal. */
-function buyerOutcome(state: NegotiationState, locale: string) {
-  return { kind: state.outcome.kind, terms: termsView(state.view, state.outcome.terms, locale) };
+/**
+ * What the counterparty may see about the outcome: the agreed terms and what is still to happen,
+ * or, without agreement, each side's last offer the counterparty already saw. Never a private limit.
+ */
+function buyerOutcome(state: NegotiationState, ctx: SessionContext, locale: string) {
+  const model = commitmentsFor(ctx, state, locale);
+  const options = commitmentOptions(state, locale);
+  const ended = model.outcome === "no_agreement";
+  return {
+    kind: state.outcome.kind,
+    terms: termsView(state.view, state.outcome.terms, locale),
+    obligations: model.agreement ? model.agreement.obligations.map((o) => o.description) : [],
+    noAgreement: ended ? { ...noAgreementSummary(model, options), endedBy: model.stopped?.by ?? null } : null,
+  };
+}
+
+function commitmentOptions(state: NegotiationState, locale: string) {
+  return {
+    negotiableTermId: state.view.negotiable?.termId ?? null,
+    termName: (id: string) => state.space.terms.find((t) => t.termId === id)?.name ?? id,
+    format: (v: Value) => formatValue(v, locale),
+  };
+}
+
+/** Commitments with each offer's terms in the listing's order, so every view reads the same way. */
+function commitmentsFor(ctx: SessionContext, state: NegotiationState, locale: string): CommitmentsModel {
+  const model = projectCommitments(ctx, commitmentOptions(state, locale));
+  for (const o of model.offers) o.terms = orderTerms(state.view, o.terms);
+  return model;
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  enquiry: "Enquiry",
+  interest: "Interest only",
+  proposed: "Open offer",
+  pending_clarification: "Needs clarification",
+  internal: "Internal, not sent",
+  awaiting_approval: "Awaiting your approval",
+  delivered: "Delivered, open",
+  accepted: "Accepted",
+  agreed: "Agreed",
+  rejected: "Rejected",
+  superseded: "Superseded",
+  withdrawn: "Withdrawn",
+  expired: "Expired",
+};
+
+const ACTION_LABEL: Record<string, string> = {
+  ask: "Ask",
+  clarify: "Clarify",
+  propose: "Propose terms",
+  counter: "Counter",
+  accept: "Accept",
+  decline: "Decline",
+  request_approval: "Request approval",
+  pause: "Pause",
+  end: "End",
+  wait: "Wait",
+  answer: "Answer",
+};
+
+/** Operator view of commitments: every offer version and status, the outcome, and the strategy's recorded actions. */
+function commitmentsView(ctx: SessionContext, state: NegotiationState, locale: string, guidanceId: string) {
+  const model = commitmentsFor(ctx, state, locale);
+  const options = commitmentOptions(state, locale);
+  const line = (t: OfferTerm) => `${options.termName(t.termId)}: ${formatValue(t.value, locale)}`;
+  const offer = (o: CommitmentsModel["offers"][number]) => ({
+    offerId: o.offerId,
+    party: o.party,
+    kind: o.kind,
+    version: o.version,
+    status: o.status,
+    statusLabel: STATUS_LABEL[o.status] ?? o.status,
+    blocked: o.blocked,
+    approval: o.approval,
+    terms: orderTerms(state.view, o.terms).map(line),
+    conditions: o.conditions,
+    mandateRevision: o.mandateRevision,
+    at: o.at,
+  });
+  const decisions = ctx.events
+    .filter((e) => e.type === "decision")
+    .map((e) => {
+      const p = e.payload as { kind: string; reason: string; action: string | null; assessment: { verdict: string; drivers: string[] } | null; mandateRevision: number | null; guidance: string | null };
+      return { id: e.id, at: e.recordedAt, action: p.action, actionLabel: p.action ? (ACTION_LABEL[p.action] ?? p.action) : null, reason: p.reason, assessment: p.assessment, mandateRevision: p.mandateRevision, guidance: p.guidance };
+    })
+    .reverse()
+    .slice(0, 30);
+  return {
+    guidance: guidanceId,
+    outcome: model.outcome,
+    stopped: model.stopped,
+    currentCounterpartyOffer: model.currentCounterpartyOffer ? offer(model.currentCounterpartyOffer) : null,
+    currentPrincipalOffer: model.currentPrincipalOffer ? offer(model.currentPrincipalOffer) : null,
+    offers: [...model.offers].reverse().map(offer),
+    agreement: model.agreement ? { terms: orderTerms(state.view, model.agreement.terms).map(line), approved: model.agreement.approvalId !== null, obligations: model.agreement.obligations.map((o) => o.description) } : null,
+    noAgreement: model.outcome === "no_agreement" ? noAgreementSummary(model, options) : null,
+    decisions,
+  };
 }
 
 /** The principal's console view: includes private limits and authority, for the operator only. */
@@ -418,7 +529,7 @@ function describeEvent(e: RecordedEvent, view: MandateView, locale: string) {
       summary = terms(p.terms);
       break;
     case "decision":
-      title = `Decision: ${String(p.kind).replace(/_/g, " ")}`;
+      title = p.action ? `Decision: ${ACTION_LABEL[String(p.action)] ?? String(p.action)}` : `Decision: ${String(p.kind).replace(/_/g, " ")}`;
       summary = String(p.reason);
       break;
     case "reply_blocked":

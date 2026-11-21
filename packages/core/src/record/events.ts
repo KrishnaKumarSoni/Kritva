@@ -92,6 +92,12 @@ export const PAYLOADS = {
     byPartyId: Id,
     terms: OfferTerms,
     termsHash: z.string().length(64),
+    /** An offer, a question about a price ("would you take X?"), or interest without a commitment. */
+    kind: z.enum(["offer", "enquiry", "interest"]).default("offer"),
+    /** The counterparty's previous offer this one changes. History is never overwritten. */
+    previousOfferId: Id.nullable().default(null),
+    /** Conditions in the counterparty's words that the terms cannot express ("if I get a truck"). */
+    conditions: z.array(z.string().trim().min(1).max(300)).max(10).default([]),
   }),
   /** Terms the agent intends to put forward. Proposed is not communicated. */
   offer_proposed: z.strictObject({
@@ -99,6 +105,10 @@ export const PAYLOADS = {
     basis: z.enum(["counter", "final_terms"]),
     terms: OfferTerms,
     termsHash: z.string().length(64),
+    /** The agent's previous offer this one changes. */
+    previousOfferId: Id.nullable().default(null),
+    /** How the strategy reached this value (Epic 8), when it was a tactic from guidance. */
+    tactic: z.enum(["concession_step", "split_difference", "halve_distance"]).nullable().default(null),
   }),
   /** A term the counterparty asked about that the mandate does not cover (e.g. an added service). */
   term_requested: z.strictObject({
@@ -173,7 +183,7 @@ export const PAYLOADS = {
   /** A question that would resolve an unknown or conflict affecting a possible agreement. Strategy decides whether to ask it. */
   question_prepared: z.strictObject({
     issueKey: z.string().min(1).max(200),
-    issueKind: z.enum(["budget_scope", "obstacle", "authority", "conditional", "contradiction"]),
+    issueKind: z.enum(["budget_scope", "obstacle", "authority", "conditional", "contradiction", "terms_probe", "comparison"]),
     purpose: ShortText,
     text: ShortText,
     relatedEventIds: z.array(Id).max(10),
@@ -190,6 +200,18 @@ export const PAYLOADS = {
     kind: DecisionKind,
     reason: ShortText,
     relatedEventIds: z.array(Id).max(20),
+    /** The strategy action chosen (Epic 8). */
+    action: z.enum(["ask", "clarify", "propose", "counter", "accept", "decline", "request_approval", "pause", "end", "wait", "answer"]).nullable().default(null),
+    /** The package assessment behind the action: hard constraints first, then stated interests. */
+    assessment: z
+      .strictObject({
+        verdict: z.enum(["acceptable", "unacceptable", "needs_clarification", "not_assessed"]),
+        drivers: z.array(ShortText).max(12),
+      })
+      .nullable()
+      .default(null),
+    mandateRevision: z.number().int().min(1).nullable().default(null),
+    guidance: z.string().max(120).nullable().default(null),
   }),
   approval_requested: z.strictObject({
     offerId: Id,
@@ -245,6 +267,10 @@ export const PAYLOADS = {
     from: SessionStatus,
     to: SessionStatus,
     reason: ShortText,
+    /** Who asked for this change, where known (e.g. the counterparty declined to continue). */
+    requestedBy: z.enum(["principal", "counterparty", "agent", "system"]).nullable().default(null),
+    /** Terms still open when the negotiation paused or ended. */
+    unresolved: z.array(ShortText).max(20).default([]),
   }),
   /** Appends a corrected payload for an earlier event. The original stays. */
   correction: z.strictObject({

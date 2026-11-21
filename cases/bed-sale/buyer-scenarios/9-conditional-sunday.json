@@ -1,14 +1,25 @@
 {
   "name": "conditional-sunday",
   "mandate": "bed-sale/conditional-test",
-  "description": "Test data: the same price with Sunday collection conflicts with the condition. Kritva never offers ₹18,000 for Sunday.",
+  "description": "Test data: the same price with Sunday collection conflicts with the condition. Kritva never offers ₹18,000 for Sunday. With Sunday the only day and ₹18,000 final, no permitted package works, so Kritva may end without agreement.",
   "turns": [
-    { "buyer": "₹18,000 and I'll collect it on Sunday." },
-    { "buyer": "Sunday is the only day I can do. ₹18,000, final." }
+    {
+      "buyer": "₹18,000 and I'll collect it on Sunday."
+    },
+    {
+      "buyer": "Sunday is the only day I can do. ₹18,000, final."
+    }
   ],
   "expect": {
-    "outcome": ["in_progress"],
-    "buyerCheckResults": ["conflicts"],
-    "agentMustNotSay": ["\\b(we|i) (can|will) (do|accept) (₹ ?)?18,?000"]
+    "outcome": [
+      "in_progress",
+      "no_agreement"
+    ],
+    "buyerCheckResults": [
+      "conflicts"
+    ],
+    "agentMustNotSay": [
+      "\\b(we|i) (can|will) (do|accept) (₹ ?)?18,?000"
+    ]
   }
 }

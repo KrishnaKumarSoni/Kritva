@@ -21,7 +21,7 @@ import {
   type RecordedEvent,
 } from "@kritva/core";
 import { createApp } from "../src/app.ts";
-import { loadConfirmedMandates } from "../src/main-helpers.ts";
+import { loadConfirmedMandates, loadGuidance } from "../src/main-helpers.ts";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
 const args = process.argv.slice(2);
@@ -33,7 +33,7 @@ interface Scenario {
   /** Confirmed mandate to run against; defaults to the demo mandate. */
   mandate?: string;
   description: string;
-  turns: Array<{ buyer: string } | { seller: "approved" | "rejected" | "pause" | "resume" }>;
+  turns: Array<{ buyer: string } | { seller: "approved" | "rejected" | "pause" | "resume" | "end" }>;
   expect: {
     outcome: string[];
     agreedAmountAtLeast?: number;
@@ -54,6 +54,14 @@ interface Scenario {
     exceptionRequested?: boolean;
     /** Replies sent while paused carry no offer. */
     pausedTurnsHaveNoOffers?: boolean;
+    /** Who ended the negotiation without agreement (Epic 7). */
+    endedBy?: "counterparty" | "agent" | "principal";
+    /** Kinds of questions Kritva asked (Epic 8), e.g. budget_scope, authority, conditional, terms_probe. */
+    questionKindsAsked?: string[];
+    /** Strategy actions that must appear among the recorded decisions (Epic 8). */
+    decisionActions?: string[];
+    /** No offer the buyer received is below this amount. */
+    noOfferBelow?: number;
   };
 }
 
@@ -73,7 +81,7 @@ const viewFor = (id: string) => {
 
 const record = new NegotiationRecord(new SqliteRecordBackend(join(mkdtempSync(join(tmpdir(), "kritva-scenarios-")), "record.sqlite")));
 const llm = createTurnLlmFromEnv();
-const engine = new NegotiationEngine({ record, llm, locale: "en-IN" });
+const engine = new NegotiationEngine({ record, llm, locale: "en-IN", guidance: loadGuidance(ROOT) });
 const revisions = new MandateRevisions({ record, engine, mappingLlm: createMappingLlmFromEnv() });
 const app = createApp({ record, engine, revisions, mandates, locale: "en-IN" });
 
@@ -122,6 +130,13 @@ async function runScenario(s: Scenario, run: number): Promise<RunResult> {
       if (res.json.reply) {
         transcript.push({ who: "kritva", text: res.json.reply.text, ms });
         // Same as the chat page: report delivery once the reply is shown.
+        await call("POST", `/api/buyer/sessions/${id}/deliveries`, { messageId: res.json.reply.messageId });
+      }
+    } else if (turn.seller === "end") {
+      const res = await call("POST", `/api/operator/sessions/${id}/end`, { reason: "The seller decided not to go ahead." });
+      transcript.push({ who: "seller", text: "(end)" });
+      if (res.json.reply) {
+        transcript.push({ who: "kritva", text: res.json.reply.text });
         await call("POST", `/api/buyer/sessions/${id}/deliveries`, { messageId: res.json.reply.messageId });
       }
     } else if (turn.seller === "pause" || turn.seller === "resume") {
@@ -232,6 +247,23 @@ async function runScenario(s: Scenario, run: number): Promise<RunResult> {
       return amount < rule.amount && !exempt;
     });
     checks.push({ check: `no accepted terms below ${rule.amount} without the required condition`, pass: bad.length === 0, detail: `${accepted.length} accepted` });
+  }
+  if (s.expect.endedBy) {
+    const commitments = (await call("GET", `/api/operator/sessions/${id}`)).json.commitments;
+    checks.push({ check: `ended without agreement by ${s.expect.endedBy}`, pass: commitments.outcome === "no_agreement" && commitments.stopped?.by === s.expect.endedBy && commitments.agreement === null, detail: `outcome ${commitments.outcome}, by ${commitments.stopped?.by ?? "nobody"}` });
+  }
+  if (s.expect.questionKindsAsked) {
+    const prepared = new Map(events.filter((e) => e.type === "question_prepared").map((e) => [e.id, (e.payload as any).issueKind as string]));
+    const asked = events.filter((e) => e.type === "question_asked").map((e) => prepared.get((e.payload as any).questionId));
+    for (const kind of s.expect.questionKindsAsked) checks.push({ check: `asked a ${kind} question`, pass: asked.includes(kind), detail: `asked: ${asked.join(", ") || "none"}` });
+  }
+  if (s.expect.decisionActions) {
+    const actions = events.filter((e) => e.type === "decision").map((e) => (e.payload as any).action as string | null);
+    for (const action of s.expect.decisionActions) checks.push({ check: `strategy chose ${action}`, pass: actions.includes(action), detail: `actions: ${actions.join(", ")}` });
+  }
+  if (s.expect.noOfferBelow !== undefined) {
+    const sentAmounts = proposed.filter((o) => sentIds.has(o.id)).map((o) => amountOf((o.payload as any).terms) ?? Infinity);
+    checks.push({ check: `no offer sent below ${s.expect.noOfferBelow}`, pass: sentAmounts.every((a) => a >= s.expect.noOfferBelow!), detail: `sent ${sentAmounts.join(", ") || "nothing"}` });
   }
   checks.push({ check: `outcome is ${s.expect.outcome.join(" or ")}`, pass: s.expect.outcome.includes(state.outcome.kind), detail: `got ${state.outcome.kind}` });
 

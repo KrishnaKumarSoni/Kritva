@@ -17,10 +17,62 @@ export interface BuyerMessage {
   channel: "text" | "voice" | null;
 }
 
+export interface NoAgreementSummary {
+  lastPrincipalOffer: string[];
+  lastCounterpartyOffer: string[];
+  differences: string[];
+}
+
+export interface BuyerOutcome {
+  kind: OutcomeKind;
+  terms: TermView[] | null;
+  /** What still has to happen after an agreement. Pending, never fulfilled here. */
+  obligations: string[];
+  noAgreement: (NoAgreementSummary & { endedBy: string | null }) | null;
+}
+
 export interface BuyerView {
   listing: { terms: TermView[]; facts: string[] };
   messages: BuyerMessage[];
-  outcome: { kind: OutcomeKind; terms: TermView[] | null };
+  outcome: BuyerOutcome;
+}
+
+export interface OfferView {
+  offerId: string;
+  party: "principal" | "counterparty";
+  kind: string;
+  version: number;
+  status: string;
+  statusLabel: string;
+  blocked: boolean;
+  approval: "none" | "requested" | "approved" | "rejected";
+  terms: string[];
+  conditions: string[];
+  mandateRevision: number;
+  at: string;
+}
+
+export interface DecisionView {
+  id: string;
+  at: string;
+  action: string | null;
+  actionLabel: string | null;
+  reason: string;
+  assessment: { verdict: string; drivers: string[] } | null;
+  mandateRevision: number | null;
+  guidance: string | null;
+}
+
+export interface CommitmentsView {
+  guidance: string;
+  outcome: "negotiating" | "paused" | "pending_approval" | "agreement" | "no_agreement";
+  stopped: { by: string | null; reason: string; unresolved: string[] } | null;
+  currentCounterpartyOffer: OfferView | null;
+  currentPrincipalOffer: OfferView | null;
+  offers: OfferView[];
+  agreement: { terms: string[]; approved: boolean; obligations: string[] } | null;
+  noAgreement: NoAgreementSummary | null;
+  decisions: DecisionView[];
 }
 
 export interface RecordEvent {
@@ -109,6 +161,7 @@ export interface OperatorView {
   dealSpace: DealSpaceView;
   principal: PrincipalView;
   counterparty: CounterpartyView;
+  commitments: CommitmentsView;
   drafts: DraftSummary[];
   events: RecordEvent[];
 }
@@ -166,6 +219,7 @@ export const api = {
       clientMessageId,
     }),
   reportDelivered: (id: string, messageId: string) => call<unknown>("POST", `/api/buyer/sessions/${id}/deliveries`, { messageId }),
+  endNegotiation: (id: string, reason: string) => call<unknown>("POST", `/api/operator/sessions/${id}/end`, { reason }),
   setPaused: (id: string, paused: boolean) => call<unknown>("POST", `/api/operator/sessions/${id}/pause`, { paused }),
   instructions: (id: string) => call<{ instructions: string }>("GET", `/api/operator/sessions/${id}/instructions`),
   proposeDraft: (id: string, instructions: string) => call<{ draft: DraftSummary }>("POST", `/api/operator/sessions/${id}/drafts`, { instructions }),

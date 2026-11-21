@@ -1,0 +1,24 @@
+{
+  "name": "refusal",
+  "description": "The buyer refuses to negotiate and withdraws. No agreement; the refusal is recorded as the buyer's.",
+  "turns": [
+    {
+      "buyer": "I'd pay ₹15,000."
+    },
+    {
+      "buyer": "I will not negotiate, and I don't want the bed."
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "no_agreement"
+    ],
+    "endedBy": "counterparty",
+    "decisionActions": [
+      "end"
+    ],
+    "agentMustNotSay": [
+      "\\b(deal|agreed)\\b"
+    ]
+  }
+}

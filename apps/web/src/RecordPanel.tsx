@@ -2,6 +2,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { OperatorView, RecordEvent } from "./api.ts";
 import { BuyerPanel } from "./BuyerPanel.tsx";
+import { CommitmentsPanel } from "./CommitmentsPanel.tsx";
 import { DealSpace } from "./DealSpace.tsx";
 import { MandatePanel } from "./MandatePanel.tsx";
 import { LockIcon, ShieldIcon } from "./icons.tsx";
@@ -22,9 +23,10 @@ const FILTERS: Array<{ id: Filter; label: string; match: (e: RecordEvent) => boo
   { id: "checks", label: "Checks", match: (e) => ["proposal_checked", "term_requested", "mandate_revised", "action_checked", "mandate_draft_proposed", "mandate_draft_rejected"].includes(e.type) },
 ];
 
-type Tab = "record" | "deal" | "buyer" | "mandate";
+type Tab = "record" | "offers" | "deal" | "buyer" | "mandate";
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: "record", label: "Record" },
+  { id: "offers", label: "Offers" },
   { id: "deal", label: "Deal space" },
   { id: "buyer", label: "Buyer" },
   { id: "mandate", label: "Mandate" },
@@ -85,7 +87,7 @@ export function RecordPanel({ view, responding, onRespond, onPause, onChanged }:
           </h2>
           <p className="panel-subtitle">Operator view of the shared record. Private items never reach the buyer.</p>
         </div>
-        {view && view.state.status !== "agreed" && (
+        {view && !["agreed", "no_agreement", "ended"].includes(view.state.status) && (
           <button type="button" className={`button ${view.state.paused ? "button-neutral" : "button-secondary"}`} onClick={() => onPause(!view.state.paused)} aria-pressed={view.state.paused}>
             {view.state.paused ? "Resume" : "Pause"}
           </button>
@@ -162,6 +164,11 @@ export function RecordPanel({ view, responding, onRespond, onPause, onChanged }:
         ))}
       </div>
 
+      {tab === "offers" && view && (
+        <div role="tabpanel" id="panel-offers" aria-labelledby="tab-offers" className="tabpanel">
+          <CommitmentsPanel sessionId={view.session.id} view={view.commitments} onChanged={onChanged} />
+        </div>
+      )}
       {tab === "deal" && view && (
         <div role="tabpanel" id="panel-deal" aria-labelledby="tab-deal" className="tabpanel">
           <DealSpace view={view.dealSpace} />

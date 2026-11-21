@@ -225,6 +225,10 @@ export function validateNewEvent(event: NewEvent, actorInput: unknown, ctx: Sess
         if (m.speakerPartyId !== p.byPartyId) add("payload.byPartyId", "must be the speaker of the source message");
       }
       checkTerms(p.terms, p.termsHash, "payload");
+      if (p.previousOfferId) {
+        const prev = refOf("payload.previousOfferId", p.previousOfferId, ["offer_extracted"]);
+        if (prev && ctx.payloadOf(prev.id, "offer_extracted")!.byPartyId !== p.byPartyId) add("payload.previousOfferId", "must be the same party's earlier offer");
+      }
       break;
     }
     case "term_requested": {
@@ -259,6 +263,7 @@ export function validateNewEvent(event: NewEvent, actorInput: unknown, ctx: Sess
       requireActor(["agent"]);
       if (p.byPartyId !== principalId) add("payload.byPartyId", "the agent proposes on the principal's behalf");
       checkTerms(p.terms, p.termsHash, "payload");
+      if (p.previousOfferId) refOf("payload.previousOfferId", p.previousOfferId, ["offer_proposed"]);
       break;
     }
     case "counterparty_noted": {
@@ -379,6 +384,7 @@ export function validateNewEvent(event: NewEvent, actorInput: unknown, ctx: Sess
       const p = parsed.data as PayloadOf<"agreement_recorded">;
       if (!isAgentSide) add("actor.kind", "agreements are recorded by the agent or system");
       if (ctx.status === "agreed") add("type", "this session already has an agreement");
+      if (ctx.status === "no_agreement" || ctx.status === "ended") add("type", "this session ended without agreement");
       checkTerms(p.terms, p.termsHash, "payload");
       checkCurrentRevision(p.mandateRevision, "payload.mandateRevision");
       const offer = ctx.offerTerms(p.offerId);
@@ -419,6 +425,8 @@ export function validateNewEvent(event: NewEvent, actorInput: unknown, ctx: Sess
       if (actor.kind === "counterparty") add("actor.kind", "the counterparty cannot change session status");
       if (p.from !== ctx.status) add("payload.from", "does not match the current status");
       if (p.from === p.to) add("payload.to", "status is unchanged");
+      // Agreement and no agreement are final outcomes.
+      if (ctx.status === "agreed" || ctx.status === "no_agreement" || ctx.status === "ended") add("payload.from", "the negotiation has finished");
       break;
     }
     case "correction": {

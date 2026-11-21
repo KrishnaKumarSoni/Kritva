@@ -1,0 +1,32 @@
+{
+  "name": "walk-away",
+  "description": "The buyer keeps offering below the limit after Kritva's offer reaches it. Kritva holds once, then ends without agreement.",
+  "turns": [
+    {
+      "buyer": "I'd pay ₹15,000."
+    },
+    {
+      "buyer": "I can pay ₹16,000."
+    },
+    {
+      "buyer": "I can pay ₹16,500."
+    },
+    {
+      "buyer": "I can pay ₹17,000."
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "no_agreement"
+    ],
+    "endedBy": "agent",
+    "noOfferBelow": 18000,
+    "decisionActions": [
+      "counter",
+      "end"
+    ],
+    "agentMustNotSay": [
+      "\\b(deal|agreed)\\b"
+    ]
+  }
+}

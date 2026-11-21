@@ -115,7 +115,7 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
           )}
           {view && view.outcome.kind !== "in_progress" && (
             <motion.div key={`outcome-${view.outcome.kind}`} {...enter} exit={{ opacity: 0 }} transition={spring}>
-              <OutcomeCard kind={view.outcome.kind} terms={view.outcome.terms} />
+              <OutcomeCard outcome={view.outcome} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -174,7 +174,8 @@ function Bubble({ message, enter }: { message: BuyerMessage; enter: object }) {
   );
 }
 
-export function OutcomeCard({ kind, terms }: { kind: BuyerView["outcome"]["kind"]; terms: TermView[] | null }) {
+export function OutcomeCard({ outcome }: { outcome: BuyerView["outcome"] }) {
+  const { kind, terms } = outcome;
   if (kind === "agreement") {
     return (
       <section className="outcome outcome-agreement" aria-labelledby="outcome-title">
@@ -185,7 +186,20 @@ export function OutcomeCard({ kind, terms }: { kind: BuyerView["outcome"]["kind"
           <h3 id="outcome-title">Agreement</h3>
         </div>
         <TermsList terms={terms} />
-        <p className="outcome-note">The buyer accepted these terms and the seller approved them. Payment and collection are arranged separately.</p>
+        {outcome.obligations.length > 0 && (
+          <div className="outcome-todo">
+            <p className="outcome-todo-title">Still to do</p>
+            <ul>
+              {outcome.obligations.map((o) => (
+                <li key={o}>
+                  <ClockIcon width={14} height={14} />
+                  <span>{o}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <p className="outcome-note">You accepted these terms and the seller approved them. Payment and pickup are pending and arranged between you directly.</p>
       </section>
     );
   }
@@ -203,13 +217,37 @@ export function OutcomeCard({ kind, terms }: { kind: BuyerView["outcome"]["kind"
       </section>
     );
   }
+  const summary = outcome.noAgreement;
   return (
     <section className="outcome outcome-pending" aria-labelledby="outcome-title">
       <div className="outcome-head">
         <h3 id="outcome-title">No agreement</h3>
       </div>
+      {summary && (summary.lastPrincipalOffer.length > 0 || summary.lastCounterpartyOffer.length > 0) && (
+        <dl className="terms">
+          {summary.lastPrincipalOffer.length > 0 && (
+            <div style={{ display: "contents" }}>
+              <dt>Seller's last offer</dt>
+              <dd>{summary.lastPrincipalOffer.map(capitalize).join(" · ")}</dd>
+            </div>
+          )}
+          {summary.lastCounterpartyOffer.length > 0 && (
+            <div style={{ display: "contents" }}>
+              <dt>Your last offer</dt>
+              <dd>{summary.lastCounterpartyOffer.map(capitalize).join(" · ")}</dd>
+            </div>
+          )}
+        </dl>
+      )}
+      <p className="outcome-note">
+        {summary?.endedBy === "counterparty" ? "You ended the conversation." : summary?.endedBy === "principal" ? "The seller decided not to go ahead." : "No terms worked for both sides."} Nothing was agreed.
+      </p>
     </section>
   );
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 function TermsList({ terms }: { terms: TermView[] | null }) {

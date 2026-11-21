@@ -47,3 +47,6 @@ export { prepareQuestions } from "./counterparty/questions.ts";
 export { approvedFor, clearedNow } from "./negotiation/state.ts";
 export { numericValue } from "./negotiation/mandate-view.ts";
 export { interpretMessage } from "./negotiation/interpret.ts";
+export { StrategyGuidance, MINIMAL_GUIDANCE, parseGuidance } from "./strategy/guidance.ts";
+export { assessPackage, type Assessment } from "./strategy/assess.ts";
+export { projectCommitments, noAgreementSummary, type CommitmentsModel, type OfferRecord, type OfferStatus, type SessionOutcome, type Obligation } from "./commitments/model.ts";

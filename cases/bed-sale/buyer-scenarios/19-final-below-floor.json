@@ -1,0 +1,28 @@
+{
+  "name": "final-below-floor",
+  "description": "After Kritva reaches its limit, the buyer's final offer is below it. Kritva ends without agreement and never goes below the limit.",
+  "turns": [
+    {
+      "buyer": "I'd pay ₹15,000."
+    },
+    {
+      "buyer": "₹16,000 then."
+    },
+    {
+      "buyer": "₹17,000. That's my final offer, no more bargaining."
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "no_agreement"
+    ],
+    "endedBy": "agent",
+    "noOfferBelow": 18000,
+    "agentMustSay": [
+      "contact me if your terms change"
+    ],
+    "agentMustNotSay": [
+      "₹17,000\\b.*(deal|agreed)"
+    ]
+  }
+}

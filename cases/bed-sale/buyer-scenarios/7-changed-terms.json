@@ -1,6 +1,6 @@
 {
   "name": "changed-terms",
-  "description": "The buyer changes terms after final terms are stated. The change is not a confirmation; only the newly stated terms can be agreed.",
+  "description": "The buyer changes terms after final terms are stated. The change is not a confirmation; only the newly stated terms can be agreed. Kritva reads back the complete terms before the buyer's final confirmation.",
   "turns": [
     {
       "buyer": "I'll pay ₹19,500 for it."
@@ -13,6 +13,9 @@
     },
     {
       "buyer": "Yes, I confirm."
+    },
+    {
+      "buyer": "Yes, I confirm those terms."
     },
     {
       "seller": "approved"

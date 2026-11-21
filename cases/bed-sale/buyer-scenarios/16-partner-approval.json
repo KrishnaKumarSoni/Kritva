@@ -1,0 +1,24 @@
+{
+  "name": "partner-approval",
+  "description": "The buyer needs a partner's agreement. The case stays open, Kritva asks about it, and nothing is agreed.",
+  "turns": [
+    {
+      "buyer": "I'd pay ₹19,000, but I need to ask my partner first."
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "in_progress"
+    ],
+    "agentMustNotSay": [
+      "\\b(deal|agreed)\\b",
+      "Do you confirm"
+    ],
+    "decisionActions": [
+      "clarify"
+    ],
+    "agentMustSay": [
+      "\\?"
+    ]
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "seller-ends",
+  "description": "The seller ends the negotiation from the console. The buyer is told plainly and later messages get no offer.",
+  "turns": [
+    {
+      "buyer": "I'd pay ₹15,000."
+    },
+    {
+      "seller": "end"
+    },
+    {
+      "buyer": "Okay, ₹19,000 then."
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "no_agreement"
+    ],
+    "endedBy": "principal",
+    "agentMustSay": [
+      "won't be going ahead",
+      "has ended without an agreement"
+    ],
+    "agentMustNotSay": [
+      "Do you confirm"
+    ]
+  }
+}

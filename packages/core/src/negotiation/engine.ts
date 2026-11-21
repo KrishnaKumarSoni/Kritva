@@ -22,6 +22,7 @@ import { languageCheck } from "../governance/language-check.ts";
 import { decide, type DealInput, type Interpretation, type Plan } from "./policy.ts";
 import { checkReply, type ReplyViolation } from "./reply-check.ts";
 import { approvedFor, projectState, type NegotiationState } from "./state.ts";
+import { MINIMAL_GUIDANCE, type StrategyGuidance } from "../strategy/guidance.ts";
 import { templateReply } from "./templates.ts";
 
 export interface EngineOptions {
@@ -29,6 +30,8 @@ export interface EngineOptions {
   llm: StructuredLlm;
   /** Formatting locale from the host application, e.g. for currency display. */
   locale: string;
+  /** Tactic parameters from a strategy document. Never overrides the mandate or governance. */
+  guidance?: StrategyGuidance;
 }
 
 export interface TurnResult {
@@ -50,12 +53,18 @@ export class NegotiationEngine {
   readonly #record: NegotiationRecord;
   readonly #llm: StructuredLlm;
   readonly #locale: string;
+  readonly #guidance: StrategyGuidance;
   readonly #locks = new Map<string, Promise<unknown>>();
 
   constructor(options: EngineOptions) {
     this.#record = options.record;
     this.#llm = options.llm;
     this.#locale = options.locale;
+    this.#guidance = options.guidance ?? MINIMAL_GUIDANCE;
+  }
+
+  get guidance(): StrategyGuidance {
+    return this.#guidance;
   }
 
   /** Turns for one session run one at a time, in arrival order. */
@@ -132,6 +141,14 @@ export class NegotiationEngine {
       }
       const interpretMs = Math.round(performance.now() - interpretStarted);
 
+      // An earlier, higher ask of ours quoted back ("X is too much") is never the counterparty offering more than the current ask.
+      const n0 = before.view.negotiable;
+      if (n0 && before.currentAsk !== null) {
+        const quoted = (t: OfferTerm) =>
+          t.termId === n0.termId && "amount" in t.value && (t.value.amount as number) !== before.currentAsk && before.askHistory.includes(t.value.amount as number);
+        interp.offerTerms = interp.offerTerms.filter((t) => !quoted(t));
+      }
+
       // A detail given now may settle an earlier offer that was waiting on it: carry that offer's amount forward.
       const n = before.view.negotiable;
       const awaitingDetail = before.lastCounterpartyCheck?.findings.some((f) => f.termId === n?.termId && f.status === "needs_clarification" && f.basis === "condition");
@@ -146,7 +163,20 @@ export class NegotiationEngine {
         related.push(existingOfferId);
       } else if (interp.offerTerms.length > 0) {
         const offer = await writes.put(
-          { id: newEventId(), type: "offer_extracted", channel: null, payload: { sourceMessageId: inbound.event.id, byPartyId: counterpartyId, terms: interp.offerTerms, termsHash: hashTerms(interp.offerTerms) } },
+          {
+            id: newEventId(),
+            type: "offer_extracted",
+            channel: null,
+            payload: {
+              sourceMessageId: inbound.event.id,
+              byPartyId: counterpartyId,
+              terms: interp.offerTerms,
+              termsHash: hashTerms(interp.offerTerms),
+              kind: interp.offerKind ?? "offer",
+              previousOfferId: lastCounterpartyOfferId(await this.#record.context(sessionId)),
+              conditions: interp.offerConditions ?? [],
+            },
+          },
           agent,
         );
         offerExtractedId = offer.id;
@@ -196,7 +226,19 @@ export class NegotiationEngine {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       let state = projectState(await this.#record.context(ctx.sessionId));
       const deal = counterpartyDeal(state, ctx.interp);
-      const plan = state.status === "paused" ? basePlan("answer", { kind: "hold", reason: "The principal paused the negotiation." }, null) : decide(state, ctx.interp, deal);
+      // Questions this message raised (prepared just now), which the strategy may ask before conceding.
+      const freshQuestions = writes.created
+        .filter((e) => e.type === "question_prepared")
+        .map((e) => ({ questionId: e.id, text: (e.payload as { text: string }).text, kind: (e.payload as { issueKind: string }).issueKind }));
+      let plan: Plan;
+      try {
+        plan = state.status === "paused"
+          ? { ...basePlan("answer", { kind: "hold", reason: "The principal paused the negotiation." }, null), action: "pause" }
+          : decide(state, ctx.interp, deal, { guidance: this.#guidance, freshQuestions, locale: this.#locale });
+      } catch {
+        // A strategy failure never improvises: hold, offer nothing, and say we will come back.
+        plan = { ...basePlan("answer", { kind: "hold", reason: "The strategy could not choose a move; nothing was offered." }, null), action: "wait", notice: "check_with_principal" };
+      }
       if (state.status === "paused") plan.notice = "paused";
       if (ctx.rephrase) plan.notice ??= "rephrase";
       const prepared = state.mandateRevision;
@@ -211,10 +253,14 @@ export class NegotiationEngine {
       // Phase 1: the structured action against the mandate in force.
       const termsGate = gateTerms(state, plan, prepared);
       if (termsGate.decision !== "allow") {
-        await this.#recordGate(writes, plan, termsGate, "terms", null, ctx.agent);
         if (termsGate.decision === "needs_approval" && plan.offer) {
+          await this.#recordGate(writes, plan, termsGate, "terms", null, ctx.agent);
           return this.#requestException(writes, state, plan, termsGate, ctx);
         }
+        // A blocked offer stays in the record as an internal offer, never as one the counterparty received.
+        const blockedId = plan.offer && plan.offer.terms.length > 0 && hashTerms(plan.offer.terms) !== state.lastProposed?.termsHash ? await this.#recordOffer(writes, state, plan.offer, ctx.agent) : null;
+        await this.#recordGate(writes, plan, termsGate, "terms", blockedId, ctx.agent);
+        plan.action = termsGate.reasons.some((r) => r.rule === "paused") ? "pause" : termsGate.decision === "needs_clarification" ? "clarify" : "wait";
         if (termsGate.reasons.some((r) => r.rule === "paused")) plan.notice = "paused";
         else if (termsGate.decision === "needs_clarification") {
           for (const name of clarifyNames(state, plan)) if (!plan.clarify.includes(name)) plan.clarify.push(name);
@@ -225,8 +271,10 @@ export class NegotiationEngine {
         plan.acceptanceOf = null;
         if (plan.move !== "await_approval" && plan.move !== "closed") plan.move = "answer";
       }
-      await writes.put({ id: newEventId(), type: "decision", channel: null, payload: { kind: plan.decision.kind, reason: plan.decision.reason, relatedEventIds: ctx.related } }, ctx.agent);
-      plan.ask = selectQuestion(projectCounterparty(await this.#record.context(ctx.sessionId), state.view.negotiable?.termId ?? null), plan);
+      await writes.put({ id: newEventId(), type: "decision", channel: null, payload: this.#decisionPayload(plan, state, ctx.related) }, ctx.agent);
+      const model = projectCounterparty(await this.#record.context(ctx.sessionId), state.view.negotiable?.termId ?? null);
+      if (!plan.ask && plan.strategyQuestion) plan.ask = await this.#strategyQuestion(writes, model, plan.strategyQuestion, ctx.inboundId, ctx.agent);
+      plan.ask ??= selectQuestion(model, plan);
 
       const offerIds = await this.#recordCommitments(writes, state, plan, ctx.inboundId, ctx.agent);
       // Phase 2: the words, built only from checked terms and permitted facts.
@@ -240,6 +288,12 @@ export class NegotiationEngine {
         continue;
       }
       await this.#recordGate(writes, plan, { decision: "allow", reasons: [], mandateRevision: prepared, termsHash: plan.offer ? hashTerms(plan.offer.terms) : null, breachedRuleIds: [] }, "send", offerIds[0] ?? null, ctx.agent);
+      if (plan.move === "end_negotiation" && plan.end) {
+        await writes.put(
+          { id: newEventId(), type: "status_changed", channel: null, payload: { from: now.status, to: "no_agreement", reason: plan.end.reason, requestedBy: plan.end.requestedBy, unresolved: plan.end.unresolved } },
+          ctx.agent,
+        );
+      }
       const reply = await writes.put(
         { id: newEventId(), type: "message", channel: ctx.channel, payload: { direction: "outbound", speakerPartyId: now.view.principalId, text, utteranceId: null, offerIds } },
         ctx.agent,
@@ -265,7 +319,7 @@ export class NegotiationEngine {
     const reuse = state.lastProposed && state.lastProposed.termsHash === hash;
     const offerId = reuse
       ? state.lastProposed!.offerId
-      : (await writes.put({ id: newEventId(), type: "offer_proposed", channel: null, payload: { byPartyId: state.view.principalId, basis: "final_terms", terms, termsHash: hash } }, ctx.agent)).id;
+      : (await writes.put({ id: newEventId(), type: "offer_proposed", channel: null, payload: { byPartyId: state.view.principalId, basis: "final_terms", terms, termsHash: hash, previousOfferId: state.lastProposed?.offerId ?? null } }, ctx.agent)).id;
     await this.#recordCheck(writes, state, offerId, terms, checkProposal(state.space, terms), [], ctx.agent);
     await writes.put(
       {
@@ -349,9 +403,7 @@ export class NegotiationEngine {
     if (plan.offer) {
       const hash = hashTerms(plan.offer.terms);
       const reuse = state.lastProposed && state.lastProposed.termsHash === hash && state.lastProposed.basis === plan.offer.basis;
-      const offerId = reuse
-        ? state.lastProposed!.offerId
-        : (await writes.put({ id: newEventId(), type: "offer_proposed", channel: null, payload: { byPartyId: state.view.principalId, basis: plan.offer.basis, terms: plan.offer.terms, termsHash: hash } }, agent)).id;
+      const offerId = reuse ? state.lastProposed!.offerId : await this.#recordOffer(writes, state, plan.offer, agent, false);
       const existing = state.checks.get(offerId);
       if (!existing || existing.mandateRevision !== state.mandateRevision || existing.termsHash !== hash) {
         await this.#recordCheck(writes, state, offerId, plan.offer.terms, checkProposal(state.space, plan.offer.terms), [], agent);
@@ -391,7 +443,7 @@ export class NegotiationEngine {
    * code checks and the language check; otherwise checked template wording is used.
    */
   async #word(writes: Writer, state: NegotiationState, plan: Plan, conversation: Conversation, agent: Actor, interp: Interpretation): Promise<string> {
-    const templateOnly = plan.move === "state_final_terms" || plan.move === "confirm_agreement" || plan.notice === "paused" || plan.notice === "check_with_principal";
+    const templateOnly = plan.move === "state_final_terms" || plan.move === "confirm_agreement" || plan.move === "end_negotiation" || plan.notice === "paused" || plan.notice === "check_with_principal" || plan.notice === "ended";
     if (!templateOnly) {
       let draft: string | null = null;
       try {
@@ -428,6 +480,39 @@ export class NegotiationEngine {
     await this.#block(writes, fallback, fallbackGate.reasons.map((r) => ({ rule: r.rule as ReplyViolation["rule"], detail: r.detail })), agent);
     void interp;
     return "Let me check on that and get back to you.";
+  }
+
+  /** Records an agent offer (with its previous version and tactic). With check: also its deal-space check. */
+  async #recordOffer(writes: Writer, state: NegotiationState, offer: NonNullable<Plan["offer"]>, agent: Actor, check = true): Promise<string> {
+    const hash = hashTerms(offer.terms);
+    const event = await writes.put(
+      { id: newEventId(), type: "offer_proposed", channel: null, payload: { byPartyId: state.view.principalId, basis: offer.basis, terms: offer.terms, termsHash: hash, previousOfferId: state.lastProposed?.offerId ?? null, tactic: offer.tactic ?? null } },
+      agent,
+    );
+    if (check) await this.#recordCheck(writes, state, event.id, offer.terms, checkProposal(state.space, offer.terms), [], agent);
+    return event.id;
+  }
+
+  /** The decision record: the action, the package assessment behind it, and what it was decided under. */
+  #decisionPayload(plan: Plan, state: NegotiationState, related: string[]) {
+    return {
+      kind: plan.decision.kind,
+      reason: plan.decision.reason.slice(0, 500),
+      relatedEventIds: related.slice(0, 20),
+      action: plan.action ?? null,
+      assessment: plan.assessment ? { verdict: plan.assessment.verdict, drivers: plan.assessment.drivers.map((d) => d.slice(0, 500)) } : null,
+      mandateRevision: state.mandateRevision,
+      guidance: this.#guidance.id,
+    };
+  }
+
+  /** A guidance question (e.g. for "what's your lowest?"): prepared once, asked at most once. */
+  async #strategyQuestion(writes: Writer, model: CounterpartyModel, q: NonNullable<Plan["strategyQuestion"]>, inboundId: string, agent: Actor): Promise<Plan["ask"]> {
+    const issueKey = q.key ?? `strategy:${q.kind}`;
+    const existing = model.questions.find((x) => x.issueKey === issueKey);
+    if (existing) return existing.status === "open" ? { questionId: existing.id, text: existing.text } : null;
+    const prepared = await writes.put({ id: newEventId(), type: "question_prepared", channel: null, payload: { issueKey, issueKind: q.kind, purpose: q.purpose, text: q.text, relatedEventIds: [inboundId] } }, agent);
+    return { questionId: prepared.id, text: q.text };
   }
 
   async #recordCheck(writes: Writer, state: NegotiationState, offerId: string, terms: OfferTerm[], check: DealCheck, requestedTermIds: string[], agent: Actor): Promise<RecordedEvent> {
@@ -542,17 +627,20 @@ export class NegotiationEngine {
           );
           await writes.put({ id: newEventId(), type: "status_changed", channel: null, payload: { from: state.status, to: "agreed", reason: "The principal approved the accepted terms." } }, agent);
           plan = basePlan("confirm_agreement", { kind: "record_agreement", reason: "Principal approved the terms the counterparty accepted." }, { terms, basis: "final_terms" });
+          plan.action = "accept";
         } else if (input.decision === "approved") {
           // A one-off exception: these exact terms may now be offered. The standing mandate is unchanged.
           await writes.put({ id: newEventId(), type: "status_changed", channel: null, payload: { from: state.status, to: "active", reason: "The principal approved an exception for these exact terms." } }, agent);
           plan = basePlan("state_final_terms", { kind: "state_final_terms", reason: "Principal approved the exception; state the approved terms for confirmation." }, { terms, basis: "final_terms" });
+          plan.action = "propose";
         } else {
           await writes.put({ id: newEventId(), type: "status_changed", channel: null, payload: { from: state.status, to: "active", reason: "The principal did not approve the terms." } }, agent);
           const fallbackAsk = previousAsk(state, pending.offerId);
           plan = basePlan("hold", { kind: "reject_offer", reason: "Principal rejected the terms; return to the previous ask." }, fallbackAsk ? { terms: fallbackAsk, basis: "counter" } : null);
           plan.notice = "approval_rejected";
+          plan.action = "counter";
         }
-        await writes.put({ id: newEventId(), type: "decision", channel: null, payload: { kind: plan.decision.kind, reason: plan.decision.reason, relatedEventIds: [response.id] } }, agent);
+        await writes.put({ id: newEventId(), type: "decision", channel: null, payload: this.#decisionPayload(plan, state, [response.id]) }, agent);
 
         const after = projectState(await this.#record.context(input.sessionId));
         const offerIds: string[] = [];
@@ -567,8 +655,7 @@ export class NegotiationEngine {
             offerIds.push(pending.offerId);
           }
         } else if (plan.move === "hold" && plan.offer) {
-          offerIds.push((await writes.put({ id: newEventId(), type: "offer_proposed", channel: null, payload: { byPartyId: after.view.principalId, basis: "counter", terms: plan.offer.terms, termsHash: hashTerms(plan.offer.terms) } }, agent)).id);
-          await this.#recordCheck(writes, after, offerIds[0]!, plan.offer.terms, checkProposal(after.space, plan.offer.terms), [], agent);
+          offerIds.push(await this.#recordOffer(writes, after, plan.offer, agent));
         }
         const conversation = await this.#conversation(input.sessionId, null);
         const text = await this.#word(writes, after, plan, conversation, agent, emptyInterpretation());
@@ -605,6 +692,46 @@ export class NegotiationEngine {
     );
     if (!result.ok) return { ok: false, code: result.error.code === "write_failed" ? "write_failed" : "invalid_event", message: result.error.message };
     return { ok: true, state: projectState(await this.#record.context(input.sessionId)) };
+  }
+
+  /**
+   * The principal ends the negotiation without agreement. Records who stopped and why, what was
+   * left open, and tells the counterparty plainly. An agreement already recorded cannot be undone.
+   */
+  endNegotiation(input: { sessionId: string; reason?: string | null; channel?: Channel }): Promise<TurnResult | TurnError> {
+    return this.#serialize(input.sessionId, async () => {
+      const started = performance.now();
+      const state = projectState(await this.#record.context(input.sessionId));
+      if (state.status === "agreed" || state.status === "no_agreement" || state.status === "ended") return { ok: false, code: "not_pending", message: "The negotiation has already finished." };
+      const principal: Actor = { kind: "principal", partyId: state.view.principalId };
+      const agent: Actor = { kind: AGENT, partyId: state.view.principalId };
+      const writes = new Writer(this.#record, input.sessionId);
+      const channel = input.channel ?? lastChannel(await this.#record.read(input.sessionId, { viewer: "operator" }));
+      const reason = (input.reason?.trim() || "The principal ended the negotiation.").slice(0, 500);
+      const open = new Set<string>();
+      if (state.view.negotiable) open.add(state.view.negotiable.name);
+      for (const r of state.requestedTerms) open.add(r.name);
+      try {
+        const plan = basePlan("end_negotiation", { kind: "end", reason }, null);
+        plan.action = "end";
+        plan.end = { requestedBy: "principal", reason, unresolved: [...open].slice(0, 10), line: null };
+        await writes.put({ id: newEventId(), type: "decision", channel: null, payload: this.#decisionPayload(plan, state, []) }, agent);
+        await writes.put({ id: newEventId(), type: "status_changed", channel: null, payload: { from: state.status, to: "no_agreement", reason, requestedBy: "principal", unresolved: plan.end.unresolved } }, principal);
+        const text = templateReply(state.view, plan, this.#locale);
+        await this.#recordGate(writes, plan, { decision: "allow", reasons: [], mandateRevision: state.mandateRevision, termsHash: null, breachedRuleIds: [] }, "send", null, agent);
+        const reply = await writes.put({ id: newEventId(), type: "message", channel, payload: { direction: "outbound", speakerPartyId: state.view.principalId, text, utteranceId: null, offerIds: [] } }, agent);
+        return {
+          ok: true,
+          reply: { messageId: reply.id, text, offerIds: [], channel },
+          events: writes.created,
+          state: projectState(await this.#record.context(input.sessionId)),
+          timings: { interpretMs: 0, composeMs: 0, totalMs: Math.round(performance.now() - started) },
+        };
+      } catch (error) {
+        if (error instanceof WriteFailure) return { ok: false, code: error.code, message: error.message };
+        throw error;
+      }
+    });
   }
 
   /** A retried message returns the turn that was already recorded for it. */
@@ -654,6 +781,12 @@ function selectQuestion(model: CounterpartyModel, plan: Plan): Plan["ask"] {
   if (plan.notice || plan.clarify.length > 0 || plan.unresolved.length > 0 || plan.questions.length > 0 || plan.refuseDisclosure) return null;
   const q = model.questions.find((x) => x.status === "open");
   return q ? { questionId: q.id, text: q.text } : null;
+}
+
+/** The counterparty's latest offer, so a new one is recorded as its next version. */
+function lastCounterpartyOfferId(ctx: { events: RecordedEvent[] }): string | null {
+  for (let i = ctx.events.length - 1; i >= 0; i -= 1) if (ctx.events[i]!.type === "offer_extracted") return ctx.events[i]!.id;
+  return null;
 }
 
 function emptyInterpretation(): Interpretation {
