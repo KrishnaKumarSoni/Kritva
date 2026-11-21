@@ -112,3 +112,24 @@ export function loadListings(casesDir: string, mandates: MandateEntry[], example
   }
   return out;
 }
+
+/**
+ * The case configuration the running app gives the engine and routes: confirmed mandates, examples,
+ * listings (public name, availability, fulfillment vocabulary, subject fact) and per-case strategy
+ * guidance. The app, the scenario runner and the replay tests all build from this one function, so
+ * a scenario run uses the same configuration as the chat page.
+ */
+export function loadCaseRuntime(root: string, library: MandateLibrary | null) {
+  const casesDir = join(root, "cases");
+  const mandates = loadConfirmedMandates(casesDir);
+  const examples = loadExamples(casesDir);
+  const listings = loadListings(casesDir, mandates, examples, library);
+  return {
+    mandates,
+    examples,
+    listings,
+    guidanceByCase: loadCaseGuidance(root),
+    subjectFacts: new Map(listings.flatMap((l) => (l.subjectFactId ? [[l.caseId, l.subjectFactId] as const] : []))),
+    listingDetails: new Map(listings.map((listing) => [listing.caseId, listing])),
+  };
+}

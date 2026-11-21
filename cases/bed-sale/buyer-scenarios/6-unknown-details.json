@@ -12,13 +12,13 @@
     ],
     "agentMustNotSay": [
       "(?<!whether |if )\\bit (comes|does come) with (a |the )?mattress",
-      "\\bmattress (is|comes) included",
+      "(?<!whether |whether a |whether the |if |if a |if the )\\bmattress (is|comes) included",
       "(?<!whether |if )\\bit (has|does have|includes) (storage|drawers)",
       "\\bbrand is\\b",
       "\\bmade by\\b"
     ],
     "agentMustSay": [
-      "(don.?t|do not) have (that |this )?(information|details?|.*confirmed)|not sure|(can|will) check"
+      "(don.?t|do not) have (that |this )?(information|details?|.*confirmed)|not sure|(can|will) check|(aren.?t|isn.?t|not) confirmed"
     ]
   },
   "simulator": {

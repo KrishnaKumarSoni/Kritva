@@ -1,0 +1,276 @@
+{
+  "scenario": "delivery-only",
+  "mandate": "bed-sale/demo",
+  "recordedAt": "2026-11-21T20:11:35.147Z",
+  "commit": "5a49ea2 + uncommitted changes",
+  "model": "gpt-5.4-mini",
+  "turns": [
+    {
+      "buyer": "I’ll pay the full ₹20,000 if you deliver to Indiranagar.",
+      "expect": {
+        "decision": "decline_request",
+        "action": "decline",
+        "offer": null,
+        "says": [
+          "deliver"
+        ]
+      }
+    },
+    {
+      "buyer": "I can’t collect it myself. I can only buy it if delivery is included.",
+      "expect": {
+        "decision": "decline_request",
+        "action": "decline",
+        "offer": null,
+        "says": [
+          "deliver"
+        ]
+      }
+    },
+    {
+      "buyer": "I’ll pass then. Thanks anyway.",
+      "expect": {
+        "decision": "end",
+        "action": "end",
+        "offer": null
+      }
+    }
+  ],
+  "observed": [
+    {
+      "turn": "I’ll pay the full ₹20,000 if you deliver to Indiranagar.",
+      "reply": "I’m Kritva, assisting Krishna. Delivery to Indiranagar isn’t included here, so the handoff would need to be arranged separately.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "decline_request",
+        "action": "decline"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "I can’t collect it myself. I can only buy it if delivery is included.",
+      "reply": "Delivery isn’t included here, so it would need to be arranged separately.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "decline_request",
+        "action": "decline"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "I’ll pass then. Thanks anyway.",
+      "reply": "Understood, then we’ll leave it here. Wishing you well.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "end",
+        "action": "end"
+      },
+      "blocked": 0
+    }
+  ],
+  "calls": [
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "offer",
+        "offer_terms": [
+          {
+            "term_id": "term_t_price",
+            "value": {
+              "type": "money",
+              "amount": 20000,
+              "currency": "INR",
+              "unit": null,
+              "text": null,
+              "boolean": null
+            }
+          },
+          {
+            "term_id": "term_t_delivery_included",
+            "value": {
+              "type": "boolean",
+              "amount": null,
+              "currency": null,
+              "unit": null,
+              "text": null,
+              "boolean": true
+            }
+          }
+        ],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "offer",
+        "price_concern": null,
+        "offer_conditions": [
+          "if you deliver to Indiranagar"
+        ],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [
+          {
+            "kind": "preference",
+            "quote": "deliver to Indiranagar",
+            "summary": "They want delivery to Indiranagar.",
+            "term_id": "term_t_pickup_location",
+            "value": {
+              "type": "text",
+              "amount": null,
+              "currency": null,
+              "unit": null,
+              "text": "Indiranagar",
+              "boolean": null
+            },
+            "condition": "if you deliver to Indiranagar",
+            "basis": "stated"
+          }
+        ],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "I’m Kritva, assisting Krishna. Delivery to Indiranagar isn’t included here, so the handoff would need to be arranged separately.",
+        "question": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "invented_fact",
+            "quote": "Delivery to Indiranagar isn’t included here, so the handoff would need to be arranged separately."
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "request_change",
+        "offer_terms": [
+          {
+            "term_id": "term_t_delivery_included",
+            "value": {
+              "type": "boolean",
+              "amount": null,
+              "currency": null,
+              "unit": null,
+              "text": null,
+              "boolean": true
+            }
+          }
+        ],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [
+          {
+            "kind": "constraint",
+            "quote": "I can’t collect it myself.",
+            "summary": "They cannot pick it up themselves.",
+            "term_id": "term_t_pickup_location",
+            "value": null,
+            "condition": null,
+            "basis": "stated"
+          },
+          {
+            "kind": "preference",
+            "quote": "I can only buy it if delivery is included.",
+            "summary": "They require delivery to be included to buy it.",
+            "term_id": "term_t_delivery_included",
+            "value": {
+              "type": "boolean",
+              "amount": null,
+              "currency": null,
+              "unit": null,
+              "text": null,
+              "boolean": true
+            },
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Delivery isn’t included here, so it would need to be arranged separately.",
+        "question": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "reject",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": true,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [
+          {
+            "kind": "final_position",
+            "quote": "I’ll pass then.",
+            "summary": "They are withdrawing from the negotiation.",
+            "term_id": null,
+            "value": null,
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Understood, then we’ll leave it here. Wishing you well.",
+        "question": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    }
+  ]
+}

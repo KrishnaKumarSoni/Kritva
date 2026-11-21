@@ -53,7 +53,8 @@ apps/server/              HTTP API for the slice (Hono); buyer and operator rout
 apps/web/                 buyer chat, seller console and outcome card (React + Vite)
 cases/                    case content, kept outside the core
   bed-sale/mandates/      confirmed mandates: the demo one, plus conditional and exception test ones (test data)
-  bed-sale/buyer-scenarios/  the buyer scenarios (seven core, plus conditional, exception, pause and Epic 7–8 ones)
+  bed-sale/buyer-scenarios/  the buyer scenarios (seven core, plus conditional, exception, pause, Epic 7–8 and live chat regression ones)
+  bed-sale/replays/          recorded live chat conversations, replayed by npm test
   bed-sale/strategy-guidance.json  tactic parameters from the seller strategy document (data, not code)
   bed-sale/evaluation.json  known facts and seller permissions used to score the comparison
   <case>/case.json "example"  the example offered in the mandate library
@@ -127,7 +128,8 @@ npm run typecheck
 ```
 
 - `npm test` runs the deterministic suites. They make no model calls.
-- `npm run scenarios` runs every buyer scenario with the real turn model and writes `test-results/scenarios/latest/`. Add `-- --runs 3` for repeated runs, `-- --label epic-4` to keep a named copy, or `-- --baseline epic-7-8` to report what changed since an earlier run.
+- `npm run scenarios` runs every buyer scenario with the real turn model and writes `test-results/scenarios/latest/`. It builds the engine and routes from the same case configuration as the running app (listing name, availability, fulfillment wording, per-case strategy guidance). Add `-- --runs 3` for repeated runs, `-- --label epic-4` to keep a named copy, or `-- --baseline epic-7-8` to report what changed since an earlier run. Scenario turns can carry their own expectations (decision, action, offer amount, reply patterns), checked on every run.
+- `npm run scenarios -- --save-replays` also stores each scenario marked `"replay": true` in `cases/bed-sale/replays/`: the model responses it received and what each turn delivered and decided. `npm test` replays them without a model and fails if any turn now delivers a different reply, decision or offer. Re-record after an intended change.
 - `npm run scenarios -- --compare --label <name>` runs the seven core scenarios three times against Kritva and three times against a plain LLM seller (42 runs), with the buyer simulator, and writes `test-results/comparison/<name>/` (`comparison.md`, `comparison.csv`, `runs.json`, `scores.json`). `--resume` finishes missing runs; `--rescore <name>` rebuilds the report from the stored runs without calling a model.
 - `npm run test:live` re-runs Epic 1 mapping against the real model and writes `test-results/epic-1/`.
 
@@ -208,6 +210,8 @@ node --env-file=.env packages/core/scripts/prepare-mandate.ts bed-sale demo --co
 - **Assess the whole package.** Hard constraints first (a better price never overrides one), then the principal's stated targets and preferences, then a stated alternative. Unknown preferences and alternatives stay unknown, with no invented weights. Assessment is separate from authority: an acceptable package may still need approval.
 - **One action per turn, with a reason.** Ask, clarify, propose, counter, accept, decline, request approval, pause or end, recorded with the assessment, the mandate revision and the guidance in use. A strategy failure holds and offers nothing.
 - **Guidance is data.** Concession steps, the increment, the counteroffer cap, split-the-difference, pressure questions and the walk-away line come from `strategy-guidance.json`. Guidance never grants authority: every move still passes the gate, and no step goes past a limit.
+- **Concessions are paid for.** With `commitmentAllowance` in the guidance, each new buyer commitment earns an approved discount allowance: a firm offer better than their earlier best, or a listed non-price commitment such as a collection day (counted once). Each delivered counteroffer uses it, and no reduction exceeds what is left, so silence, repetition or a worse offer earns nothing. The ledger (what was given, what it earned, what was used, what remains) is projected from the record and saved on each private decision.
+- **Targets follow the package.** A target with conditions applies only to a package where those conditions hold, and the most specific applicable target sets the closing point.
 - **Ask before conceding.** A non-price reason (a pickup cost, a partner who must agree, a condition like "if I get a truck") gets a question before any price move. A conditional offer stays conditional. Repeated offers earn no reduction. "What's your lowest?" gets the current offer again and a question.
 - **Close or stop.** An offer at or above the lower of the current ask and the target closes. After the last counteroffer, or when the buyer stays below an offer already at the limit, Kritva accepts within authority or ends without agreement.
 

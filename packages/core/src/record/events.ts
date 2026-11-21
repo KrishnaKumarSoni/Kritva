@@ -222,6 +222,18 @@ export const PAYLOADS = {
       .default(null),
     mandateRevision: z.number().int().min(1).nullable().default(null),
     guidance: z.string().max(120).nullable().default(null),
+    /** Private: what the counterparty's commitments earned toward a discount, what was used, and what remains. */
+    allowance: z
+      .strictObject({
+        earned: z.number().nonnegative(),
+        used: z.number().nonnegative(),
+        remaining: z.number().nonnegative(),
+        entries: z
+          .array(z.strictObject({ offerId: Id, kind: z.enum(["better_offer", "term"]), commitment: ShortText, earned: z.number().nonnegative(), used: z.number().nonnegative() }))
+          .max(30),
+      })
+      .nullable()
+      .default(null),
     /** Validated input signals that explain which policy route ran. */
     interpretation: z.strictObject({
       intent: z.enum(["offer", "accept_stated_terms", "question", "request_change", "reject", "greeting", "other"]),

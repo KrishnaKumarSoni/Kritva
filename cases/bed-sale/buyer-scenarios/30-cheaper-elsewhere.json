@@ -1,0 +1,56 @@
+{
+  "name": "cheaper-elsewhere",
+  "description": "Live chat regression: a cheaper similar bed is cited, then the buyer asks if the price is worth it and takes time to think. Kritva asks how the packages compare, answers from listing facts, gives no discount and lets the buyer decide.",
+  "replay": true,
+  "turns": [
+    {
+      "buyer": "I found a similar one for ₹16,000. Can you do better?",
+      "expect": {
+        "decision": "answer",
+        "action": "ask",
+        "offer": null,
+        "says": [
+          "20,000",
+          "\\?"
+        ],
+        "neverSays": [
+          "16,000 is"
+        ]
+      }
+    },
+    {
+      "buyer": "The other one is older and I’d have to collect that too. Is yours really worth the asking price?",
+      "expect": {
+        "decision": "answer|explain_price",
+        "action": "answer",
+        "offer": null,
+        "says": [
+          "20,000"
+        ]
+      }
+    },
+    {
+      "buyer": "Okay, I’ll think it over. I haven’t decided.",
+      "expect": {
+        "decision": "hold",
+        "action": "wait",
+        "offer": null,
+        "neverSays": [
+          "\\?"
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "in_progress"
+    ],
+    "agentMustNotSay": [
+      "lowest|minimum|bottom line|floor",
+      "other (buyers|people) (are )?interested",
+      "\\b(deadline|today only)\\b",
+      "market (price|value|rate)"
+    ],
+    "noOfferBelow": 20000
+  }
+}

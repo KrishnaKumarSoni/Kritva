@@ -8,6 +8,10 @@
   "askBeforeConceding": true,
   "walkAwayAfterMaxCounteroffers": true,
   "walkAwayLine": "Thank you. Please contact me if your terms change.",
+  "commitmentAllowance": {
+    "betterOffer": 1500,
+    "terms": []
+  },
   "pressureQuestions": {
     "lowestPrice": "What price and collection time can you accept?",
     "cheaperElsewhere": "Are the condition and delivery the same?"

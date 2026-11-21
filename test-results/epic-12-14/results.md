@@ -1,5 +1,22 @@
 # Epics 12 to 14 and the humane conversation guide: tests
 
+## Handoff fixes (2026-11-22)
+
+- Node 24.19.0. `npm test`: core **280 passed**, server **64 passed** (no model calls). Workspace type checks and the production web build passed.
+- Final live run: [all 31 buyer scenarios passed](../scenarios/chat-regressions/scenario-results.md) on gpt-5.4-mini, through the same routes and case configuration as the running app. Text turn latency p50 4.1s, p90 4.9s. The suite includes the second mandates (conditional and exception) and seller approval through agreement.
+- Live results vary from run to run with the model. Seven runs while fixing ranged from 23 to 31 of 31. `conditional-truck` failed in 3 of those 7 runs: the model sometimes reads "collect Saturday" as an uncovered request and drops the truck condition, and the strategy then counters while that request is open. That is a strategy follow-up, not fixed here.
+
+What changed:
+
+1. **Reviewer accuracy and wording.** The reviewer now gets every current public term and, from the listing, who handles collection. Code filters drop reviewer concerns about statements code already verified: the plain introduction, the public asking amount in either word order, a recorded approval announced with the agreement, and a declined term restated with the value the buyer asked for. Each filter has a test where it must not apply. A single closing question in the text is used even when the model also fills the separate question field. A clarifying question the plan needs is no longer blocked as "a new question". A firm-offer invitation is never repeated within the reply or across the next two replies. Fallback wording varies its opener, puts a clarifying question last, and the agreement line reads "for the king-size bed".
+   - In the five handoff conversations, the misreadings called out in the handoff (introduction, public ask, buyer collection) no longer block drafts. The overall block count is about the same (9 across 17 turns in the final run). The remaining blocks mix correct catches (for example "The seller has approved" before approval) with model misreadings, and the checked fallback still delivers every turn.
+2. **Discount allowance per commitment.** `commitmentAllowance` in the strategy guidance sets what a better firm offer earns and what each listed non-price commitment earns (counted once). Delivered counteroffers use it, and no reduction exceeds what is left, so a repeated or worse offer earns nothing. The ledger (commitment, earned, used, remaining) is projected from the record and saved on each private decision. The buyer view never carries it. Targets now follow the package: a conditional target applies only when its conditions hold.
+   - Bed-sale guidance: `betterOffer` ₹1,500 (equal to the first approved step), no non-price commitments listed, because the demo mandate has no term the seller values beyond price.
+3. **Repeatable live chat regressions.** The five handoff conversations and the reported chat replay are buyer scenarios 26 to 31, with per-turn expectations for the decision, action, offer and reply. `--save-replays` stores their model responses in `cases/bed-sale/replays/`. `apps/server/test/replays.test.ts` replays them through the same routes and configuration with no model call, and checks every turn's delivered reply, decision and offer. The runner, the app and the replays now share `loadCaseRuntime`, so the runner no longer omits listing configuration.
+4. **Interpretation grounding** surfaced by the full run: "₹17,500 is the most I can do" or "is my limit" is a final offer at that amount, "₹17,000 then?" is a proposal, and "Would you take ₹18,000?" is an enquiry about ₹18,000 even when the model drops the amount. A budget stated as a budget stays a ceiling.
+
+Scenario checks loosened to accept correct model wording: unknown details ("aren't confirmed"), the changed-condition read-back, the seller-ends notice, and the cheaper-elsewhere value question (`answer` or `explain_price`). The introduction check now looks for one introduction naming Kritva, matching the named introduction.
+
 ## Closure verification
 
 - Node 24.19.0. All 292 automated tests passed (239 core, 53 server). Workspace type checks and the production web build passed.

@@ -23,6 +23,7 @@ import { decide, type DealInput, type Interpretation, type Plan } from "./policy
 import { checkReply, findAmounts, type ReplyViolation } from "./reply-check.ts";
 import { approvedFor, projectState, publicDealTerms, type NegotiationState } from "./state.ts";
 import { MINIMAL_GUIDANCE, type StrategyGuidance } from "../strategy/guidance.ts";
+import { projectAllowance } from "../strategy/allowance.ts";
 import { clean, introduction, principalLabel, speakTerms, templateReply } from "./templates.ts";
 
 interface PublicListingDetails {
@@ -269,14 +270,16 @@ export class NegotiationEngine {
           return { questionId: e.id, text: q.text, kind: q.issueKind, purpose: q.purpose };
         });
       let plan: Plan;
+      const allowance = projectAllowance(history, state.view, this.guidanceFor(state.view.mandate.caseId));
       try {
         plan = state.status === "paused"
           ? { ...basePlan("answer", { kind: "hold", reason: "The principal paused the negotiation." }, null), action: "pause" }
-          : decide(state, ctx.interp, deal, { guidance: this.guidanceFor(state.view.mandate.caseId), freshQuestions, counterparty, listingAvailable: this.#listingDetails.get(state.view.mandate.caseId)?.available, locale: this.#locale });
+          : decide(state, ctx.interp, deal, { guidance: this.guidanceFor(state.view.mandate.caseId), freshQuestions, counterparty, listingAvailable: this.#listingDetails.get(state.view.mandate.caseId)?.available, allowance, locale: this.#locale });
       } catch {
         // A strategy failure never improvises: hold, offer nothing, and say we will come back.
         plan = { ...basePlan("answer", { kind: "hold", reason: "The strategy could not choose a move; nothing was offered." }, null), action: "wait", notice: "check_with_principal" };
       }
+      plan.allowance = allowance;
       if (state.status === "paused") plan.notice = "paused";
       if (ctx.rephrase) plan.notice ??= "rephrase";
       // Kritva introduces itself once, on its first real reply (a pause notice doesn't count).
@@ -495,15 +498,17 @@ export class NegotiationEngine {
     let draft: string | null;
     let insertedTerms: string | null = null;
     let question = plan.ask?.text ?? null;
+    const offerInvitedRecently = invitedOfferRecently(conversation);
     try {
-      const composed = await composeReply(this.#llm, { view: state.view, plan, publicTerms, publicPrincipalName, conversation, theirMessage: currentMessage, locale: this.#locale, outcome: state.outcome.kind });
+      const composed = await composeReply(this.#llm, { view: state.view, plan, publicTerms, publicPrincipalName, conversation, theirMessage: currentMessage, locale: this.#locale, outcome: state.outcome.kind, offerInvitedRecently });
       draft = clean(composed.text);
       if (plan.ask?.purpose) {
         const lastSentence = draft.split(/(?<=[.!?])\s+/).at(-1);
         const embedded = lastSentence?.endsWith("?") && draft.indexOf("?") === draft.lastIndexOf("?") ? lastSentence : null;
         const separate = composed.question && clean(composed.question);
         const phrased = embedded ?? separate;
-        if (!phrased || !/^[^?]+\?$/.test(phrased) || phrased.length > 500 || (embedded && separate && embedded !== separate) || (!embedded && draft.includes("?"))) {
+        // A single closing question in the text is the question, even if the model also filled the separate field.
+        if (!phrased || !/^[^?]+\?$/.test(phrased) || phrased.length > 500 || (!embedded && draft.includes("?"))) {
           await this.#block(writes, draft, [{ rule: "action_mismatch", detail: "The reply did not supply one question for its selected objective." }], agent);
           draft = null;
         } else {
@@ -513,6 +518,9 @@ export class NegotiationEngine {
     } catch {
       draft = null;
     }
+    if (draft !== null && question) draft = dropDuplicateInvitation(draft, question);
+    // They already heard that a firm offer can be considered: say it again only when this move asks for it.
+    if (draft !== null && offerInvitedRecently && !(question && OFFER_INVITATION.test(question))) draft = dropInvitations(draft);
     if (draft !== null && previousReply && opener(draft) === opener(previousReply)) draft = null;
     if (draft !== null) {
       const exactTerms = plan.move === "state_final_terms" || plan.move === "confirm_agreement";
@@ -536,7 +544,8 @@ export class NegotiationEngine {
         draft = `${draft} ${question}`;
       }
     }
-    if (draft !== null && !question && (plan.action === "decline" || ["answer_public_terms", "explore_objection", "explain_price", "acknowledge_budget", "answer_enquiry", "price_pressure", "compare_terms"].includes(plan.move)) && draft.includes("?")) {
+    // A clarifying question the plan itself needs (a missing detail an offer depends on) is never a new question.
+    if (draft !== null && !question && plan.clarify.length === 0 && (plan.action === "decline" || ["answer_public_terms", "explore_objection", "explain_price", "acknowledge_budget", "answer_enquiry", "price_pressure", "compare_terms"].includes(plan.move)) && draft.includes("?")) {
       await this.#block(writes, draft, [{ rule: "action_mismatch", detail: "This move did not call for a new question." }], agent);
       draft = null;
     }
@@ -552,15 +561,14 @@ export class NegotiationEngine {
       } else {
         const checkedTerms = (plan.offer?.terms ?? []).map((t) => `${state.space.terms.find((x) => x.termId === t.termId)?.name ?? t.termId}: ${formatValue(t.value, this.#locale)}`);
         const permittedFacts = [...state.view.publicFacts];
+        // Every current public term is shared with the other party, so restating it is never an invented fact.
         for (const term of publicTerms) {
-          if (plan.declined.some((decline) => decline.termId === term.termId) || term.termId === state.view.negotiable?.termId && plan.referenceAmount !== undefined) {
-            permittedFacts.push(`Current public ${state.view.terms.get(term.termId)!.name}: ${formatValue(term.value, this.#locale)}`);
-          }
+          const definition = state.view.terms.get(term.termId)!;
+          permittedFacts.push(`Current public ${definition.name}: ${formatValue(term.value, this.#locale)}${definition.description ? ` (${definition.description})` : ""}`);
         }
-        if (plan.introduce) permittedFacts.push(`Kritva represents ${publicPrincipalName || principalLabel(state.view)}.`);
-        if (plan.move === "answer" && (plan.questions.length > 0 || plan.openForDiscussion)) {
-          for (const term of publicTerms) permittedFacts.push(`${state.view.terms.get(term.termId)!.name}: ${formatValue(term.value, this.#locale)}`);
-        }
+        const arrangement = fulfillmentFact(state, publicTerms, this.#listingDetails.get(state.view.mandate.caseId)?.fulfillment, this.#locale);
+        if (arrangement) permittedFacts.push(arrangement);
+        permittedFacts.push(`Kritva is the assistant of ${publicPrincipalName || principalLabel(state.view)}.`);
         for (const answer of plan.publicTermAnswers ?? []) {
           const name = state.view.terms.get(answer.termId)!.name;
           permittedFacts.push(`${answer.basis === "opening" ? "Originally listed" : "Current public"} ${name}: ${formatValue(answer.value, this.#locale)}`);
@@ -571,6 +579,7 @@ export class NegotiationEngine {
         const language = await languageCheck(this.#llm, {
           // The checker reviews generated words. The inserted terms already passed the structured gate and the final code check.
           reply: insertedTerms ? draft.replace(insertedTerms, EXACT_TERMS_SLOT) : draft,
+          principal: publicPrincipalName || principalLabel(state.view),
           validatedTermsMarker: insertedTerms ? EXACT_TERMS_SLOT : undefined,
           checkedTerms,
           permittedFacts,
@@ -590,9 +599,9 @@ export class NegotiationEngine {
         await this.#block(writes, draft, violations, agent);
       }
     }
-    let fallback = templateReply(state.view, plan, this.#locale, subject, publicPrincipalName);
+    let fallback = templateReply(state.view, plan, this.#locale, subject, publicPrincipalName, { offerInvitedRecently });
     for (let shift = 1; previousReply && shift < 3 && opener(fallback) === opener(previousReply); shift += 1) {
-      fallback = templateReply(state.view, { ...plan, turnIndex: (plan.turnIndex ?? 0) + shift }, this.#locale, subject, publicPrincipalName);
+      fallback = templateReply(state.view, { ...plan, turnIndex: (plan.turnIndex ?? 0) + shift }, this.#locale, subject, publicPrincipalName, { offerInvitedRecently });
     }
     if (plan.ask && !fallback.includes(plan.ask.text)) fallback = `${fallback} ${plan.ask.text}`;
     const fallbackGate = gateWording(state, plan, fallback);
@@ -622,6 +631,9 @@ export class NegotiationEngine {
       assessment: plan.assessment ? { verdict: plan.assessment.verdict, drivers: plan.assessment.drivers.map((d) => d.slice(0, 500)) } : null,
       mandateRevision: state.mandateRevision,
       guidance: this.guidanceFor(state.view.mandate.caseId).id,
+      allowance: plan.allowance
+        ? { earned: plan.allowance.earned, used: plan.allowance.used, remaining: plan.allowance.remaining, entries: plan.allowance.entries.slice(-30).map((e) => ({ offerId: e.offerId, kind: e.kind, commitment: e.commitment.slice(0, 500), earned: e.earned, used: e.used })) }
+        : null,
       ...(interp ? { interpretation: { intent: interp.intent, offerKind: interp.offerKind ?? null, pressure: interp.pressure ?? null, priceConcern: interp.priceConcern ?? null, asksPrivateInfo: interp.asksPrivateInfo } } : {}),
     };
   }
@@ -947,6 +959,39 @@ function selectQuestion(fresh: Array<NonNullable<Plan["ask"]>>, plan: Plan): Pla
   if (plan.strategyQuestion || plan.declined.length > 0) return null;
   if (plan.notice || plan.clarify.length > 0 || plan.unresolved.length > 0 || plan.questions.length > 0 || plan.refuseDisclosure || plan.openForDiscussion || plan.listingAvailable !== undefined) return null;
   return fresh[0] ?? null;
+}
+
+const OFFER_INVITATION = /\b(?:firm offer|make (?:me )?an offer|send (?:me )?an offer|an offer you(?:'d| would) like)\b/i;
+
+/** "You can make a firm offer." followed by "Would you make a firm offer?" says the same thing twice. */
+export function dropDuplicateInvitation(text: string, question: string): string {
+  if (!OFFER_INVITATION.test(question)) return text;
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  const kept = sentences.filter((sentence) => sentence.includes(question) || sentence.endsWith("?") || !OFFER_INVITATION.test(sentence));
+  return kept.length === sentences.length || kept.length === 0 ? text : kept.join(" ");
+}
+
+/** Removes invitation sentences; null when nothing else would be left. */
+function dropInvitations(text: string): string | null {
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  const kept = sentences.filter((sentence) => !OFFER_INVITATION.test(sentence));
+  return kept.length === 0 ? null : kept.join(" ");
+}
+
+/** The agent invited an offer in one of its last two replies. */
+export function invitedOfferRecently(conversation: Array<{ speaker: "agent" | "counterparty"; text: string }>): boolean {
+  return conversation.filter((c) => c.speaker === "agent").slice(-2).some((c) => OFFER_INVITATION.test(c.text));
+}
+
+/** Who performs the fulfillment actions under the current public terms, in the host's own words. */
+function fulfillmentFact(state: NegotiationState, publicTerms: OfferTerm[], terms: FulfillmentTerms | undefined, locale: string): string | null {
+  if (!terms) return null;
+  const responsibility = publicTerms.find((t) => t.termId === terms.responsibilityTermId)?.value;
+  const location = publicTerms.find((t) => t.termId === terms.counterpartyLocationTermId)?.value;
+  if (responsibility?.type !== "boolean") return null;
+  const role = state.view.mandate.parties.find((p) => p.id === state.view.counterpartyId)?.role ?? "other party";
+  if (responsibility.value) return `The represented side handles: ${terms.principalActions.join(", ")}.`;
+  return `The ${role} handles: ${terms.counterpartyActions.join(", ")}${location ? `, at ${formatValue(location, locale)}` : ""}. The represented side does not ${terms.principalActions[0] ?? "perform it"}.`;
 }
 
 /** Kritva has already introduced itself in this session. */

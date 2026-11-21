@@ -1,0 +1,230 @@
+{
+  "scenario": "cheaper-elsewhere",
+  "mandate": "bed-sale/demo",
+  "recordedAt": "2026-11-21T20:11:33.891Z",
+  "commit": "5a49ea2 + uncommitted changes",
+  "model": "gpt-5.4-mini",
+  "turns": [
+    {
+      "buyer": "I found a similar one for ₹16,000. Can you do better?",
+      "expect": {
+        "decision": "answer",
+        "action": "ask",
+        "offer": null,
+        "says": [
+          "20,000",
+          "\\?"
+        ],
+        "neverSays": [
+          "16,000 is"
+        ]
+      }
+    },
+    {
+      "buyer": "The other one is older and I’d have to collect that too. Is yours really worth the asking price?",
+      "expect": {
+        "decision": "answer|explain_price",
+        "action": "answer",
+        "offer": null,
+        "says": [
+          "20,000"
+        ]
+      }
+    },
+    {
+      "buyer": "Okay, I’ll think it over. I haven’t decided.",
+      "expect": {
+        "decision": "hold",
+        "action": "wait",
+        "offer": null,
+        "neverSays": [
+          "\\?"
+        ]
+      }
+    }
+  ],
+  "observed": [
+    {
+      "turn": "I found a similar one for ₹16,000. Can you do better?",
+      "reply": "Hi, I'm Kritva, Krishna's assistant. The current asking amount is ₹20,000. Are the condition and delivery the same?",
+      "offerAmount": null,
+      "decision": {
+        "kind": "answer",
+        "action": "ask"
+      },
+      "blocked": 1
+    },
+    {
+      "turn": "The other one is older and I’d have to collect that too. Is yours really worth the asking price?",
+      "reply": "₹20,000 is the current asking amount. The item for sale is a king-size bed. The bed is one year old.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "answer",
+        "action": "answer"
+      },
+      "blocked": 1
+    },
+    {
+      "turn": "Okay, I’ll think it over. I haven’t decided.",
+      "reply": "Take your time. Let me know if you'd like to continue.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "hold",
+        "action": "wait"
+      },
+      "blocked": 0
+    }
+  ],
+  "calls": [
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "question",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "enquiry",
+        "price_concern": "value_question",
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "cheaper_elsewhere",
+        "notes": [
+          {
+            "kind": "alternative",
+            "quote": "I found a similar one for ₹16,000.",
+            "summary": "They mention a cheaper alternative for comparison.",
+            "term_id": "term_t_price",
+            "value": {
+              "type": "money",
+              "amount": 16000,
+              "currency": "INR",
+              "unit": null,
+              "text": null,
+              "boolean": null
+            },
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [],
+        "new_terms": [],
+        "questions": [
+          "Can you do better?"
+        ],
+        "public_term_questions": [
+          {
+            "term_id": "term_t_price",
+            "basis": "current",
+            "quote": "Can you do better?"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Hi, I’m Kritva, assisting Krishna. If the other one is similar, can you share whether the condition and any included parts are the same?",
+        "question": null
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "question",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": "value_question",
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "cheaper_elsewhere",
+        "notes": [
+          {
+            "kind": "alternative",
+            "quote": "The other one is older and I’d have to collect that too.",
+            "summary": "Compares against a cheaper older alternative that would require self-collection.",
+            "term_id": null,
+            "value": null,
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [
+          {
+            "question_id": "evt_dcbcc449-b58f-4b53-9fe2-810675b56f19",
+            "quote": "The other one is older and I’d have to collect that too.",
+            "resolution": "partial"
+          }
+        ],
+        "new_terms": [],
+        "questions": [
+          "Is yours really worth the asking price?"
+        ],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "This one is a one-year-old king-size bed, so it is newer than the other one you mentioned. The asking amount is ₹20,000, and I can only go by the bed’s condition and details as shared here.",
+        "question": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "invented_fact",
+            "quote": "This one is a one-year-old king-size bed, so it is newer than the other one you mentioned."
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "other",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": true,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Take your time. Let me know if you'd like to continue.",
+        "question": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    }
+  ]
+}

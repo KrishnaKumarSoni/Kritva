@@ -1,0 +1,69 @@
+{
+  "name": "budget-ceiling-pressure",
+  "description": "Live chat regression: a price objection, a stated ₹18,000 ceiling, then two discount requests. Kritva asks once for a firm offer, holds the public ask without a concession, and does not repeat the invitation.",
+  "replay": true,
+  "turns": [
+    {
+      "buyer": "It’s too much for me.",
+      "expect": {
+        "decision": "explore_objection",
+        "action": "ask",
+        "offer": null,
+        "says": [
+          "\\?"
+        ]
+      }
+    },
+    {
+      "buyer": "Budget is the problem. I can’t spend more than ₹18,000.",
+      "expect": {
+        "decision": "acknowledge_budget",
+        "action": "ask",
+        "offer": null,
+        "says": [
+          "18,000",
+          "offer"
+        ]
+      }
+    },
+    {
+      "buyer": "What’s the best you could do?",
+      "expect": {
+        "decision": "hold",
+        "action": "answer",
+        "offer": null,
+        "says": [
+          "20,000"
+        ],
+        "neverSays": [
+          "firm offer"
+        ]
+      }
+    },
+    {
+      "buyer": "Can you go any lower than that?",
+      "expect": {
+        "decision": "hold",
+        "action": "answer",
+        "offer": null,
+        "says": [
+          "20,000"
+        ],
+        "neverSays": [
+          "firm offer"
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "in_progress"
+    ],
+    "agentMustNotSay": [
+      "lowest|minimum|bottom line|floor",
+      "other (buyers|people) (are )?interested",
+      "\\b(deadline|today only)\\b"
+    ],
+    "noOfferBelow": 20000
+  }
+}

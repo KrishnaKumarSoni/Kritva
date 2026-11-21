@@ -6,7 +6,8 @@
  * unknown; nothing is weighted or ranked unless the principal ranked it. Evaluation never creates
  * permission: an acceptable package may still need the principal's approval.
  */
-import { checkProposal } from "../dealspace/check.ts";
+import { checkProposal, evaluateConditions } from "../dealspace/check.ts";
+import { conditionRefFor } from "../dealspace/catalog.ts";
 import { formatValue } from "../negotiation/mandate-view.ts";
 import { approvedFor, type NegotiationState } from "../negotiation/state.ts";
 import { hashTerms, type OfferTerm } from "../record/events.ts";
@@ -47,7 +48,7 @@ export function assessPackage(state: NegotiationState, terms: OfferTerm[], local
   // 2. Stated targets and preferences (noted, never weighted).
   const m = state.view.mandate;
   const mine = <T extends { partyId: string }>(xs: T[]) => xs.filter((x) => x.partyId === state.view.principalId);
-  for (const target of mine(m.targets)) {
+  for (const target of mine(m.targets).filter((x) => targetApplies(state, x.conditionIds, terms))) {
     const t = terms.find((x) => x.termId === target.termId);
     if (!t || !target.value || !("amount" in t.value) || !("amount" in target.value)) continue;
     const meets = state.view.negotiable?.direction === "down" ? t.value.amount <= target.value.amount : t.value.amount >= target.value.amount;
@@ -72,4 +73,23 @@ export function assessPackage(state: NegotiationState, terms: OfferTerm[], local
     drivers.push("The principal's rules for these terms conflict; clarification is needed.");
   }
   return { verdict, drivers: drivers.slice(0, 12), needsApproval };
+}
+
+/** A target counts for a package only when all its conditions hold in that package. */
+function targetApplies(state: NegotiationState, conditionIds: string[], terms: OfferTerm[]): boolean {
+  if (conditionIds.length === 0) return true;
+  const values = new Map(terms.map((t) => [t.termId, t.value]));
+  return evaluateConditions(conditionIds.map((id) => conditionRefFor(state.view.mandate, id)), values).status === "met";
+}
+
+/**
+ * The principal's target T(x) for this package: a conditional target whose conditions hold in the
+ * package wins over an unconditional one (the most specific first). Never invented.
+ */
+export function applicableTarget(state: NegotiationState, termId: string, terms: OfferTerm[]): number | null {
+  const candidates = state.view.mandate.targets
+    .filter((t) => t.partyId === state.view.principalId && t.termId === termId && t.value && "amount" in t.value && targetApplies(state, t.conditionIds, terms))
+    .sort((a, b) => b.conditionIds.length - a.conditionIds.length);
+  const t = candidates[0];
+  return t?.value && "amount" in t.value ? (t.value.amount as number) : null;
 }

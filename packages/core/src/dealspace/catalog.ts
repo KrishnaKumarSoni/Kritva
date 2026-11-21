@@ -78,19 +78,20 @@ export interface DealSpace {
   issues: Map<string, Issue>;
 }
 
+/** A mandate condition as code can check it. Unknown or unsupported conditions are never checkable. */
+export function conditionRefFor(mandate: ConfirmedMandate, id: string): ConditionRef {
+  const c = mandate.conditions.find((x) => x.id === id);
+  if (!c) return { id, description: "Unknown condition", termId: null, operator: null, value: null, checkable: false, sourceRefs: [] };
+  const term = c.termId ? mandate.terms.find((t) => t.id === c.termId) : undefined;
+  const checkable = Boolean(term && c.operator && c.value && c.status !== "unknown" && typesCompatible(term.valueType, c.value.type, c.operator));
+  return { id: c.id, description: c.description, termId: c.termId, operator: c.operator, value: c.value, checkable, sourceRefs: c.sourceRefs };
+}
+
 export function buildDealSpace(mandate: ConfirmedMandate): DealSpace {
   const principal = mandate.parties.find((p) => p.isPrincipal);
   if (!principal) throw new Error("A mandate needs a principal.");
-  const conditionsById = new Map(mandate.conditions.map((c) => [c.id, c]));
   const issues = new Map(mandate.issues.map((i) => [i.id, i]));
-
-  const conditionRef = (id: string): ConditionRef => {
-    const c = conditionsById.get(id);
-    if (!c) return { id, description: "Unknown condition", termId: null, operator: null, value: null, checkable: false, sourceRefs: [] };
-    const term = c.termId ? mandate.terms.find((t) => t.id === c.termId) : undefined;
-    const checkable = Boolean(term && c.operator && c.value && c.status !== "unknown" && typesCompatible(term.valueType, c.value.type, c.operator));
-    return { id: c.id, description: c.description, termId: c.termId, operator: c.operator, value: c.value, checkable, sourceRefs: c.sourceRefs };
-  };
+  const conditionRef = (id: string): ConditionRef => conditionRefFor(mandate, id);
 
   const terms: TermEntry[] = mandate.terms.map((term) => {
     const rules: RuleRef[] = [];

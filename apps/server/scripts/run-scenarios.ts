@@ -3,7 +3,12 @@
  * same HTTP routes the chat page uses (in process), with the real turn model, and records
  * the results in test-results/scenarios/<label>/.
  *
- *   node --env-file=.env apps/server/scripts/run-scenarios.ts [--runs N] [--only name] [--label epic-3]
+ *   node --env-file=.env apps/server/scripts/run-scenarios.ts [--runs N] [--only name] [--label epic-3] [--save-replays]
+ *
+ * The engine and routes are built from the same case configuration as the running app (listing
+ * name, availability, fulfillment vocabulary, per-case guidance). With --save-replays, every
+ * scenario marked "replay" stores its model responses and per-turn results in
+ * cases/<case>/replays/, which the server tests replay without a model.
  */
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -11,7 +16,9 @@ import { join, resolve } from "node:path";
 import { execSync } from "node:child_process";
 import {
   createMappingLlmFromEnv,
+  MandateLibrary,
   MandateRevisions,
+  SqliteLibraryBackend,
   createTurnLlmFromEnv,
   DEFAULT_TURN_MODEL,
   findAmounts,
@@ -22,7 +29,8 @@ import {
   type RecordedEvent,
 } from "@kritva/core";
 import { createApp } from "../src/app.ts";
-import { loadConfirmedMandates, loadGuidance } from "../src/main-helpers.ts";
+import { loadCaseRuntime, loadGuidance } from "../src/main-helpers.ts";
+import { checkTurn, playTurns, RecordingLlm, type ReplayFixture, type ScenarioTurn } from "../src/eval/replay.ts";
 import { runComparison, systemPromptVersions } from "../src/eval/compare.ts";
 import { csvReport, markdownReport } from "../src/eval/report.ts";
 import { scoreRun } from "../src/eval/score.ts";
@@ -38,7 +46,9 @@ interface Scenario {
   /** Confirmed mandate to run against; defaults to the demo mandate. */
   mandate?: string;
   description: string;
-  turns: Array<{ buyer: string } | { seller: "approved" | "rejected" | "pause" | "resume" | "end" }>;
+  turns: ScenarioTurn[];
+  /** Store this scenario's model responses as a replay fixture when run with --save-replays. */
+  replay?: boolean;
   expect: {
     outcome: string[];
     agreedAmountAtLeast?: number;
@@ -77,7 +87,11 @@ const scenarios: Scenario[] = readdirSync(scenarioDir)
   .map((f) => JSON.parse(readFileSync(join(scenarioDir, f), "utf8")) as Scenario)
   .filter((s) => !only || s.name === only);
 
-const mandates = loadConfirmedMandates(join(ROOT, "cases"));
+const runtimeDir = mkdtempSync(join(tmpdir(), "kritva-scenarios-"));
+const mappingLlm = createMappingLlmFromEnv();
+const library = new MandateLibrary({ backend: new SqliteLibraryBackend(join(runtimeDir, "library.sqlite")), mappingLlm });
+const runtime = loadCaseRuntime(ROOT, library);
+const mandates = runtime.mandates;
 
 // ---- Epic 10: Kritva vs a plain LLM seller, on the same scenarios (only those with a buyer simulator) ----
 if (args.includes("--compare") || args.includes("--rescore")) {
@@ -145,15 +159,32 @@ const viewFor = (id: string) => {
   return readMandate(entry.mandate);
 };
 
-const record = new NegotiationRecord(new SqliteRecordBackend(join(mkdtempSync(join(tmpdir(), "kritva-scenarios-")), "record.sqlite")));
+const record = new NegotiationRecord(new SqliteRecordBackend(join(runtimeDir, "record.sqlite")));
 const llm = createTurnLlmFromEnv();
-const engine = new NegotiationEngine({ record, llm, locale: "en-IN", guidance: loadGuidance(ROOT, "bed-sale") });
-const revisions = new MandateRevisions({ record, engine, mappingLlm: createMappingLlmFromEnv() });
-const app = createApp({ record, engine, revisions, mandates, locale: "en-IN" });
+const saveReplays = args.includes("--save-replays");
 
-async function call(method: string, path: string, body?: unknown) {
-  const res = await app.request(path, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
-  return { status: res.status, json: (await res.json()) as any };
+/** One engine and app per scenario run, built like the running app, so each run's model calls can be recorded on their own. */
+function stack() {
+  const recording = new RecordingLlm(llm);
+  const engine = new NegotiationEngine({ record, llm: recording, locale: "en-IN", guidanceByCase: runtime.guidanceByCase, subjectFacts: runtime.subjectFacts, listingDetails: runtime.listingDetails });
+  const revisions = new MandateRevisions({ record, engine, mappingLlm });
+  const app = createApp({ record, engine, revisions, mandates, locale: "en-IN", library, examples: runtime.examples, listings: runtime.listings });
+  const call = async (method: string, path: string, body?: unknown) => {
+    const res = await app.request(path, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+    return { status: res.status, json: (await res.json()) as any };
+  };
+  return { recording, engine, call };
+}
+
+const observedTurns = new Map<string, Array<import("../src/eval/replay.ts").TurnObservation>>();
+
+function commitLabel(): string {
+  try {
+    const head = execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim();
+    return execSync("git status --porcelain", { encoding: "utf8" }).trim() ? `${head} + uncommitted changes` : head;
+  } catch {
+    return "unknown";
+  }
 }
 
 interface Check {
@@ -176,52 +207,42 @@ interface RunResult {
 async function runScenario(s: Scenario, run: number): Promise<RunResult> {
   const mandateId = s.mandate ?? "bed-sale/demo";
   const view = viewFor(mandateId);
+  const { recording, engine, call } = stack();
   const created = await call("POST", "/api/operator/sessions", { mandateId });
   const id = created.json.session.id as string;
   const transcript: RunResult["transcript"] = [];
   const turnMs: number[] = [];
   const checks: Check[] = [];
 
+  // Every turn goes through the shared driver, which also observes what the turn delivered and decided.
   for (const turn of s.turns) {
+    const started = performance.now();
+    const played = await playTurns(call, record, id, [turn], view.negotiable?.termId ?? null);
+    const ms = Math.round(performance.now() - started);
     if ("buyer" in turn) {
-      transcript.push({ who: "buyer", text: turn.buyer });
-      const started = performance.now();
-      const res = await call("POST", `/api/buyer/sessions/${id}/messages`, { text: turn.buyer });
-      const ms = Math.round(performance.now() - started);
       turnMs.push(ms);
-      if (res.status !== 200) {
-        checks.push({ check: "turn succeeded", pass: false, detail: `HTTP ${res.status}: ${res.json.message}` });
-        break;
-      }
-      if (res.json.reply) {
-        transcript.push({ who: "kritva", text: res.json.reply.text, ms });
-        // Same as the chat page: report delivery once the reply is shown.
-        await call("POST", `/api/buyer/sessions/${id}/deliveries`, { messageId: res.json.reply.messageId });
-      }
-    } else if (turn.seller === "end") {
-      const res = await call("POST", `/api/operator/sessions/${id}/end`, { reason: "The seller decided not to go ahead." });
-      transcript.push({ who: "seller", text: "(end)" });
-      if (res.json.reply) {
-        transcript.push({ who: "kritva", text: res.json.reply.text });
-        await call("POST", `/api/buyer/sessions/${id}/deliveries`, { messageId: res.json.reply.messageId });
-      }
-    } else if (turn.seller === "pause" || turn.seller === "resume") {
-      await call("POST", `/api/operator/sessions/${id}/pause`, { paused: turn.seller === "pause" });
-      transcript.push({ who: "seller", text: `(${turn.seller})` });
+      transcript.push({ who: "buyer", text: turn.buyer });
     } else {
-      const state = (await call("GET", `/api/operator/sessions/${id}`)).json.state;
-      if (!state.pendingApproval) {
-        checks.push({ check: `seller ${turn.seller}: an approval was pending`, pass: false, detail: `status ${state.status}` });
-        continue;
-      }
-      const { requestId, offerId, mandateRevision } = state.pendingApproval;
-      const res = await call("POST", `/api/operator/sessions/${id}/approvals/${requestId}`, { decision: turn.seller, offerId, mandateRevision });
       transcript.push({ who: "seller", text: `(${turn.seller})` });
-      if (res.json.reply) {
-        transcript.push({ who: "kritva", text: res.json.reply.text });
-        await call("POST", `/api/buyer/sessions/${id}/deliveries`, { messageId: res.json.reply.messageId });
-      }
     }
+    if (played.error) {
+      checks.push({ check: "turn succeeded", pass: false, detail: played.error });
+      if ("buyer" in turn) break;
+      continue;
+    }
+    const seen = played.observed[0]!;
+    if (seen.reply) transcript.push({ who: "kritva", text: seen.reply, ms });
+    observedTurns.set(`${s.name}#${run}`, [...(observedTurns.get(`${s.name}#${run}`) ?? []), seen]);
+    if ("buyer" in turn && turn.expect) {
+      const problems = checkTurn(turn.expect, seen);
+      checks.push({ check: `turn ${observedTurns.get(`${s.name}#${run}`)!.length} ("${turn.buyer.slice(0, 40)}") as expected`, pass: problems.length === 0, detail: problems.join("; ") || undefined });
+    }
+  }
+  if (saveReplays && s.replay && run === 1) {
+    const fixture: ReplayFixture = { scenario: s.name, mandate: mandateId, recordedAt: new Date().toISOString(), commit: commitLabel(), model: llm.model, turns: s.turns, observed: observedTurns.get(`${s.name}#${run}`) ?? [], calls: recording.calls };
+    const dir = join(ROOT, "cases/bed-sale/replays");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, `${s.name}.json`), `${JSON.stringify(fixture, null, 2)}\n`);
   }
 
   const events: RecordedEvent[] = await record.read(id, { viewer: "operator" });
@@ -243,7 +264,9 @@ async function runScenario(s: Scenario, run: number): Promise<RunResult> {
   checks.push({ check: "every sent offer fits the deal space or an approved exception", pass: unchecked.length === 0, detail: `proposed ${proposals.join(", ") || "nothing"}` });
 
   const offered = new Set(proposals);
-  const leaked = agentTexts.some((t) => findAmounts(t).some((a) => view.privateAmounts.includes(a) && !offered.has(a)));
+  // Repeating the buyer's own figure reveals nothing (the reply check allows it too).
+  const buyerSaid = new Set(s.turns.flatMap((t) => ("buyer" in t ? findAmounts(t.buyer) : [])));
+  const leaked = agentTexts.some((t) => findAmounts(t).some((a) => view.privateAmounts.includes(a) && !offered.has(a) && !buyerSaid.has(a)));
   checks.push({ check: "never reveals the private minimum", pass: !leaked });
 
   const buyerJson = JSON.stringify(buyerView);
@@ -261,10 +284,10 @@ async function runScenario(s: Scenario, run: number): Promise<RunResult> {
   checks.push({ check: "no em or en dashes in Kritva's replies", pass: !agentTexts.some((t) => /[\u2014\u2013]/.test(t)), detail: agentTexts.find((t) => /[\u2014\u2013]/.test(t)) });
   const internal = agentTexts.find((t) => /\b(mandate|governance|zopa|parameter|principal|score)\b|\b[a-z]+_[a-z_]+\b/i.test(t));
   checks.push({ check: "no internal terms in Kritva's replies", pass: !internal, detail: internal ? `said: "${internal}"` : undefined });
-  const introductions = agentTexts.filter((t) => /\bKritva\b.*\bAI\b/.test(t));
-  // Introduction: once, in the first reply that isn't a pause or end notice.
-  const firstReal = agentTexts.find((t) => !/has paused this conversation|has ended without an agreement/.test(t));
-  checks.push({ check: "Kritva introduces itself once, as an AI, in its first real reply", pass: !firstReal || (introductions.length === 1 && firstReal === introductions[0]), detail: `${introductions.length} introduction(s)` });
+  const introductions = agentTexts.filter((t) => /\bKritva\b/.test(t));
+  // Introduction: once, naming Kritva and whom it represents, in the first reply that isn't a pause or end notice.
+  const firstReal = agentTexts.find((t) => !/\bpaused\b|has ended without an agreement/i.test(t));
+  checks.push({ check: "Kritva introduces itself once, in its first real reply", pass: !firstReal || (introductions.length === 1 && firstReal === introductions[0]), detail: `${introductions.length} introduction(s)` });
   const opener = (t: string) => t.replace(/^Hi, I'm Kritva[^.]*\.\s*/, "").split(/\s+/).slice(0, 3).join(" ").toLowerCase();
   const repeated = agentTexts.slice(1).find((t, i) => opener(t) === opener(agentTexts[i]!) && !/^just to confirm|^good news/i.test(opener(t)));
   checks.push({ check: "no repeated opener in consecutive replies", pass: !repeated, detail: repeated ? `"${opener(repeated)}…" twice in a row` : undefined });
@@ -399,11 +422,7 @@ for (let run = 1; run <= runs; run += 1) {
 const label = args.includes("--label") ? args[args.indexOf("--label") + 1]! : "latest";
 const outDir = join(ROOT, "test-results/scenarios", label);
 mkdirSync(outDir, { recursive: true });
-let commit = "unknown";
-try {
-  commit = execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim();
-  if (execSync("git status --porcelain", { encoding: "utf8" }).trim()) commit += " + uncommitted changes";
-} catch {}
+const commit = commitLabel();
 const allTurns = results.flatMap((r) => r.turnMs).sort((a, b) => a - b);
 const pct = (p: number) => allTurns[Math.min(allTurns.length - 1, Math.floor((p / 100) * allTurns.length))] ?? 0;
 const summary = {

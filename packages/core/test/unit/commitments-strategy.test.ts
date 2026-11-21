@@ -620,3 +620,107 @@ describe("Epic 8, Story 3: choose, adjust or end the move", () => {
     expect((await decisions()).at(-1)!.guidance).toBe("minimal");
   });
 });
+
+describe("Discount allowance per counterparty commitment", () => {
+  const ALLOWANCE: StrategyGuidance = parseGuidance({
+    ...GUIDANCE,
+    splitTheDifference: false,
+    walkAwayAfterMaxCounteroffers: false,
+    commitmentAllowance: {
+      betterOffer: 1000,
+      terms: [{ termId: "term_day", value: { type: "date_text", value: "Saturday" }, allowance: 500, label: "Collection on Saturday" }],
+    },
+  });
+  const lastDecision = (turn: TurnResult) => turn.events.findLast((e) => e.type === "decision")!.payload as PayloadOf<"decision">;
+
+  it("a better offer earns the allowance, a worse or repeated one earns nothing, and the ledger records each step", async () => {
+    const { say } = await setup(listingOnlyDeliveryMandate(), ALLOWANCE);
+    const first = await say("₹15,000.", offer(15_000));
+    expect(priceOf(proposed(first.events)[0]!.terms)).toBe(19_000);
+    expect(lastDecision(first).allowance).toMatchObject({ earned: 1000, used: 0, remaining: 1000, entries: [{ kind: "better_offer", earned: 1000, used: 0 }] });
+
+    const worse = await say("₹14,500.", offer(14_500));
+    expect(proposed(worse.events).every((p) => priceOf(p.terms) === 19_000)).toBe(true);
+    expect(worse.reply!.text).toContain("₹19,000");
+    expect(lastDecision(worse)).toMatchObject({ kind: "hold", allowance: { earned: 1000, used: 1000, remaining: 0 } });
+    expect(lastDecision(worse).reason).toMatch(/no unused discount allowance/i);
+
+    const better = await say("₹16,000.", offer(16_000));
+    expect(priceOf(proposed(better.events)[0]!.terms)).toBe(18_500);
+    expect(lastDecision(better).allowance).toMatchObject({ earned: 2000, used: 1000, remaining: 1000 });
+    expect(better.reply!.text).not.toMatch(/allowance|earned|remaining/i);
+  });
+
+  it("without a configured allowance, the same worse offer still gets the next approved step", async () => {
+    const { say } = await setup(listingOnlyDeliveryMandate(), { ...ALLOWANCE, commitmentAllowance: null });
+    await say("₹15,000.", offer(15_000));
+    const worse = await say("₹14,500.", offer(14_500));
+    expect(priceOf(proposed(worse.events)[0]!.terms)).toBe(18_500);
+    expect(lastDecision(worse).allowance).toBeNull();
+  });
+
+  it("a non-price commitment listed in the guidance earns its own allowance, once", async () => {
+    const { say } = await setup(conditionalMandate(), { ...ALLOWANCE, commitmentAllowance: { ...ALLOWANCE.commitmentAllowance!, betterOffer: 0 } });
+    const plain = await say("₹17,000.", offer(17_000));
+    expect(proposed(plain.events).every((p) => priceOf(p.terms) === 20_000)).toBe(true);
+    expect(lastDecision(plain).allowance).toMatchObject({ earned: 0, remaining: 0 });
+
+    const saturday = await say("₹17,000 if I collect on Saturday.", offer(17_000, { offer_terms: [price(17_000), day("Saturday")] }));
+    expect(priceOf(proposed(saturday.events)[0]!.terms)).toBe(19_500);
+    expect(lastDecision(saturday).allowance).toMatchObject({ earned: 500, remaining: 500, entries: [{ kind: "term", commitment: "Collection on Saturday", earned: 500 }] });
+
+    const again = await say("₹17,000, Saturday.", offer(17_000, { offer_terms: [price(17_000), day("Saturday")] }));
+    expect(proposed(again.events).every((p) => priceOf(p.terms) === 19_500)).toBe(true);
+    expect(lastDecision(again).allowance).toMatchObject({ earned: 500, used: 500, remaining: 0 });
+  });
+
+  it("the buyer view never carries the allowance", async () => {
+    const { say, record, sessionId } = await setup(listingOnlyDeliveryMandate(), ALLOWANCE);
+    await say("₹15,000.", offer(15_000));
+    const buyer = await record.read(sessionId, { viewer: "counterparty" });
+    expect(JSON.stringify(buyer)).not.toMatch(/allowance/);
+  });
+});
+
+describe("Package-specific targets", () => {
+  /** Minimum ₹19,000 (₹18,000 on Saturday); target ₹19,800, or ₹18,800 for Saturday collection. Test data. */
+  function packageTargetMandate(): ValidConfirmedMandate {
+    const extra = " I'd be happy with ₹19,800. For Saturday collection, ₹18,800 is a good result.";
+    return buildMandate({
+      instructions: `You can negotiate the price, but don't go below ₹19,000. I'll accept ₹18,000 only if collection is on Saturday. Collection from Koramangala only. Ask me before accepting any offer.${extra}`,
+      build: (d) => {
+        d.terms.push({ id: "term_day", status: "stated", disclosure: "private", sourceRefs: [{ sourceId: "instructions", quote: "collection is on Saturday" }], name: "collection day", description: null, valueType: "date_text", unit: null, currency: null });
+        d.conditions.push({ id: "condition_saturday", status: "stated", disclosure: "private", sourceRefs: [{ sourceId: "instructions", quote: "only if collection is on Saturday" }], description: "Collection is on Saturday", termId: "term_day", operator: "equals", value: { type: "date_text", value: "Saturday" } });
+        d.limits.push(
+          { id: "limit_min", status: "stated", disclosure: "private", sourceRefs: [{ sourceId: "instructions", quote: "don't go below ₹19,000" }], partyId: "seller", termId: "term_price", kind: "minimum", value: money(19_000), conditionIds: [] },
+          { id: "limit_min_saturday", status: "stated", disclosure: "private", sourceRefs: [{ sourceId: "instructions", quote: "I'll accept ₹18,000 only if collection is on Saturday" }], partyId: "seller", termId: "term_price", kind: "minimum", value: money(18_000), conditionIds: ["condition_saturday"] },
+        );
+        (d.targets ??= []).push(
+          { id: "target_price", status: "stated", disclosure: "private", sourceRefs: [{ sourceId: "instructions", quote: "I'd be happy with ₹19,800" }], partyId: "seller", termId: "term_price", value: money(19_800), conditionIds: [] },
+          { id: "target_price_saturday", status: "stated", disclosure: "private", sourceRefs: [{ sourceId: "instructions", quote: "For Saturday collection, ₹18,800 is a good result" }], partyId: "seller", termId: "term_price", value: money(18_800), conditionIds: ["condition_saturday"] },
+        );
+      },
+    });
+  }
+
+  it("an offer at the Saturday target closes on the Saturday package; the same price without Saturday does not", async () => {
+    const saturday = await setup(packageTargetMandate());
+    const t = await saturday.say("₹18,800 if I collect on Saturday.", offer(18_800, { offer_terms: [price(18_800), day("Saturday")] }));
+    expect(t.events.findLast((e) => e.type === "decision")?.payload).toMatchObject({ kind: "state_final_terms" });
+    expect(proposed(t.events)[0]!.terms).toEqual(expect.arrayContaining([{ termId: "term_day", value: { type: "date_text", value: "Saturday" } }, { termId: "term_price", value: money(18_800) }]));
+
+    const weekday = await setup(packageTargetMandate());
+    const w = await weekday.say("₹18,800.", offer(18_800));
+    expect(w.events.findLast((e) => e.type === "decision")?.payload).not.toMatchObject({ kind: "state_final_terms" });
+  });
+
+  it("the assessment names only the target that applies to the package", async () => {
+    const { state } = await setup(packageTargetMandate());
+    const s = await state();
+    const sat = assessPackage(s, pkg(18_800, [{ termId: "term_day", value: { type: "date_text", value: "Saturday" } }]), "en-IN");
+    expect(sat.drivers.join(" ")).toContain("₹18,800");
+    const plain = assessPackage(s, pkg(19_000), "en-IN");
+    expect(plain.drivers.join(" ")).toContain("₹19,800");
+    expect(plain.drivers.join(" ")).not.toContain("₹18,800");
+  });
+});

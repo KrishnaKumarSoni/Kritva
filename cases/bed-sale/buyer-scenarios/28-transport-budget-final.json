@@ -1,0 +1,58 @@
+{
+  "name": "transport-budget-final",
+  "description": "Live chat regression: a ₹19,000 budget that includes transport, a ₹17,500 offer for the bed after a ₹1,500 truck quote, then the same amount called final. Kritva counters once and then holds, never hinting at a limit.",
+  "replay": true,
+  "turns": [
+    {
+      "buyer": "My total budget is ₹19,000 including transport. I don’t know what a truck will cost yet.",
+      "expect": {
+        "decision": "acknowledge_budget",
+        "action": "ask",
+        "offer": null,
+        "says": [
+          "19,000",
+          "\\?"
+        ]
+      }
+    },
+    {
+      "buyer": "The truck quote is ₹1,500, so I can pay ₹17,500 for the bed and collect it myself.",
+      "expect": {
+        "decision": "counter",
+        "action": "counter",
+        "offer": 18500,
+        "says": [
+          "18,500"
+        ]
+      }
+    },
+    {
+      "buyer": "₹17,500 is my final offer. I’ll collect it myself.",
+      "expect": {
+        "decision": "hold",
+        "action": "decline",
+        "offer": 18500,
+        "says": [
+          "18,500"
+        ],
+        "neverSays": [
+          "line up",
+          "where you need to stay",
+          "as low as"
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "in_progress"
+    ],
+    "agentMustNotSay": [
+      "lowest|minimum|bottom line|floor",
+      "other (buyers|people) (are )?interested",
+      "\\b(deadline|today only)\\b",
+      "18,000"
+    ],
+    "noOfferBelow": 18500
+  }
+}

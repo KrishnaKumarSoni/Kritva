@@ -1,0 +1,50 @@
+{
+  "name": "delivery-only",
+  "description": "Live chat regression: full price only with delivery to Indiranagar, then delivery as a hard need, then the buyer passes. Kritva declines delivery each time, never promises it, and closes without agreement.",
+  "replay": true,
+  "turns": [
+    {
+      "buyer": "I’ll pay the full ₹20,000 if you deliver to Indiranagar.",
+      "expect": {
+        "decision": "decline_request",
+        "action": "decline",
+        "offer": null,
+        "says": [
+          "deliver"
+        ]
+      }
+    },
+    {
+      "buyer": "I can’t collect it myself. I can only buy it if delivery is included.",
+      "expect": {
+        "decision": "decline_request",
+        "action": "decline",
+        "offer": null,
+        "says": [
+          "deliver"
+        ]
+      }
+    },
+    {
+      "buyer": "I’ll pass then. Thanks anyway.",
+      "expect": {
+        "decision": "end",
+        "action": "end",
+        "offer": null
+      }
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "no_agreement"
+    ],
+    "endedBy": "counterparty",
+    "agentMustNotSay": [
+      "lowest|minimum|bottom line|floor",
+      "other (buyers|people) (are )?interested",
+      "\\b(deadline|today only)\\b",
+      "we (can|will) deliver",
+      "delivery is included"
+    ]
+  }
+}

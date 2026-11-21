@@ -279,6 +279,8 @@ export function toInterpretation(view: MandateView, json: unknown, message = "")
 const BUDGET_PREFIX = /\b(?:(?:my|our|the) (?:maximum |max )?(?:budget|spending limit|maximum) (?:is|would be|is capped at)\s*(?:not more than |no more than |at most |up to |only |capped at )?|i (?:cannot|can't|can not) (?:spend|pay|go) (?:more than|above|over) |(?:my|our) budget (?:of|up to) )/i;
 const EXPLICIT_OFFER = /\b(?:i|we) (?:offer|would offer|can offer|will offer|can do|will do|will pay|would pay|can pay|could pay|will take|would take)(?! (?:no|not) more than| only)\b|\b(?:make it a deal|that's a deal|this is my (?:final )?offer)\b/i;
 const PRICE_FLEXIBILITY = /\b(?:how (?:low|much lower) (?:can|could|will|would) you go|(?:what(?:'s| is)|tell me) (?:the |your )?(?:best|lowest)(?: (?:price|amount|rate)| (?:that )?you (?:can|could|would) do)|(?:can|could|would|will) you (?:(?:go|come) (?:any |a (?:bit|little) )?(?:lower|down)|do (?:any )?better|lower (?:it|the price|your price))|(?:your|the) (?:best|lowest) (?:price|amount|rate))\b/i;
+const BARE_PROPOSAL = /^(?:(?:ok(?:ay)?|fine|alright|hmm|well|so)[,.!]?\s+)?(?:(?:how|what) about\s+)?(?:rs\.?\s*|inr\s*|\p{Sc}\s*)?\d[\d,]*(?:\.\d+)?\s*(?:k\b)?(?:\s+then)?\s*[?.!]*$/u;
+const FINAL_POSITION = /([^.!?]*?)\s+is (?:really |honestly |truly |just |absolutely )?(?:the most (?:i|we) can (?:do|pay|offer|go(?: to)?)|(?:my|our) (?:limit|max(?:imum)?|best(?: offer| price)?|final(?: offer| price)?|top (?:price|offer)|last offer))\b/;
 const DIRECT_PAYMENT = /(?:^|[.!;,]\s+|\b(?:so|but)\s+)(?:i|we)(?:'ll| (?:will|can)) (?:pay|offer)\s+(?:(\p{Sc}|[a-z]{3})\s*)?(\d+(?:,\d+)*(?:\.\d+)?)(?!\d|[.,]\d|\s*(?:\?|(?:k|thousand|lakhs?|crore|per|total|including|all[- ]in)\b))/iu;
 
 function bindFulfillment(view: MandateView, interp: Interpretation, message: string, terms: FulfillmentTerms): void {
@@ -340,9 +342,25 @@ function groundTurn(view: MandateView, interpretation: Interpretation, message: 
     interpretation.acceptsStatedTerms = false;
   }
   const priceEnquiry = /^(?:would|could|will|can) you (?:take|accept|consider|do|agree to)\b/i.test(words);
+  // "Would you take <amount>?" names its amount even when the model left it out: it is an enquiry about that amount.
+  if (term?.valueType === "money" && priceEnquiry && !interpretation.offerTerms.some((t) => t.termId === term.termId)) {
+    const asked = findAmounts(words);
+    if (asked.length === 1) {
+      interpretation.offerTerms.push({ termId: term.termId, value: numericValue(term, asked[0]!) });
+      if (interpretation.pressure === "lowest_price") interpretation.pressure = "none";
+    }
+  }
   if (term && priceEnquiry && !EXPLICIT_OFFER.test(words) && interpretation.offerTerms.some((t) => t.termId === term.termId)) {
     interpretation.offerKind = "enquiry";
     if (!BUDGET_PREFIX.test(words)) interpretation.notes = interpretation.notes?.filter((note) => note.kind !== "budget");
+  }
+  // "<amount> then?" or "How about <amount>?": a bare amount put forward is a proposal at that amount.
+  if (term?.valueType === "money" && !priceEnquiry && BARE_PROPOSAL.test(words)) {
+    const amounts = findAmounts(words);
+    if (amounts.length === 1) {
+      interpretation.offerTerms = [...interpretation.offerTerms.filter((t) => t.termId !== term.termId), { termId: term.termId, value: numericValue(term, amounts[0]!) }];
+      interpretation.offerKind = "offer";
+    }
   }
   const prefix = BUDGET_PREFIX.exec(message.replace(/[’‘]/g, "'"));
   if (term?.valueType === "money" && prefix) {
@@ -361,6 +379,21 @@ function groundTurn(view: MandateView, interpretation: Interpretation, message: 
         interpretation.offerTerms = interpretation.offerTerms.filter((t) => t.termId !== term.termId);
         interpretation.offerKind = "budget_ceiling";
       }
+    }
+  }
+  // "<amount> is the most I can do" / "is my limit" / "is my final offer": a firm final position at that
+  // amount, which the strategy evaluates as an offer. A budget phrased as a budget stays a ceiling.
+  const position = term?.valueType === "money" && !prefix && !priceEnquiry ? FINAL_POSITION.exec(words) : null;
+  if (term && position) {
+    const clause = position[1]!.split(/[;:]|,\s/).at(-1)!.trim();
+    const amounts = findAmounts(clause);
+    if (amounts.length === 1 && clause.split(/\s+/).length <= 3) {
+      const amount = amounts[0]!;
+      interpretation.offerTerms = [...interpretation.offerTerms.filter((t) => t.termId !== term.termId), { termId: term.termId, value: numericValue(term, amount) }];
+      interpretation.offerKind = "offer";
+      interpretation.acceptsStatedTerms = false;
+      if (interpretation.pressure === "none" || !interpretation.pressure) interpretation.pressure = "final_offer";
+      interpretation.notes = interpretation.notes?.filter((note) => !(note.kind === "budget" && note.value?.type === "money" && note.value.amount === amount));
     }
   }
   if (interpretation.offerKind === "budget_ceiling" || interpretation.offerKind === "enquiry" || interpretation.offerKind === "interest") {

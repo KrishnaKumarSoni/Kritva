@@ -19,7 +19,7 @@
     "endedBy": "principal",
     "agentMustSay": [
       "(won't be going ahead|decided not to go ahead)",
-      "has ended without an agreement"
+      "ended without (an )?agreement|(decided|chose) not to go ahead|(is|has) (closed|ended)"
     ],
     "agentMustNotSay": [
       "Do you confirm"

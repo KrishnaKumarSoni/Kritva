@@ -1,0 +1,435 @@
+{
+  "scenario": "availability-to-budget",
+  "mandate": "bed-sale/demo",
+  "recordedAt": "2026-11-21T20:11:48.162Z",
+  "commit": "5a49ea2 + uncommitted changes",
+  "model": "gpt-5.4-mini",
+  "turns": [
+    {
+      "buyer": "hi",
+      "expect": {
+        "decision": "answer",
+        "action": "answer",
+        "offer": null,
+        "says": [
+          "Kritva",
+          "Krishna"
+        ]
+      }
+    },
+    {
+      "buyer": "is the bed still available?",
+      "expect": {
+        "decision": "answer",
+        "action": "answer",
+        "offer": null,
+        "says": [
+          "available"
+        ]
+      }
+    },
+    {
+      "buyer": "For how much?",
+      "expect": {
+        "decision": "answer",
+        "action": "answer",
+        "offer": null,
+        "says": [
+          "20,000"
+        ]
+      }
+    },
+    {
+      "buyer": "It's too much!",
+      "expect": {
+        "decision": "explore_objection",
+        "action": "ask",
+        "offer": null,
+        "says": [
+          "\\?"
+        ]
+      }
+    },
+    {
+      "buyer": "Budget. My budget is just 18000",
+      "expect": {
+        "decision": "acknowledge_budget",
+        "action": "ask",
+        "offer": null,
+        "says": [
+          "18,000"
+        ]
+      }
+    },
+    {
+      "buyer": "How low can you go?",
+      "expect": {
+        "decision": "hold",
+        "action": "answer",
+        "offer": null,
+        "says": [
+          "20,000"
+        ],
+        "neverSays": [
+          "firm offer"
+        ]
+      }
+    }
+  ],
+  "observed": [
+    {
+      "turn": "hi",
+      "reply": "Hi, I’m Kritva, assisting Krishna. How can I help?",
+      "offerAmount": null,
+      "decision": {
+        "kind": "answer",
+        "action": "answer"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "is the bed still available?",
+      "reply": "Yes, the bed is still available.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "answer",
+        "action": "answer"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "For how much?",
+      "reply": "It’s ₹20,000.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "answer",
+        "action": "answer"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "It's too much!",
+      "reply": "It’s still at ₹20,000. Is your concern mainly about the budget, or the value of the bed and package?",
+      "offerAmount": null,
+      "decision": {
+        "kind": "explore_objection",
+        "action": "ask"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "Budget. My budget is just 18000",
+      "reply": "₹18,000 is the budget you’ve shared. Would you like to make a firm offer on the current package?",
+      "offerAmount": null,
+      "decision": {
+        "kind": "acknowledge_budget",
+        "action": "ask"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "How low can you go?",
+      "reply": "The current ask is ₹20,000.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "hold",
+        "action": "answer"
+      },
+      "blocked": 0
+    }
+  ],
+  "calls": [
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "greeting",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Hi, I’m Kritva, assisting Krishna. How can I help?",
+        "question": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "question",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": true,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Yes, the bed is still available.",
+        "question": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "question",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [],
+        "answers": [],
+        "new_terms": [],
+        "questions": [
+          "For how much?"
+        ],
+        "public_term_questions": [
+          {
+            "term_id": "term_t_price",
+            "basis": "current",
+            "quote": "For how much?"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "It’s ₹20,000.",
+        "question": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "reject",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": "objection",
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [
+          {
+            "kind": "reason",
+            "quote": "It's too much!",
+            "summary": "Says the price is too high.",
+            "term_id": "term_t_price",
+            "value": null,
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "It’s still at ₹20,000. Is your concern mainly about the budget, or the value of the bed and package?",
+        "question": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "request_change",
+        "offer_terms": [
+          {
+            "term_id": "term_t_price",
+            "value": {
+              "type": "money",
+              "amount": 18000,
+              "currency": "INR",
+              "unit": null,
+              "text": null,
+              "boolean": null
+            }
+          }
+        ],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "budget_ceiling",
+        "price_concern": "objection",
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [
+          {
+            "kind": "budget",
+            "quote": "Budget. My budget is just 18000",
+            "summary": "Budget ceiling is ₹18,000",
+            "term_id": "term_t_price",
+            "value": {
+              "type": "money",
+              "amount": 18000,
+              "currency": "INR",
+              "unit": null,
+              "text": null,
+              "boolean": null
+            },
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [
+          {
+            "question_id": "evt_ae910ade-3ae4-425c-b75a-e711332eb5e7",
+            "quote": "Budget.",
+            "resolution": "answered"
+          }
+        ],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "₹18,000 is the budget you’ve shared. If you’d like to make a firm offer on the current package, I can take it from there.",
+        "question": "Would you like to make a firm offer on the current package?"
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "question",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "enquiry",
+        "price_concern": "value_question",
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "lowest_price",
+        "notes": [
+          {
+            "kind": "budget",
+            "quote": "How low can you go?",
+            "summary": "Asks for the lowest price.",
+            "term_id": "term_t_price",
+            "value": null,
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [
+          {
+            "question_id": "evt_fcb773ab-b566-4b66-ac6a-94301f7f7369",
+            "quote": null,
+            "resolution": "partial"
+          }
+        ],
+        "new_terms": [],
+        "questions": [
+          "How low can you go?"
+        ],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "The current ask is ₹20,000. If you’d like, you can send a firm offer on the current package.",
+        "question": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "private_disclosure",
+            "quote": "How low can you go?"
+          }
+        ]
+      }
+    }
+  ]
+}

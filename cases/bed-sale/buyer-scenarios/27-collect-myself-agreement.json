@@ -1,0 +1,70 @@
+{
+  "name": "collect-myself-agreement",
+  "description": "Live chat regression: an enquiry at ₹18,500, a firm ₹19,500 with self-collection, a split to ₹19,800, the full read-back, buyer confirmation, then the seller's approval through to an agreement with payment and pickup pending.",
+  "replay": true,
+  "turns": [
+    {
+      "buyer": "Any chance you’d take ₹18,500 if I collect it myself?",
+      "expect": {
+        "decision": "answer_enquiry",
+        "action": "answer",
+        "offer": null,
+        "says": [
+          "20,000"
+        ]
+      }
+    },
+    {
+      "buyer": "I’ll pay ₹19,500 and collect it myself.",
+      "expect": {
+        "decision": "counter",
+        "action": "counter",
+        "offer": 19800,
+        "says": [
+          "19,800"
+        ]
+      }
+    },
+    {
+      "buyer": "Okay, I’ll go with the price you just quoted and collect it from you.",
+      "expect": {
+        "decision": "state_final_terms",
+        "action": "propose",
+        "offer": 19800,
+        "says": [
+          "19,800",
+          "Koramangala",
+          "\\?"
+        ]
+      }
+    },
+    {
+      "buyer": "Yes, I confirm the full package you just read back.",
+      "expect": {
+        "decision": "request_approval",
+        "action": "accept",
+        "offer": null,
+        "neverSays": [
+          "\\bapproved\\b",
+          "\\bdeal\\b"
+        ]
+      }
+    },
+    {
+      "seller": "approved"
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "agreement"
+    ],
+    "agreedAmountAtLeast": 19800,
+    "agreedBooleanTermsFalse": true,
+    "acceptancesMatchStatedTerms": true,
+    "agentMustNotSay": [
+      "lowest|minimum|bottom line|floor",
+      "other (buyers|people) (are )?interested",
+      "\\b(deadline|today only)\\b"
+    ]
+  }
+}

@@ -13,7 +13,8 @@ import { applicableLimit, sameValue, type DealCheck } from "../dealspace/check.t
 import { packageKey, type CounterpartyModel } from "../counterparty/model.ts";
 import { includedBudgetCost } from "../counterparty/questions.ts";
 import { numericValue, violatesFixedRule, withTerm, type MandateView, type NegotiableTerm } from "./mandate-view.ts";
-import { assessPackage, type Assessment } from "../strategy/assess.ts";
+import { applicableTarget, assessPackage, type Assessment } from "../strategy/assess.ts";
+import type { AllowanceLedger } from "../strategy/allowance.ts";
 import { MINIMAL_GUIDANCE, type StrategyGuidance } from "../strategy/guidance.ts";
 import { approvedFor, clearedNow, publicDealTerms, type NegotiationState, type StatedOffer } from "./state.ts";
 
@@ -127,6 +128,8 @@ export interface Plan {
   approvalGranted?: boolean;
   /** How many replies the agent has sent before this one; varies fallback wording. */
   turnIndex?: number;
+  /** The discount allowance ledger the move was decided under (private, for the decision record). */
+  allowance?: AllowanceLedger | null;
 }
 
 /** What the strategy can see beyond the turn: guidance, and questions this turn prepared. */
@@ -136,6 +139,8 @@ export interface StrategyContext {
   freshQuestions: Array<{ questionId: string; text: string; kind: string; purpose?: string }>;
   counterparty?: Pick<CounterpartyModel, "estimates" | "offers" | "questions">;
   listingAvailable?: boolean;
+  /** Discount the counterparty's commitments have earned and not yet used. Absent: no allowance cap. */
+  allowance?: AllowanceLedger | null;
   locale: string;
 }
 
@@ -323,7 +328,7 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
     }
 
     // Closing rule: an offer at or beyond the lower of the current ask and the principal's target.
-    const target = principalTarget(state, n.termId);
+    const target = applicableTarget(state, n.termId, deal.package);
     const closeAt = target !== null && atLeast(target, limit) && !atLeast(target, ask) ? target : ask;
     if (atLeast(amount, closeAt)) {
       if (plan.declined.length > 0 || plan.unresolved.length > 0 || plan.clarify.length > 0) {
@@ -374,7 +379,8 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
         return holdAt(plan, view, ask, keep, "No counteroffers left; the offer stays where it is.");
       }
       if (repeated) return holdAt(plan, view, ask, keep, "A repeated offer earns no further reduction.");
-      const next = concede(state, g, n, ask, limit, amount, q);
+      if (noAllowance(context)) return holdAt(plan, view, ask, keep, "No new commitment from the counterparty: no unused discount allowance, so the offer stays where it is.");
+      const next = concede(state, g, n, ask, limit, amount, q, allowanceCap(context));
       return next.value === ask ? holdAt(plan, view, ask, keep, "No permitted step fits; the offer stays where it is.") : counterAt(plan, view, next.value, keep, `Offer is outside the limit; counter without revealing it.${declineReason}`, next.tactic);
     }
 
@@ -385,17 +391,22 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
     if (g.concessionSteps.length === 0) {
       // No approved steps: close when the gap is one increment or after two counters, else meet in the middle.
       if (state.countersMade >= 2 || Math.abs(ask - amount) <= q) return finalAt(plan, view, amount, keep, `Offer is within the mandate; state complete terms.${declineReason}`);
-      const middle = roundUp((ask + amount) / 2, q, n.direction);
-      if (middle === ask || middle === amount) return finalAt(plan, view, amount, keep, `Offer is within the mandate; state complete terms.${declineReason}`);
+      const cap = allowanceCap(context);
+      const halfway = roundUp((ask + amount) / 2, q, n.direction);
+      // The midpoint never spends more than the unused allowance.
+      const middle = Math.abs(ask - halfway) <= cap ? halfway : ask - towardSign(n) * Math.floor(cap / q) * q;
+      if (middle === ask) return holdAt(plan, view, ask, keep, "No unused discount allowance fits a step; the offer stays where it is.");
+      if (middle === amount) return finalAt(plan, view, amount, keep, `Offer is within the mandate; state complete terms.${declineReason}`);
       return counterAt(plan, view, middle, keep, `Offer is within the mandate but below the ask; counter in between.${declineReason}`, "halve_distance");
     }
+    if (noAllowance(context)) return holdAt(plan, view, ask, keep, "No new commitment from the counterparty: no unused discount allowance, so the offer stays where it is.");
     if (g.splitTheDifference && !state.splitUsed && keep.length === 0 && plan.declined.length === 0) {
       const middle = roundUp((ask + amount) / 2, q, n.direction);
-      if (atLeast(middle, amount) && middle !== amount && !atLeast(middle, ask) && Math.abs(ask - middle) <= stepCap(state, g, ask)) {
+      if (atLeast(middle, amount) && middle !== amount && !atLeast(middle, ask) && Math.abs(ask - middle) <= Math.min(stepCap(state, g, ask), allowanceCap(context))) {
         return counterAt(plan, view, middle, keep, "Only price is open: split the difference once.", "split_difference");
       }
     }
-    const next = concede(state, g, n, ask, limit, amount, q);
+    const next = concede(state, g, n, ask, limit, amount, q, allowanceCap(context));
     if (next.value === ask) return holdAt(plan, view, ask, keep, "No permitted step fits; the offer stays where it is.");
     if (atLeast(amount, next.value)) return finalAt(plan, view, amount, keep, `Offer is within the mandate; state complete terms.${declineReason}`);
     return counterAt(plan, view, next.value, keep, `Offer is within the mandate but below the ask; counter.${declineReason}`, next.tactic);
@@ -508,12 +519,6 @@ function endWith(plan: Plan, requestedBy: "counterparty" | "agent", reason: stri
   return { ...plan, move: "end_negotiation", action: "end", offer: null, questions: [], unresolved: [], clarify: [], declined: [], end: { requestedBy, reason, unresolved, line }, decision: { kind: "end", reason } };
 }
 
-/** The principal's stated target on a term, if any. Never invented. */
-function principalTarget(state: NegotiationState, termId: string): number | null {
-  const t = state.view.mandate.targets.find((x) => x.partyId === state.view.principalId && x.termId === termId && x.conditionIds.length === 0 && x.value && "amount" in x.value);
-  return t?.value && "amount" in t.value ? (t.value.amount as number) : null;
-}
-
 /** What is still open, by term name, for a no-agreement record. */
 function unresolvedTerms(state: NegotiationState, deal: DealInput): string[] {
   const out = new Set<string>();
@@ -528,19 +533,22 @@ function unresolvedTerms(state: NegotiationState, deal: DealInput): string[] {
  * kept smaller than the previous actual reduction, capped so it never passes max(limit, their
  * amount), rounded to the increment. Without steps: halve the distance to the limit. Never past the limit.
  */
-function concede(state: NegotiationState, g: StrategyGuidance, n: NegotiableTerm, ask: number, limit: number, amount: number, q: number): { value: number; tactic: Tactic } {
+function concede(state: NegotiationState, g: StrategyGuidance, n: NegotiableTerm, ask: number, limit: number, amount: number, q: number, cap = Number.POSITIVE_INFINITY): { value: number; tactic: Tactic } {
   const up = n.direction === "up";
   const tactic: Tactic = g.concessionSteps.length > 0 ? "concession_step" : "halve_distance";
   const floor = up ? Math.max(limit, amount) : Math.min(limit, amount);
   const room = Math.abs(ask - floor);
-  if (room <= 0) return { value: ask, tactic };
+  if (room <= 0 || cap <= 0) return { value: ask, tactic };
   if (g.concessionSteps.length === 0) {
     // Halve the distance to the limit, rounded in the principal's favour; never past the limit.
     const half = roundUp(up ? ask - (ask - limit) / 2 : ask + (limit - ask) / 2, q, n.direction);
-    const next = up ? Math.max(limit, half) : Math.min(limit, half);
-    return { value: next === ask ? limit : next, tactic };
+    let next = up ? Math.max(limit, half) : Math.min(limit, half);
+    if (next === ask) next = limit;
+    // Never spend more than the unused allowance.
+    if (Math.abs(ask - next) > cap) next = up ? ask - Math.floor(cap / q) * q : ask + Math.floor(cap / q) * q;
+    return { value: next, tactic };
   }
-  const reduction = Math.floor(Math.min(stepCap(state, g, ask), room) / q) * q;
+  const reduction = Math.floor(Math.min(stepCap(state, g, ask), room, cap) / q) * q;
   if (reduction <= 0) return { value: ask, tactic };
   const next = up ? ask - reduction : ask + reduction;
   return { value: up ? Math.max(limit, next) : Math.min(limit, next), tactic };
@@ -554,6 +562,16 @@ function stepCap(state: NegotiationState, g: StrategyGuidance, ask: number): num
   const previous = reductions.at(-1);
   void ask;
   return previous !== undefined ? Math.min(step, Math.max(0, previous - 1)) : step;
+}
+
+/** The unused discount allowance, or no cap when the guidance sets none. */
+function allowanceCap(context: StrategyContext): number {
+  return context.allowance ? context.allowance.remaining : Number.POSITIVE_INFINITY;
+}
+
+/** An allowance is configured and the counterparty has nothing left to spend: hold. */
+function noAllowance(context: StrategyContext): boolean {
+  return Boolean(context.allowance) && context.allowance!.remaining <= 0;
 }
 
 function roundUp(value: number, q: number, direction: "up" | "down"): number {

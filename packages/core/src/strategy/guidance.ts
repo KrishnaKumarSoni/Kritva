@@ -7,6 +7,7 @@
  * halves, never past it, and never walk away on its own.
  */
 import { z } from "zod";
+import { Value } from "../schema/records.ts";
 
 export const StrategyGuidance = z.strictObject({
   id: z.string().min(1).max(120),
@@ -25,6 +26,29 @@ export const StrategyGuidance = z.strictObject({
   walkAwayAfterMaxCounteroffers: z.boolean(),
   /** Short wording the reply may use when walking away. */
   walkAwayLine: z.string().max(200).nullable(),
+  /**
+   * Approved discount allowance per new counterparty commitment. A concession never exceeds the
+   * allowance the counterparty has earned and not yet used. Null: steps and limits only.
+   */
+  commitmentAllowance: z
+    .strictObject({
+      /** Earned by a firm offer that improves on the counterparty's best earlier offer (the first one counts). */
+      betterOffer: z.number().nonnegative(),
+      /** Earned once by each listed non-price commitment, such as a faster collection day. */
+      terms: z
+        .array(
+          z.strictObject({
+            termId: z.string().min(1).max(120),
+            /** The committed value. Null: any value other than the principal's own. */
+            value: Value.nullable(),
+            allowance: z.number().nonnegative(),
+            label: z.string().min(1).max(120),
+          }),
+        )
+        .max(20),
+    })
+    .nullable()
+    .default(null),
   /** Neutral questions for pressure moves ("what's your lowest?", "cheaper elsewhere"). */
   pressureQuestions: z.strictObject({
     lowestPrice: z.string().max(200).nullable(),
@@ -43,6 +67,7 @@ export const MINIMAL_GUIDANCE: StrategyGuidance = {
   askBeforeConceding: true,
   walkAwayAfterMaxCounteroffers: false,
   walkAwayLine: null,
+  commitmentAllowance: null,
   pressureQuestions: { lowestPrice: null, cheaperElsewhere: null },
 };
 
