@@ -341,7 +341,7 @@ function groundTurn(view: MandateView, interpretation: Interpretation, message: 
     interpretation.offerTerms = interpretation.offerTerms.filter((t) => t.termId !== term.termId);
     interpretation.acceptsStatedTerms = false;
   }
-  const priceEnquiry = /^(?:would|could|will|can) you (?:take|accept|consider|do|agree to)\b/i.test(words);
+  const priceEnquiry = /^(?:(?:(?:is there )?any chance|do you think) you(?:'d| would)?|(?:would|could|will|can) you) (?:take|accept|consider|do|agree to)\b/i.test(words) && !EXPLICIT_OFFER.test(words);
   // "Would you take <amount>?" names its amount even when the model left it out: it is an enquiry about that amount.
   if (term?.valueType === "money" && priceEnquiry && !interpretation.offerTerms.some((t) => t.termId === term.termId)) {
     const asked = findAmounts(words);

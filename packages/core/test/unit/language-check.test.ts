@@ -39,3 +39,24 @@ describe("Reviewer filters", () => {
     expect(result.ok && result.concerns).toHaveLength(1);
   });
 });
+
+describe("The planned offer is not a mismatch", () => {
+  const counter = { move: "counter", notice: null, opening: false, approvalGranted: false, outcome: "in_progress" };
+  it("drops a mismatch on a sentence that only puts the checked amount to them", async () => {
+    for (const reply of ["I can do ₹19,800.", "How about ₹19,800?", "Hi, I'm Kritva, assisting Asha. I can do ₹19,800 for the bed."]) {
+      const quote = reply.split(/(?<=[.!?])\s+/).at(-1)!;
+      const result = await languageCheck(reviewer([{ type: "action_mismatch", quote }]), { ...base, reply, checkedTerms: ["price: ₹19,800"], action: counter });
+      expect(result).toEqual({ ok: true, concerns: [] });
+    }
+  });
+
+  it("keeps it for another amount, another move, or a sentence that adds anything", async () => {
+    const other = await languageCheck(reviewer([{ type: "action_mismatch", quote: "I can do ₹19,500." }]), { ...base, reply: "I can do ₹19,500.", checkedTerms: ["price: ₹19,800"], action: counter });
+    expect(other.ok && other.concerns).toHaveLength(1);
+    const answer = await languageCheck(reviewer([{ type: "action_mismatch", quote: "I can do ₹19,800." }]), { ...base, reply: "I can do ₹19,800.", checkedTerms: ["price: ₹19,800"], action: { ...counter, move: "answer" } });
+    expect(answer.ok && answer.concerns).toHaveLength(1);
+    const extra = "I can do ₹19,800 and deliver it free.";
+    const added = await languageCheck(reviewer([{ type: "promise_outside_terms", quote: extra }]), { ...base, reply: extra, checkedTerms: ["price: ₹19,800"], action: counter });
+    expect(added.ok && added.concerns).toHaveLength(1);
+  });
+});

@@ -64,9 +64,12 @@ async function setup(mandate: ValidConfirmedMandate, listingDetails?: { publicPr
   const llm = new ScriptedLlm();
   const engine = new NegotiationEngine({ record, llm, locale: "en-IN", guidance: GUIDANCE, listingDetails: listingDetails ? new Map([[mandate.caseId, listingDetails]]) : undefined });
   const sessionId = started.session.id;
-  const say = async (text: string, interp: Interp, options: { composed?: string | { text: string; question: string } | null; deliver?: boolean; messageId?: string } = {}): Promise<TurnResult> => {
+  type Draft = string | { text: string; question: string } | null;
+  const say = async (text: string, interp: Interp, options: { composed?: Draft | Draft[]; deliver?: boolean; messageId?: string } = {}): Promise<TurnResult> => {
     llm.interpretations.push(interp);
-    llm.composed.push(options.composed ?? null);
+    // A list scripts the first draft and then the one rewrite.
+    llm.composed.length = 0;
+    llm.composed.push(...(Array.isArray(options.composed) ? options.composed : [options.composed ?? null]));
     const result = await engine.handleCounterpartyMessage({ sessionId, text, channel: "text", messageId: options.messageId });
     if (!result.ok) throw new Error(result.message);
     if (result.reply && options.deliver !== false) await engine.reportDelivery({ sessionId, messageId: result.reply.messageId, channel: "text", status: "delivered" });
@@ -164,8 +167,9 @@ describe("Epic 9, Story 1: buyer messages go through the core", () => {
       expect(turn.reply!.offerIds).toEqual([]);
     }
     const frames = llm.seen.filter((call) => call.purpose === "compose_reply").map((call) => JSON.parse(call.messages[0]!.content));
-    expect(frames.at(-2)).toMatchObject({ their_message: "How much?", move: "answer_public_terms", public_term_answers: [{ value: "₹20,000", basis: "current" }] });
-    expect(JSON.stringify(frames.at(-2))).not.toContain("18,000");
+    const howMuch = frames.find((frame) => frame.their_message === "How much?");
+    expect(howMuch).toMatchObject({ move: "answer_public_terms", public_term_answers: [{ value: "₹20,000", basis: "current" }] });
+    expect(JSON.stringify(frames)).not.toContain("18,000");
     expect((await events()).some((event) => event.type === "offer_proposed" || event.type === "offer_extracted")).toBe(false);
   });
 
@@ -677,5 +681,75 @@ describe("Enquiries that name their amount", () => {
     expect(turn.events.findLast((e) => e.type === "decision")?.payload).toMatchObject({ kind: "answer_enquiry" });
     expect(turn.reply?.text).toMatch(/collection day/i);
     expect(turn.reply?.offerIds).toEqual([]);
+  });
+});
+
+describe("One rewrite before the checked fallback", () => {
+  const bad = "Sure. It's a great bed and other buyers are interested.";
+  const good = "It's a king-size bed, one year old and in good condition.";
+  const frames = (llm: { seen: Array<{ purpose: string; messages: Array<{ content: string }> }> }) =>
+    llm.seen.filter((c) => c.purpose === "compose_reply").map((c) => JSON.parse(c.messages[0]!.content));
+
+  it("a blocked draft goes back once with the reason, and a rewrite that passes is delivered", async () => {
+    const { say, llm, events } = await setup(listingOnlyDeliveryMandate());
+    await say("Hi", { intent: "greeting" });
+    llm.reviews.push([{ type: "invented_competition", quote: "other buyers are interested" }], []);
+    const turn = await say("What are you selling?", { intent: "question", questions: ["What are you selling?"] }, { composed: [bad, good] });
+    expect(turn.reply!.text).toBe(good);
+    expect(frames(llm).at(-2).revise).toBeNull();
+    expect(frames(llm).at(-1).revise).toMatchObject({ rejected_draft: bad, problems: [expect.stringMatching(/compet/i)] });
+    expect((await events()).filter((e) => e.type === "reply_blocked")).toHaveLength(1);
+  });
+
+  it("when the rewrite is blocked too, the checked fallback answers and both blocks are recorded", async () => {
+    const { say, llm, events } = await setup(listingOnlyDeliveryMandate());
+    await say("Hi", { intent: "greeting" });
+    llm.reviews.push([{ type: "invented_competition", quote: "other buyers are interested" }], [{ type: "invented_competition", quote: "other buyers are interested" }]);
+    const turn = await say("What are you selling?", { intent: "question", questions: ["What are you selling?"] }, { composed: [bad, bad] });
+    expect(turn.reply!.text).not.toContain("other buyers");
+    expect(turn.reply!.text).toMatch(/king-size/i);
+    expect(frames(llm).filter((f) => f.their_message === "What are you selling?")).toHaveLength(2);
+    expect((await events()).filter((e) => e.type === "reply_blocked")).toHaveLength(2);
+  });
+
+  it("a draft that exposed a private amount is never sent back to the model, only the reason", async () => {
+    const { say, llm } = await setup(listingOnlyDeliveryMandate());
+    await say("Hi", { intent: "greeting" });
+    await say("What's your lowest?", { intent: "question", asks_private_info: true, questions: ["What's your lowest?"] }, { composed: ["I can't go below ₹18,000.", null] });
+    const last = frames(llm).at(-1);
+    expect(last.revise).toMatchObject({ rejected_draft: null });
+    expect(JSON.stringify(last)).not.toContain("18,000");
+  });
+});
+
+describe("Reviewer accepts the planned offer", () => {
+  it.each(["I can do ₹19,000.", "How about ₹19,000?", "I can do ₹19,000 for the bed."])('"%s" on a counter is delivered even when the reviewer calls it a mismatch', async (line) => {
+    const { say, llm, events } = await setup(listingOnlyDeliveryMandate());
+    await say("Hi", { intent: "greeting" });
+    const first = await say("₹17,000.", offer(17_000), { composed: null });
+    const amount = (first.reply!.text.match(/₹[\d,]+/) ?? [""])[0];
+    const draft = line.replace("₹19,000", amount);
+    llm.reviews.push([{ type: "action_mismatch", quote: draft }]);
+    const turn = await say("₹17,200.", offer(17_200), { composed: draft });
+    if (turn.events.some((e) => e.type === "decision" && (e.payload as { kind: string }).kind === "counter")) {
+      expect(turn.reply!.text).toContain(draft.replace(amount, (turn.reply!.text.match(/₹[\d,]+/) ?? [""])[0]));
+    }
+    expect((await events()).filter((e) => e.type === "reply_blocked" && JSON.stringify(e.payload).includes("action mismatch"))).toHaveLength(0);
+  });
+
+  it("still blocks an offer sentence that adds a promise", async () => {
+    const { say, llm, events } = await setup(listingOnlyDeliveryMandate());
+    await say("Hi", { intent: "greeting" });
+    const draft = "I can do ₹19,000 and deliver it free.";
+    llm.reviews.push([{ type: "promise_outside_terms", quote: draft }], [{ type: "promise_outside_terms", quote: draft }]);
+    await say("₹17,000.", offer(17_000), { composed: [draft, draft] });
+    expect((await events()).filter((e) => e.type === "reply_blocked").length).toBeGreaterThan(0);
+  });
+
+  it('"Any chance you\'d take ₹18,500 if I collect it myself?" is an enquiry, not an offer', async () => {
+    const { say } = await setup(listingOnlyDeliveryMandate());
+    const turn = await say("Any chance you’d take ₹18,500 if I collect it myself?", { intent: "offer", offer_kind: "offer", offer_terms: [price(18_500)] });
+    expect(turn.events.findLast((e) => e.type === "decision")?.payload).toMatchObject({ kind: "answer_enquiry" });
+    expect(turn.reply!.offerIds).toEqual([]);
   });
 });

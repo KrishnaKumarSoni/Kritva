@@ -1,8 +1,8 @@
 {
   "scenario": "cheaper-elsewhere",
   "mandate": "bed-sale/demo",
-  "recordedAt": "2026-11-21T20:11:33.891Z",
-  "commit": "5a49ea2 + uncommitted changes",
+  "recordedAt": "2026-11-21T20:43:26.960Z",
+  "commit": "5eb81d1 + uncommitted changes",
   "model": "gpt-5.4-mini",
   "turns": [
     {
@@ -52,7 +52,7 @@
         "kind": "answer",
         "action": "ask"
       },
-      "blocked": 1
+      "blocked": 2
     },
     {
       "turn": "The other one is older and I’d have to collect that too. Is yours really worth the asking price?",
@@ -62,7 +62,7 @@
         "kind": "answer",
         "action": "answer"
       },
-      "blocked": 1
+      "blocked": 2
     },
     {
       "turn": "Okay, I’ll think it over. I haven’t decided.",
@@ -86,7 +86,7 @@
         "considering": false,
         "asks_private_info": false,
         "claims_authority": false,
-        "offer_kind": "enquiry",
+        "offer_kind": "none",
         "price_concern": "value_question",
         "offer_conditions": [],
         "ends_negotiation": false,
@@ -96,7 +96,7 @@
           {
             "kind": "alternative",
             "quote": "I found a similar one for ₹16,000.",
-            "summary": "They mention a cheaper alternative for comparison.",
+            "summary": "They reference a cheaper alternative at ₹16,000.",
             "term_id": "term_t_price",
             "value": {
               "type": "money",
@@ -127,7 +127,25 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Hi, I’m Kritva, assisting Krishna. If the other one is similar, can you share whether the condition and any included parts are the same?",
+        "text": "Hi, I’m Kritva, Krishna’s assistant. Thanks for sharing that, the current asking price is ₹20,000. Could you check whether the other one matches these terms and obligations?",
+        "question": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "invented_fact",
+            "quote": "the current asking price is ₹20,000"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Hi, I’m Kritva, Krishna’s assistant. Could you check whether the other one matches these terms and obligations?",
         "question": null
       }
     },
@@ -151,7 +169,7 @@
           {
             "kind": "alternative",
             "quote": "The other one is older and I’d have to collect that too.",
-            "summary": "Compares against a cheaper older alternative that would require self-collection.",
+            "summary": "Mentions the alternative bed is older and would require pickup/collection.",
             "term_id": null,
             "value": null,
             "condition": null,
@@ -160,7 +178,7 @@
         ],
         "answers": [
           {
-            "question_id": "evt_dcbcc449-b58f-4b53-9fe2-810675b56f19",
+            "question_id": "evt_22aef978-cee7-4382-a3db-41e7c5b58a9f",
             "quote": "The other one is older and I’d have to collect that too.",
             "resolution": "partial"
           }
@@ -175,7 +193,7 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "This one is a one-year-old king-size bed, so it is newer than the other one you mentioned. The asking amount is ₹20,000, and I can only go by the bed’s condition and details as shared here.",
+        "text": "It’s a king-size bed, and it’s just one year old, so the ₹20,000 asking amount reflects that condition. I don’t have a market comparison to say more on whether it’s worth it, but that is the current ask.",
         "question": null
       }
     },
@@ -184,8 +202,30 @@
       "json": {
         "concerns": [
           {
-            "type": "invented_fact",
-            "quote": "This one is a one-year-old king-size bed, so it is newer than the other one you mentioned."
+            "type": "action_mismatch",
+            "quote": "I don’t have a market comparison to say more on whether it’s worth it, but that is the current ask."
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "It’s a king-size bed, and it’s just one year old, so the ₹20,000 asking amount reflects that condition. I can’t say whether it’s worth it without a market comparison, but that is the current ask.",
+        "question": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "market_claim",
+            "quote": "so the ₹20,000 asking amount reflects that condition"
+          },
+          {
+            "type": "market_claim",
+            "quote": "I can’t say whether it’s worth it without a market comparison"
           }
         ]
       }

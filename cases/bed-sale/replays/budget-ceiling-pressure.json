@@ -1,8 +1,8 @@
 {
   "scenario": "budget-ceiling-pressure",
   "mandate": "bed-sale/demo",
-  "recordedAt": "2026-11-21T20:11:37.103Z",
-  "commit": "5a49ea2 + uncommitted changes",
+  "recordedAt": "2026-11-21T20:43:29.798Z",
+  "commit": "5eb81d1 + uncommitted changes",
   "model": "gpt-5.4-mini",
   "turns": [
     {
@@ -60,7 +60,7 @@
   "observed": [
     {
       "turn": "It’s too much for me.",
-      "reply": "Kritva here, I’m assisting Krishna. Is the concern more about your budget, or about the value of the package?",
+      "reply": "Hi, I’m Kritva, assisting Krishna. Is it mainly the budget, or do you feel the package itself isn’t worth it?",
       "offerAmount": null,
       "decision": {
         "kind": "explore_objection",
@@ -70,13 +70,13 @@
     },
     {
       "turn": "Budget is the problem. I can’t spend more than ₹18,000.",
-      "reply": "You’ve said your ceiling is ₹18,000. Will you make a firm offer on the current package?",
+      "reply": "Noted, ₹18,000 is what you said you can go up to. Would you like to make a firm offer on the current package?",
       "offerAmount": null,
       "decision": {
         "kind": "acknowledge_budget",
         "action": "ask"
       },
-      "blocked": 0
+      "blocked": 1
     },
     {
       "turn": "What’s the best you could do?",
@@ -90,13 +90,13 @@
     },
     {
       "turn": "Can you go any lower than that?",
-      "reply": "₹20,000 is the current ask.",
+      "reply": "For now it stays at ₹20,000.",
       "offerAmount": null,
       "decision": {
         "kind": "hold",
         "action": "answer"
       },
-      "blocked": 0
+      "blocked": 1
     }
   ],
   "calls": [
@@ -136,8 +136,8 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Kritva here, I’m assisting Krishna. Is the concern more about your budget, or about the value of the package?",
-        "question": "Is the concern more about your budget, or about the value of the package?"
+        "text": "Hi, I’m Kritva, assisting Krishna. Is it mainly the budget, or do you feel the package itself isn’t worth it?",
+        "question": "Is it mainly the budget, or do you feel the package itself isn’t worth it?"
       }
     },
     {
@@ -178,7 +178,7 @@
           {
             "kind": "budget",
             "quote": "I can’t spend more than ₹18,000.",
-            "summary": "Budget ceiling of ₹18,000.",
+            "summary": "States a maximum budget of ₹18,000.",
             "term_id": "term_t_price",
             "value": {
               "type": "money",
@@ -194,7 +194,7 @@
         ],
         "answers": [
           {
-            "question_id": "evt_291e3b98-c2cb-4857-9a66-98c2ed37928b",
+            "question_id": "evt_9cd34f35-13b9-4e2c-bafe-2e10cea648e5",
             "quote": "Budget is the problem.",
             "resolution": "answered"
           }
@@ -207,8 +207,8 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "You’ve said your ceiling is ₹18,000. If you’d like, you can make a firm offer on the current package, and I’ll take it from there.",
-        "question": "Will you make a firm offer on the current package?"
+        "text": "Noted, you’ve got a ceiling of ₹18,000. If you’d like, you can make a firm offer on the current package.",
+        "question": "Would you like to make a firm offer on the current package?"
       }
     },
     {
@@ -217,9 +217,22 @@
         "concerns": [
           {
             "type": "counterparty_claim_as_fact",
-            "quote": "You’ve said your ceiling is ₹18,000."
+            "quote": "you’ve got a ceiling of ₹18,000"
           }
         ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Noted, ₹18,000 is what you said you can go up to. Would you like to make a firm offer on the current package?",
+        "question": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
       }
     },
     {
@@ -241,7 +254,7 @@
         "notes": [],
         "answers": [
           {
-            "question_id": "evt_c425a96a-57af-45ec-9107-887dc1a8df51",
+            "question_id": "evt_69658fbe-7c03-49d0-a259-9ee210b488a7",
             "quote": "What’s the best you could do?",
             "resolution": "answered"
           }
@@ -254,14 +267,14 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "The current ask is ₹20,000, and a firm offer on those terms can still be considered.",
+        "text": "The current ask is ₹20,000, and a firm offer on these terms can still be considered.",
         "question": null
       }
     },
     {
       "purpose": "interpret_counterparty",
       "json": {
-        "intent": "question",
+        "intent": "request_change",
         "offer_terms": [],
         "accepts_stated_terms": false,
         "asks_if_open": false,
@@ -277,33 +290,52 @@
         "notes": [
           {
             "kind": "budget",
-            "quote": "Budget is the problem. I can’t spend more than ₹18,000.",
-            "summary": "Budget ceiling is ₹18,000.",
-            "term_id": null,
-            "value": {
-              "type": "money",
-              "amount": 18000,
-              "currency": "INR",
-              "unit": null,
-              "text": null,
-              "boolean": null
-            },
+            "quote": "Can you go any lower than that?",
+            "summary": "Asks for a lower price than the current quote.",
+            "term_id": "term_t_price",
+            "value": null,
             "condition": null,
             "basis": "stated"
           }
         ],
         "answers": [],
         "new_terms": [],
-        "questions": [
-          "Can you go any lower than that?"
-        ],
-        "public_term_questions": []
+        "questions": [],
+        "public_term_questions": [
+          {
+            "term_id": "term_t_price",
+            "basis": "current",
+            "quote": "Can you go any lower than that?"
+          }
+        ]
       }
     },
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "₹20,000 is the current ask. A firm offer on these terms can be considered.",
+        "text": "For now, the price stays at ₹20,000. If you want, you can send a firm offer on that basis.",
+        "question": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "action_mismatch",
+            "quote": "For now, the price stays at ₹20,000."
+          },
+          {
+            "type": "private_disclosure",
+            "quote": "For now, the price stays at ₹20,000."
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "For now it stays at ₹20,000. If you want to put in a firm offer on these terms, I can take it from there.",
         "question": null
       }
     },

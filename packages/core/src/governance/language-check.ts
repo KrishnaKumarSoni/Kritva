@@ -35,7 +35,7 @@ Flag a concern for anything in the reply that:
 - promise_outside_terms: promises a service, extra, payment arrangement or term not in checked_terms.
 - turn_mismatch: answers a superseded earlier turn, ignores the current request, or restates an unrelated fact instead of addressing the current message. Check the current message before reading earlier context.
 - redundant_question: asks for information the other party already supplied, or asks a question unrelated to the selected question objective. A question distinguishing two still-open possibilities is not redundant.
-- action_mismatch: changes the action in "action.move" or "action.notice". An opening before the other party has spoken only welcomes them and invites them to speak. For "state_final_terms", asking the other party to confirm the full package is required, and that question is not a claim of agreement. Flag that move only if the reply says the package is already agreed, asks for something other than full confirmation, or otherwise changes the action. A budget ceiling, enquiry, or price explanation does not authorize a new offer, an acceptance, or a counter. For "request_approval", saying it needs the approval of the person represented, so it cannot be confirmed yet, is the action. An agreement confirmation may announce explicit approval only when "action.approvalGranted" is true. While paused, waiting for approval or ended, reflect that state without making a new commitment.
+- action_mismatch: changes the action in "action.move" or "action.notice". An opening before the other party has spoken only welcomes them and invites them to speak. For "state_final_terms", asking the other party to confirm the full package is required, and that question is not a claim of agreement. Flag that move only if the reply says the package is already agreed, asks for something other than full confirmation, or otherwise changes the action. For "counter" and "hold", putting the amount in checked_terms to them as your offer ("I can do <amount>", "How about <amount>?") is the action, not a mismatch. A budget ceiling, enquiry, or price explanation does not authorize a new offer, an acceptance, or a counter. For "request_approval", saying it needs the approval of the person represented, so it cannot be confirmed yet, is the action. An agreement confirmation may announce explicit approval only when "action.approvalGranted" is true. While paused, waiting for approval or ended, reflect that state without making a new commitment.
 
 Saying an amount that is in checked_terms is fine. Saying you don't have a detail is fine. Return no concerns when there are none.`;
 
@@ -87,6 +87,24 @@ function flagsOnlyAPublicAsk(reply: string, quote: string, publicAmounts: string
     const sentence = normalizeForQuoteMatch(line).replace(/[.!?]$/, "");
     const amount = sentence.includes(quotedText) ? publicAskAmount(sentence) : null;
     return amount !== null && publicAmounts.some((value) => normalizeForQuoteMatch(value) === amount);
+  });
+}
+
+const OFFER_PHRASE = /^(?:(?:so|well|okay|ok|then|right),?\s+)?(?:i can do|i could do|i can offer|i could offer|i can go to|i could go to|how about|what about|i(?:'d| would) like to stay at|i(?:'m| am) staying at|i(?:'ll| will) stay at|i can stay at|i can keep it at|i(?:'ll| will) keep it at)\s+(.+?)(?:\s+for (?:it|this|that|the [\p{L} -]{1,30}|you))?(?:\s+(?:then|for now|at the moment|instead))?$/u;
+
+/**
+ * Code chose the counter or hold and checked its amount, so a sentence that only puts that amount to
+ * them as the offer is the action itself, never a mismatch or an invented fact.
+ */
+function flagsOnlyTheOffer(reply: string, quote: string, checkedTerms: string[], move: string | undefined): boolean {
+  if (move !== "counter" && move !== "hold") return false;
+  const quoted = normalizeForQuoteMatch(quote).replace(/[.!?]$/, "");
+  const offered = checkedTerms.map((t) => normalizeForQuoteMatch(t.slice(t.indexOf(": ") + 2)));
+  return reply.split(/(?<=[.!?])\s+/).some((line) => {
+    const sentence = normalizeForQuoteMatch(line).replace(/[.!?]$/, "");
+    if (!sentence.includes(quoted)) return false;
+    const amount = OFFER_PHRASE.exec(sentence)?.[1]?.trim();
+    return amount !== undefined && offered.includes(amount);
   });
 }
 
@@ -193,6 +211,7 @@ export async function languageCheck(
       .filter((c) => {
         if ((c.type === "private_disclosure" || c.type === "invented_fact") && flagsOnlyAPublicAsk(input.reply, c.quote, input.publicAmounts ?? [], input.action?.move)) return false;
         if (c.type === "counterparty_claim_as_fact" && quotesOnlyAPublicAsk(input.reply, c.quote, input.publicAmounts ?? [])) return false;
+        if (["action_mismatch", "invented_fact", "private_disclosure", "promise_outside_terms"].includes(c.type) && flagsOnlyTheOffer(input.reply, c.quote, input.checkedTerms, input.action?.move)) return false;
         if ((c.type === "counterparty_claim_as_fact" || c.type === "invented_fact") && flagsOnlyAnIntroduction(input.reply, c.quote, input.principal)) return false;
         if ((c.type === "invented_fact" || c.type === "action_mismatch") && flagsOnlyARecordedApproval(input.reply, c.quote, input.principal, input.action, input.validatedTermsMarker)) return false;
         if (c.type === "invented_fact" && flagsOnlyADecline(input.reply, c.quote, input.declinedTerms ?? [], input.currentMessage)) return false;

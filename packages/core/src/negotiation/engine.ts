@@ -495,109 +495,133 @@ export class NegotiationEngine {
     const publicPrincipalName = this.#listingDetails.get(state.view.mandate.caseId)?.publicPrincipalName?.trim();
     const publicTerms = publicDealTerms(state);
     const previousReply = [...conversation].reverse().find((c) => c.speaker === "agent")?.text ?? null;
-    let draft: string | null;
-    let insertedTerms: string | null = null;
-    let question = plan.ask?.text ?? null;
     const offerInvitedRecently = invitedOfferRecently(conversation);
-    try {
-      const composed = await composeReply(this.#llm, { view: state.view, plan, publicTerms, publicPrincipalName, conversation, theirMessage: currentMessage, locale: this.#locale, outcome: state.outcome.kind, offerInvitedRecently });
-      draft = clean(composed.text);
-      if (plan.ask?.purpose) {
-        const lastSentence = draft.split(/(?<=[.!?])\s+/).at(-1);
-        const embedded = lastSentence?.endsWith("?") && draft.indexOf("?") === draft.lastIndexOf("?") ? lastSentence : null;
-        const separate = composed.question && clean(composed.question);
-        const phrased = embedded ?? separate;
-        // A single closing question in the text is the question, even if the model also filled the separate field.
-        if (!phrased || !/^[^?]+\?$/.test(phrased) || phrased.length > 500 || (!embedded && draft.includes("?"))) {
-          await this.#block(writes, draft, [{ rule: "action_mismatch", detail: "The reply did not supply one question for its selected objective." }], agent);
+    // One rewrite: a draft the checks block goes back to the model once, with the reasons, before the
+    // checked fallback wording is used. Every attempt passes the same checks; nothing is relaxed.
+    let revise: { draft: string; problems: string[] } | null = null;
+    for (let round = 0; round < 2; round += 1) {
+      const last: { feedback: { draft: string; problems: string[] } | null } = { feedback: null };
+      const block = async (text: string, violations: Array<{ rule: ReplyViolation["rule"]; detail: string }>) => {
+        await this.#block(writes, text, violations, agent);
+        // A draft that exposed something private never goes back to the model: only the reasons do.
+        const exposed = violations.some((v) => PRIVATE_RULES.has(v.rule));
+        last.feedback = { draft: exposed ? "" : text, problems: violations.map((v) => (exposed ? v.detail.replace(/\s*\(".*"\)$/, "") : v.detail)) };
+      };
+      let draft: string | null;
+      let insertedTerms: string | null = null;
+      let question = plan.ask?.text ?? null;
+      let modelFailed = false;
+      try {
+        const composed = await composeReply(this.#llm, { view: state.view, plan, publicTerms, publicPrincipalName, conversation, theirMessage: currentMessage, locale: this.#locale, outcome: state.outcome.kind, offerInvitedRecently, revise });
+        draft = clean(composed.text);
+        if (plan.ask?.purpose) {
+          const lastSentence = draft.split(/(?<=[.!?])\s+/).at(-1);
+          const embedded = lastSentence?.endsWith("?") && draft.indexOf("?") === draft.lastIndexOf("?") ? lastSentence : null;
+          const separate = composed.question && clean(composed.question);
+          const phrased = embedded ?? separate;
+          // A single closing question in the text is the question, even if the model also filled the separate field.
+          if (!phrased || !/^[^?]+\?$/.test(phrased) || phrased.length > 500 || (!embedded && draft.includes("?"))) {
+            await block(draft, [{ rule: "action_mismatch", detail: "The reply did not supply one question for its selected objective." }]);
+            draft = null;
+          } else {
+            question = phrased;
+          }
+        }
+      } catch {
+        draft = null;
+        modelFailed = true;
+      }
+      if (draft !== null && question) draft = dropDuplicateInvitation(draft, question);
+      // They already heard that a firm offer can be considered: say it again only when this move asks for it.
+      if (draft !== null && offerInvitedRecently && !(question && OFFER_INVITATION.test(question))) draft = dropInvitations(draft);
+      if (draft !== null && previousReply && opener(draft) === opener(previousReply)) {
+        last.feedback = { draft, problems: ["The reply opened the same way as your previous reply. Open differently."] };
+        draft = null;
+      }
+      if (draft !== null) {
+        const exactTerms = plan.move === "state_final_terms" || plan.move === "confirm_agreement";
+        const framing = draft.split(EXACT_TERMS_SLOT);
+        if (exactTerms && plan.offer && framing.length === 2 && !findAmounts(framing.join(" ")).length && (plan.move !== "state_final_terms" || framing[1]!.includes("?") || /\bconfirm\b/i.test(framing[1]!))) {
+          const terms = speakTerms(state.view, plan.offer.terms, this.#locale);
+          insertedTerms = clean(subject ? `${subject}, ${terms}` : terms);
+          const [before, after] = framing as [string, string];
+          const ending = plan.move === "state_final_terms" && !/^\s*[.!?]/.test(after) ? `. ${after.trimStart().replace(/^[,:;]\s*/, "")}` : after;
+          draft = clean(before + insertedTerms + ending);
+        } else if (exactTerms || framing.length !== 1) {
+          await block(draft, [{ rule: "missing_condition", detail: "The reply did not leave one slot for the complete checked terms." }]);
+          draft = null;
+        }
+      }
+      if (draft !== null && question && !draft.includes(question)) {
+        if (draft.includes("?")) {
+          await block(draft, [{ rule: "action_mismatch", detail: "The reply asked a different question from the selected move." }]);
           draft = null;
         } else {
-          question = phrased;
+          draft = `${draft} ${question}`;
         }
       }
-    } catch {
-      draft = null;
-    }
-    if (draft !== null && question) draft = dropDuplicateInvitation(draft, question);
-    // They already heard that a firm offer can be considered: say it again only when this move asks for it.
-    if (draft !== null && offerInvitedRecently && !(question && OFFER_INVITATION.test(question))) draft = dropInvitations(draft);
-    if (draft !== null && previousReply && opener(draft) === opener(previousReply)) draft = null;
-    if (draft !== null) {
-      const exactTerms = plan.move === "state_final_terms" || plan.move === "confirm_agreement";
-      const framing = draft.split(EXACT_TERMS_SLOT);
-      if (exactTerms && plan.offer && framing.length === 2 && !findAmounts(framing.join(" ")).length && (plan.move !== "state_final_terms" || framing[1]!.includes("?"))) {
-        const terms = speakTerms(state.view, plan.offer.terms, this.#locale);
-        insertedTerms = clean(subject ? `${subject}, ${terms}` : terms);
-        const [before, after] = framing as [string, string];
-        const ending = plan.move === "state_final_terms" && !/^\s*[.!?]/.test(after) ? `. ${after.trimStart().replace(/^[,:;]\s*/, "")}` : after;
-        draft = clean(before + insertedTerms + ending);
-      } else if (exactTerms || framing.length !== 1) {
-        await this.#block(writes, draft, [{ rule: "missing_condition", detail: "The reply did not leave one slot for the complete checked terms." }], agent);
+      // A clarifying question the plan itself needs (a missing detail an offer depends on) is never a new question.
+      if (draft !== null && !question && plan.clarify.length === 0 && (plan.action === "decline" || ["answer_public_terms", "explore_objection", "explain_price", "acknowledge_budget", "answer_enquiry", "price_pressure", "compare_terms"].includes(plan.move)) && draft.includes("?")) {
+        await block(draft, [{ rule: "action_mismatch", detail: "This move did not call for a new question." }]);
         draft = null;
       }
-    }
-    if (draft !== null && question && !draft.includes(question)) {
-      if (draft.includes("?")) {
-        await this.#block(writes, draft, [{ rule: "action_mismatch", detail: "The reply asked a different question from the selected move." }], agent);
-        draft = null;
-      } else {
-        draft = `${draft} ${question}`;
-      }
-    }
-    // A clarifying question the plan itself needs (a missing detail an offer depends on) is never a new question.
-    if (draft !== null && !question && plan.clarify.length === 0 && (plan.action === "decline" || ["answer_public_terms", "explore_objection", "explain_price", "acknowledge_budget", "answer_enquiry", "price_pressure", "compare_terms"].includes(plan.move)) && draft.includes("?")) {
-      await this.#block(writes, draft, [{ rule: "action_mismatch", detail: "This move did not call for a new question." }], agent);
-      draft = null;
-    }
-    if (draft !== null && plan.introduce) {
-      const opening = draft.split(/(?<=[.!?])\s+/, 2).join(" ");
-      if (!/\bkritva\b/i.test(opening)) draft = `${introduction(state.view, publicPrincipalName)} ${draft}`;
-      else if (!quoteAppearsIn(opening, publicPrincipalName || principalLabel(state.view))) draft = null;
-    }
-    if (draft !== null) {
-      const wording = gateWording(state, plan, draft);
-      if (wording.decision !== "allow") {
-        await this.#block(writes, draft, wording.reasons.map((r) => ({ rule: r.rule as ReplyViolation["rule"], detail: r.detail })), agent);
-      } else {
-        const checkedTerms = (plan.offer?.terms ?? []).map((t) => `${state.space.terms.find((x) => x.termId === t.termId)?.name ?? t.termId}: ${formatValue(t.value, this.#locale)}`);
-        const permittedFacts = [...state.view.publicFacts];
-        // Every current public term is shared with the other party, so restating it is never an invented fact.
-        for (const term of publicTerms) {
-          const definition = state.view.terms.get(term.termId)!;
-          permittedFacts.push(`Current public ${definition.name}: ${formatValue(term.value, this.#locale)}${definition.description ? ` (${definition.description})` : ""}`);
+      if (draft !== null && plan.introduce) {
+        const opening = draft.split(/(?<=[.!?])\s+/, 2).join(" ");
+        if (!/\bkritva\b/i.test(opening)) draft = `${introduction(state.view, publicPrincipalName)} ${draft}`;
+        else if (!quoteAppearsIn(opening, publicPrincipalName || principalLabel(state.view))) {
+          last.feedback = { draft, problems: ["The introduction must say whose assistant Kritva is, using who_you_represent."] };
+          draft = null;
         }
-        const arrangement = fulfillmentFact(state, publicTerms, this.#listingDetails.get(state.view.mandate.caseId)?.fulfillment, this.#locale);
-        if (arrangement) permittedFacts.push(arrangement);
-        permittedFacts.push(`Kritva is the assistant of ${publicPrincipalName || principalLabel(state.view)}.`);
-        for (const answer of plan.publicTermAnswers ?? []) {
-          const name = state.view.terms.get(answer.termId)!.name;
-          permittedFacts.push(`${answer.basis === "opening" ? "Originally listed" : "Current public"} ${name}: ${formatValue(answer.value, this.#locale)}`);
-        }
-        if (plan.openForDiscussion) permittedFacts.push("The current terms are still open for discussion.");
-        if (plan.listingAvailable !== undefined) permittedFacts.push(`The listed subject is ${plan.listingAvailable ? "still available" : "no longer available"}.`);
-        if (subject) permittedFacts.push(subject);
-        const language = await languageCheck(this.#llm, {
-          // The checker reviews generated words. The inserted terms already passed the structured gate and the final code check.
-          reply: insertedTerms ? draft.replace(insertedTerms, EXACT_TERMS_SLOT) : draft,
-          principal: publicPrincipalName || principalLabel(state.view),
-          validatedTermsMarker: insertedTerms ? EXACT_TERMS_SLOT : undefined,
-          checkedTerms,
-          permittedFacts,
-          declinedTerms: plan.declined.map((d) => state.space.terms.find((t) => t.termId === d.termId)?.name ?? d.termId),
-          currentMessage,
-          counterpartyWords: conversation.filter((c) => c.speaker === "counterparty").map((c) => c.text),
-          publicAmounts: state.view.negotiable ? [...new Set(state.askHistory)].map((amount) => formatValue(numericValue(state.view.negotiable!, amount), this.#locale)) : [],
-          statedBudget: plan.statedBudget !== undefined && state.view.negotiable ? formatValue(numericValue(state.view.negotiable, plan.statedBudget), this.#locale) : null,
-          questionObjective: plan.ask?.purpose ?? null,
-          selectedQuestion: question,
-          action: { move: plan.move, notice: plan.notice, opening: plan.opening === true, approvalGranted: plan.approvalGranted === true, outcome: state.outcome.kind },
-        });
-        if (language.ok && language.concerns.length === 0) return { text: draft, question };
-        const violations = language.ok
-          ? language.concerns.map((c) => ({ rule: `language_${c.type}` as ReplyViolation["rule"], detail: `Language check: ${c.type.replace(/_/g, " ")} ("${c.quote.slice(0, 120)}")` }))
-          : [{ rule: "language_unavailable" as ReplyViolation["rule"], detail: "The language check could not run, so the composed reply was not used." }];
-        await this.#block(writes, draft, violations, agent);
       }
+      if (draft !== null) {
+        const wording = gateWording(state, plan, draft);
+        if (wording.decision !== "allow") {
+          await block(draft, wording.reasons.map((r) => ({ rule: r.rule as ReplyViolation["rule"], detail: r.detail })));
+        } else {
+          const checkedTerms = (plan.offer?.terms ?? []).map((t) => `${state.space.terms.find((x) => x.termId === t.termId)?.name ?? t.termId}: ${formatValue(t.value, this.#locale)}`);
+          const permittedFacts = [...state.view.publicFacts];
+          // Every current public term is shared with the other party, so restating it is never an invented fact.
+          for (const term of publicTerms) {
+            const definition = state.view.terms.get(term.termId)!;
+            permittedFacts.push(`Current public ${definition.name}: ${formatValue(term.value, this.#locale)}${definition.description ? ` (${definition.description})` : ""}`);
+          }
+          const arrangement = fulfillmentFact(state, publicTerms, this.#listingDetails.get(state.view.mandate.caseId)?.fulfillment, this.#locale);
+          if (arrangement) permittedFacts.push(arrangement);
+          permittedFacts.push(`Kritva is the assistant of ${publicPrincipalName || principalLabel(state.view)}.`);
+          for (const answer of plan.publicTermAnswers ?? []) {
+            const name = state.view.terms.get(answer.termId)!.name;
+            permittedFacts.push(`${answer.basis === "opening" ? "Originally listed" : "Current public"} ${name}: ${formatValue(answer.value, this.#locale)}`);
+          }
+          if (plan.openForDiscussion) permittedFacts.push("The current terms are still open for discussion.");
+          if (plan.listingAvailable !== undefined) permittedFacts.push(`The listed subject is ${plan.listingAvailable ? "still available" : "no longer available"}.`);
+          if (subject) permittedFacts.push(subject);
+          const language = await languageCheck(this.#llm, {
+            // The checker reviews generated words. The inserted terms already passed the structured gate and the final code check.
+            reply: insertedTerms ? draft.replace(insertedTerms, EXACT_TERMS_SLOT) : draft,
+            principal: publicPrincipalName || principalLabel(state.view),
+            validatedTermsMarker: insertedTerms ? EXACT_TERMS_SLOT : undefined,
+            checkedTerms,
+            permittedFacts,
+            declinedTerms: plan.declined.map((d) => state.space.terms.find((t) => t.termId === d.termId)?.name ?? d.termId),
+            currentMessage,
+            counterpartyWords: conversation.filter((c) => c.speaker === "counterparty").map((c) => c.text),
+            publicAmounts: state.view.negotiable ? [...new Set(state.askHistory)].map((amount) => formatValue(numericValue(state.view.negotiable!, amount), this.#locale)) : [],
+            statedBudget: plan.statedBudget !== undefined && state.view.negotiable ? formatValue(numericValue(state.view.negotiable, plan.statedBudget), this.#locale) : null,
+            questionObjective: plan.ask?.purpose ?? null,
+            selectedQuestion: question,
+            action: { move: plan.move, notice: plan.notice, opening: plan.opening === true, approvalGranted: plan.approvalGranted === true, outcome: state.outcome.kind },
+          });
+          if (language.ok && language.concerns.length === 0) return { text: draft, question };
+          const violations = language.ok
+            ? language.concerns.map((c) => ({ rule: `language_${c.type}` as ReplyViolation["rule"], detail: `Language check: ${c.type.replace(/_/g, " ")} ("${c.quote.slice(0, 120)}")` }))
+            : [{ rule: "language_unavailable" as ReplyViolation["rule"], detail: "The language check could not run, so the composed reply was not used." }];
+          await block(draft, violations);
+          // A checker that could not run gives the model nothing to fix.
+          if (!language.ok) last.feedback = null;
+        }
+      }
+      if (modelFailed || !last.feedback || round === 1) break;
+      revise = last.feedback;
     }
     let fallback = templateReply(state.view, plan, this.#locale, subject, publicPrincipalName, { offerInvitedRecently });
     for (let shift = 1; previousReply && shift < 3 && opener(fallback) === opener(previousReply); shift += 1) {
@@ -960,6 +984,9 @@ function selectQuestion(fresh: Array<NonNullable<Plan["ask"]>>, plan: Plan): Pla
   if (plan.notice || plan.clarify.length > 0 || plan.unresolved.length > 0 || plan.questions.length > 0 || plan.refuseDisclosure || plan.openForDiscussion || plan.listingAvailable !== undefined) return null;
   return fresh[0] ?? null;
 }
+
+/** Block reasons whose draft carried private content. */
+const PRIVATE_RULES = new Set<string>(["private_amount", "private_text", "crosses_limit", "language_private_disclosure"]);
 
 const OFFER_INVITATION = /\b(?:firm offer|make (?:me )?an offer|send (?:me )?an offer|an offer you(?:'d| would) like)\b/i;
 

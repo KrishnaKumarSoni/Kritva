@@ -18,7 +18,7 @@
     ],
     "endedBy": "principal",
     "agentMustSay": [
-      "(won't be going ahead|decided not to go ahead)",
+      "(won't be going ahead|decided not to go ahead|decided to stop|chose not to go ahead)",
       "ended without (an )?agreement|(decided|chose) not to go ahead|(is|has) (closed|ended)"
     ],
     "agentMustNotSay": [

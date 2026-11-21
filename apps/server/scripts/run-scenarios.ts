@@ -143,7 +143,7 @@ async function comparisonCli(): Promise<void> {
   const meta = {
     label: compareLabel,
     generatedFrom: `test-results/comparison/${compareLabel}/runs.json`,
-    model: [...new Set(all.map((r) => r.model))].join(", ") || "—",
+    model: [...new Set(all.map((r) => r.model))].join(", ") || "unknown",
     promptVersions: { kritva: all.find((r) => r.system === "kritva")?.promptVersions ?? systemPromptVersions("kritva"), plain: all.find((r) => r.system === "plain")?.promptVersions ?? systemPromptVersions("plain") },
     runsPerScenario: perScenario,
   };
@@ -486,7 +486,7 @@ const lines = [
     "",
     ...r.transcript.map((t) => `- **${t.who}:** ${t.text}`),
     "",
-    ...r.checks.map((c) => `- ${c.pass ? "✓" : "✗"} ${c.check}${c.detail ? ` — ${c.detail}` : ""}`),
+    ...r.checks.map((c) => `- ${c.pass ? "✓" : "✗"} ${c.check}${c.detail ? `: ${c.detail}` : ""}`),
     "",
   ]),
 ];
