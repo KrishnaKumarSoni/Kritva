@@ -30,8 +30,10 @@ export interface Interpretation {
   /** Answers to questions the agent asked earlier. */
   answers?: Array<{ questionId: string; quote: string | null; resolution: "answered" | "partial" | "refused" }>;
   /** Whether an amount is a committed offer, a question about a price, or only interest. */
-  offerKind?: "offer" | "enquiry" | "interest";
-  /** Conditions the counterparty attached that the terms cannot express ("if I get a truck"). */
+  offerKind?: "offer" | "enquiry" | "interest" | "budget_ceiling";
+  priceConcern?: "objection" | "value_question" | null;
+  asksIfOpen?: boolean;
+  /** Conditions the counterparty attached that the terms cannot express. */
   offerConditions?: string[];
   /** The counterparty corrects their previous offer ("sorry, I meant X"). */
   correctsPrevious?: boolean;
@@ -55,6 +57,10 @@ export type Move =
   | "confirm_agreement"
   | "hold"
   | "answer"
+  | "explore_objection"
+  | "explain_price"
+  | "acknowledge_budget"
+  | "answer_enquiry"
   | "await_approval"
   | "closed";
 
@@ -71,7 +77,7 @@ export interface Plan {
   /** For an end: who asked for it, why, and what was left open. */
   end?: { requestedBy: "counterparty" | "agent" | "principal"; reason: string; unresolved: string[]; line: string | null } | null;
   /** A question the strategy wants asked that is not one Epic 5 prepared (recorded before asking). */
-  strategyQuestion?: { text: string; kind: "terms_probe" | "comparison" | "conditional"; purpose: string; key?: string };
+  strategyQuestion?: { text: string; kind: "terms_probe" | "comparison" | "conditional" | "obstacle"; purpose: string; key?: string };
   decision: { kind: DecisionKind; reason: string };
   offer: { terms: OfferTerm[]; basis: "counter" | "final_terms"; tactic?: Tactic | null } | null;
   /** Stated terms the counterparty just accepted. */
@@ -89,11 +95,24 @@ export interface Plan {
   /** Requests the mandate does not address: taken to the principal, never promised or priced. */
   unresolved: string[];
   /** A prepared question to ask (selection is a placeholder until strategy, Epic 8). */
-  ask: { questionId: string; text: string } | null;
+  ask: { questionId: string; text: string; purpose?: string } | null;
+  /** Public asking value already in effect, cited without making a new offer. */
+  referenceAmount?: number;
+  /** The amount the counterparty stated as a ceiling on this turn. */
+  statedBudget?: number;
+  /** The amount the counterparty asked about without committing to it. */
+  enquiredAmount?: number;
+  /** Public facts selected for a grounded explanation of the current terms. */
+  explanationFacts?: string[];
+  openForDiscussion?: boolean;
   /** A short acknowledgment to open with (for example after they decline to answer a question). */
   acknowledge?: string;
   /** First reply of the session: Kritva introduces itself once as the principal's AI assistant. */
   introduce?: boolean;
+  /** Starts a conversation before the counterparty has spoken. */
+  opening?: boolean;
+  /** An explicit principal approval is on record for these terms. */
+  approvalGranted?: boolean;
   /** How many replies the agent has sent before this one; varies fallback wording. */
   turnIndex?: number;
 }
@@ -102,9 +121,10 @@ export interface Plan {
 export interface StrategyContext {
   guidance: StrategyGuidance;
   /** Questions prepared from this message (e.g. about a non-price obstacle), not yet asked. */
-  freshQuestions: Array<{ questionId: string; text: string; kind: string }>;
+  freshQuestions: Array<{ questionId: string; text: string; kind: string; purpose?: string }>;
   /** A question about a counterparty condition was already asked in this session: never ask it again. */
   conditionAsked?: boolean;
+  hasStatedBudget?: boolean;
   locale: string;
 }
 
@@ -147,20 +167,24 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
     return { ...plan, move: "closed", action: "answer", notice: "ended", refuseDisclosure: false, questions: [], unresolved: [], decision: { kind: "answer", reason: "The negotiation ended without agreement; nothing is offered." } };
   }
 
+  const tentative = interp.offerKind === "enquiry" || interp.offerKind === "interest" || interp.offerKind === "budget_ceiling";
+  const budget = interp.notes?.findLast((note) => note.kind === "budget" && note.basis === "stated" && note.value?.type === "money")?.value;
+  const referenceAmount = state.currentAsk ?? undefined;
+
   // The counterparty declines to continue: end without agreement, and say so plainly. A final offer
   // that still puts terms on the table is an offer, not a withdrawal.
-  if (interp.endsNegotiation && !(interp.offerTerms.length > 0 && interp.pressure === "final_offer")) {
+  if (interp.endsNegotiation && !(!tentative && interp.offerTerms.length > 0 && interp.pressure === "final_offer")) {
     return endWith(plan, "counterparty", "The counterparty declined to continue.", unresolvedTerms(state, deal), null);
   }
 
   // When the counterparty accepts, values that merely repeat the stated terms are not changes.
   const stated = state.pendingFinal ?? state.lastProposed;
-  const proposedTerms = interp.acceptsStatedTerms && stated
+  const proposedTerms = !tentative && interp.acceptsStatedTerms && stated
     ? interp.offerTerms.filter((t) => {
         const s = stated.terms.find((x) => x.termId === t.termId);
         return !s || JSON.stringify(s.value) !== JSON.stringify(t.value);
       })
-    : interp.offerTerms;
+    : interp.offerTerms.filter((t) => !tentative || t.termId !== n?.termId);
 
   // Sort the counterparty's terms by what the deal-space check says about each one.
   let amount: number | null = null;
@@ -185,12 +209,12 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
       if (!plan.clarify.includes(name)) plan.clarify.push(name);
     }
   }
-  if (amount === null && n && proposedTerms.length > 0 && findingsFor(n.termId).some((f) => f.status !== "fits")) {
+  if (!tentative && amount === null && n && proposedTerms.length > 0 && findingsFor(n.termId).some((f) => f.status !== "fits")) {
     const tied = deal.package.find((t) => t.termId === n.termId);
     if (tied && "amount" in tied.value) amount = tied.value.amount as number;
   }
   plan.respondingTo = amount;
-  if (interp.offerTerms.length > 0) {
+  if (!tentative && interp.offerTerms.length > 0) {
     const a = assessPackage(state, deal.package, context.locale);
     plan.assessment = a;
   }
@@ -202,7 +226,7 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
   }
 
   // Accepting the stated terms, with nothing changed.
-  if (interp.acceptsStatedTerms && amount === null && plan.declined.length === 0 && extras.length === 0 && plan.unresolved.length === 0) {
+  if (!tentative && interp.acceptsStatedTerms && amount === null && plan.declined.length === 0 && extras.length === 0 && plan.unresolved.length === 0 && plan.clarify.length === 0 && (interp.offerConditions?.length ?? 0) === 0) {
     const final = state.pendingFinal;
     if (final && final.communicated && clearedNow(state, final.offerId, final.termsHash)) {
       plan.assessment = assessPackage(state, final.terms, context.locale);
@@ -218,6 +242,24 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
       offer: { terms: finalPackage(view, state.currentAsk === null ? null : Math.max(state.currentAsk, n?.limit ?? -Infinity), packageExtras(state, extras)), basis: "final_terms" },
       decision: { kind: "state_final_terms", reason: "Counterparty agreed in principle; state the complete terms for confirmation." },
     };
+  }
+
+  // Non-commitments can raise relevant questions but cannot move the offer or start approval.
+  if (tentative || (budget?.type === "money" && amount === null && interp.offerTerms.length === 0)) {
+    if (plan.declined.length > 0) return { ...plan, action: "decline", decision: { kind: "decline_request", reason: "Requested term changes are outside the mandate." } };
+    if (interp.offerKind === "enquiry" && interp.offerTerms.length > 0) {
+      const queried = interp.offerTerms.find((t) => t.termId === n?.termId)?.value;
+      return { ...plan, move: "answer_enquiry", referenceAmount, enquiredAmount: queried && "amount" in queried ? queried.amount : undefined, questions: [], decision: { kind: "answer_enquiry", reason: "Respond to an enquiry without treating it as a committed offer." } };
+    }
+    if (budget?.type === "money") {
+      const question = context.freshQuestions.find((q) => q.kind === "budget_scope");
+      return {
+        ...plan, move: "acknowledge_budget", questions: [], referenceAmount, statedBudget: budget.amount,
+        action: question ? "ask" : "answer", ask: question ?? null,
+        decision: { kind: "acknowledge_budget", reason: "Record the budget as a constraint without treating it as willingness to transact." },
+      };
+    }
+    if (tentative && proposedTerms.length > 0) return plan;
   }
 
   // A condition the counterparty attached that the terms cannot express: settle it before committing.
@@ -357,6 +399,33 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
   // They declined to answer a question: accept that, don't ask again, and leave the current offer open.
   if ((interp.answers ?? []).some((a) => a.resolution === "refused") && interp.offerTerms.length === 0 && n && state.currentAsk !== null && state.status === "active" && plan.questions.length === 0) {
     return { ...holdAt(plan, view, state.currentAsk, packageExtras(state, []), "They preferred not to answer; the current offer stays open."), action: "answer", acknowledge: "No problem." };
+  }
+
+  if (interp.asksIfOpen && n && state.status === "active" && proposedTerms.length === 0) {
+    return {
+      ...plan, openForDiscussion: true, acknowledge: "Yes, the current terms are still open for discussion.", questions: [],
+      decision: { kind: "answer", reason: "Confirm that the negotiation is still open." },
+    };
+  }
+  if (interp.priceConcern === "value_question" && referenceAmount !== undefined) {
+    return {
+      ...plan, move: "explain_price", referenceAmount, explanationFacts: view.publicFacts.slice(0, 3), questions: [],
+      decision: { kind: "explain_price", reason: "Explain what the current asking amount covers using confirmed public facts." },
+    };
+  }
+  if (interp.priceConcern === "objection" && referenceAmount !== undefined && interp.pressure !== "cheaper_elsewhere") {
+    const question = context.freshQuestions.find((q) => q.kind === "budget_scope" || q.kind === "obstacle");
+    const hasBudget = context.hasStatedBudget === true;
+    return {
+      ...plan, move: "explore_objection", action: "ask", referenceAmount, questions: [], ask: question ?? null,
+      strategyQuestion: question ? undefined : {
+        text: hasBudget ? "Apart from price, what matters most to you about these terms?" : "Is the price above your budget, or is there something about the terms that makes it feel too high?",
+        kind: "obstacle",
+        purpose: hasBudget ? "Learn which other aspect of the package matters, without asking again for a known budget." : "Find out whether the objection is about their budget or the value of the package.",
+        key: `strategy:price_objection:${n?.termId ?? "amount"}`,
+      },
+      decision: { kind: "explore_objection", reason: "Identify the source of the price objection before deciding whether to change terms." },
+    };
   }
 
   // An objection with no new terms ("that's too much because ..."): the current offer stands.

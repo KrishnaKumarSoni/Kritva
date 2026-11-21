@@ -18,7 +18,6 @@ Kritva is a reusable AI negotiation capability for apps and assistants. It repre
 | 9. Text negotiation | The chat says up front that Kritva is an AI acting for the seller; model failures send nothing and resume on retry; buyer corrections and refusals to deal with an AI are recorded; the console shows the last recorded action. |
 | 10. Comparison with a plain LLM | The same scenarios, buyer simulator, model and seller instructions run against Kritva and a well-prompted plain LLM seller; rule-based scoring with linked sources; Markdown and CSV reports; regression comparison against an earlier scenario run. |
 | 11. Mandate library | The principal describes a negotiation in plain language, reviews what Kritva understood, corrects values directly, and confirms the exact draft shown. Saved mandates and revisions exist before any session; sessions record the revision they used; new revisions apply to open sessions through Epic 4's checks. |
-
 | Humane conversation guide | Replies are warm, short and specific: Kritva introduces itself once as the principal's AI assistant, responds to what was said, asks one useful question, varies its wording, and never uses internal terms or dashes. The guide changes wording only, never what is allowed. See `docs/Kritva_Humane_Negotiation_Instructions_P0.md`. |
 | 12. Seller console | One console on the shared record: messages with their channel, offers marked delivered or held back, approvals scoped to the exact offer version and mandate revision, pause and resume, "Change instructions" through the mandate library, and an outcome card with pending payment and pickup. |
 | 13. Browser voice | The buyer talks in the browser. Each utterance is transcribed and sent through the same text negotiation path; only recorded, checked replies are spoken. Talking over Kritva stops it and records what was heard; a cut-off read-back never counts as delivered. No phone calls. |
@@ -82,14 +81,11 @@ KRITVA_MAPPING_MODEL=gpt-5.5
 KRITVA_TURN_MODEL=gpt-5.4-mini
 KRITVA_TURN_REASONING_EFFORT=none
 KRITVA_LOCALE=en-IN
-# Strategy guidance file, relative to the repository root; "none" uses the built-in minimal guidance
-KRITVA_GUIDANCE=cases/bed-sale/strategy-guidance.json
+# Case-specific guidance is selected in cases/<case>/case.json. KRITVA_GUIDANCE=none disables it.
 # Browser voice (Epic 13)
 KRITVA_TRANSCRIBE_MODEL=gpt-4o-mini-transcribe
 KRITVA_TTS_MODEL=gpt-4o-mini-tts
 KRITVA_TTS_VOICE=coral
-# "composed" (default): the model words each voice reply. "template": checked templates only, faster.
-KRITVA_VOICE_WORDING=composed
 ```
 
 The OpenAI Speech API models (`gpt-4o-mini-tts` and others) are scheduled for retirement on 2027-01-06; set `KRITVA_TTS_MODEL` (or move speech output to the Realtime API) before then.
@@ -106,9 +102,9 @@ npm run dev -w @kritva/server
 npm run dev -w @kritva/web
 ```
 
-Open http://localhost:5173. Type as the buyer on the left. The seller console on the right shows the shared record, and approval requests appear there. The record is stored in `data/kritva.sqlite`, which Git ignores. "New session" starts a fresh session and keeps the old one.
+Open http://localhost:5173. Select **Seller console** and enter the key printed at server startup. Set `KRITVA_OPERATOR_KEY` in the server environment if the key should persist across restarts. The seller console shows the shared record and approvals beside the buyer conversation. The record is stored in `data/kritva.sqlite`. **New session** starts a fresh negotiation and keeps the previous history.
 
-**Demo listing** (top bar, the default view) shows the prepared bed listing next to the seller console. "Call seller" starts a fresh session and a voice call in the browser (allow the microphone); typing still works when voice is off. Voice needs a secure origin: `localhost` works for development, and a deployed demo must be served over HTTPS.
+**Demo listing** shows the prepared bed. **Call seller** starts a new browser voice session. Allow microphone access to speak, or use the text composer after ending the call. **Open buyer view** opens the current session in a separate window that uses only buyer routes. On the seller page, **New demo session** keeps the confirmed bed mandate and starts an empty record. Use `localhost` for development and HTTPS for the deployed demo.
 
 **Mandates** (top bar) opens the mandate library: describe a negotiation in your own words (or load an example), map it to a draft, check and correct what Kritva understood, and confirm it. "Use for the next negotiation" selects it; "New session" then starts a negotiation from its active revision.
 

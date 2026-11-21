@@ -174,7 +174,7 @@ describe("Story 3: questions that resolve useful unknowns", () => {
       notes: [note("budget", "My budget is ₹19,000 including transport", "Budget 19,000 covers transport too.", { value: v("money", { amount: 19_000 }), condition: "including transport" })],
     });
     const q = (await model()).questions.find((x) => x.issueKind === "budget_scope")!;
-    expect(q.text).toMatch(/how much is available for the item itself, after transport/i);
+    expect(q.text).toMatch(/what amount is available for these terms, after transport/i);
     expect(q.purpose).toBeTruthy();
   });
 

@@ -106,7 +106,7 @@ async function comparisonCli(): Promise<void> {
       systems: ["kritva", "plain"],
       mandates,
       judge,
-      guidance: loadGuidance(ROOT),
+      guidance: loadGuidance(ROOT, "bed-sale"),
       sellerLlm: () => createTurnLlmFromEnv(),
       buyerLlm: createTurnLlmFromEnv(),
       model,
@@ -147,7 +147,7 @@ const viewFor = (id: string) => {
 
 const record = new NegotiationRecord(new SqliteRecordBackend(join(mkdtempSync(join(tmpdir(), "kritva-scenarios-")), "record.sqlite")));
 const llm = createTurnLlmFromEnv();
-const engine = new NegotiationEngine({ record, llm, locale: "en-IN", guidance: loadGuidance(ROOT) });
+const engine = new NegotiationEngine({ record, llm, locale: "en-IN", guidance: loadGuidance(ROOT, "bed-sale") });
 const revisions = new MandateRevisions({ record, engine, mappingLlm: createMappingLlmFromEnv() });
 const app = createApp({ record, engine, revisions, mandates, locale: "en-IN" });
 
@@ -214,7 +214,8 @@ async function runScenario(s: Scenario, run: number): Promise<RunResult> {
         checks.push({ check: `seller ${turn.seller}: an approval was pending`, pass: false, detail: `status ${state.status}` });
         continue;
       }
-      const res = await call("POST", `/api/operator/sessions/${id}/approvals/${state.pendingApproval.requestId}`, { decision: turn.seller });
+      const { requestId, offerId, mandateRevision } = state.pendingApproval;
+      const res = await call("POST", `/api/operator/sessions/${id}/approvals/${requestId}`, { decision: turn.seller, offerId, mandateRevision });
       transcript.push({ who: "seller", text: `(${turn.seller})` });
       if (res.json.reply) {
         transcript.push({ who: "kritva", text: res.json.reply.text });

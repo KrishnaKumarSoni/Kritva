@@ -294,7 +294,11 @@ export function validateNewEvent(event: NewEvent, actorInput: unknown, ctx: Sess
       const p = parsed.data as PayloadOf<"question_asked">;
       refOf("payload.questionId", p.questionId, ["question_prepared"]);
       const m = refOf("payload.messageId", p.messageId, ["message"]);
-      if (m && ctx.payloadOf(m.id, "message")!.direction !== "outbound") add("payload.messageId", "questions are asked in outbound messages");
+      if (m) {
+        const message = ctx.payloadOf(m.id, "message")!;
+        if (message.direction !== "outbound") add("payload.messageId", "questions are asked in outbound messages");
+        if (p.text && !quoteAppearsIn(message.text, p.text)) add("payload.text", "question is not in the outbound message");
+      }
       break;
     }
     case "question_answered": {
@@ -418,6 +422,11 @@ export function validateNewEvent(event: NewEvent, actorInput: unknown, ctx: Sess
         if (message.channel !== event.channel) add("channel", "must match the message's channel");
       }
       if (p.status === "interrupted" && p.deliveredText === null) add("payload.deliveredText", "an interruption must report what was delivered");
+      break;
+    }
+    case "voice_connection": {
+      requireActor(["system"]);
+      if (event.channel !== "voice") add("channel", "a voice connection uses voice");
       break;
     }
     case "status_changed": {

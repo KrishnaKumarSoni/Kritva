@@ -58,8 +58,8 @@ describe("slice API", () => {
     await call("POST", `/api/buyer/sessions/${id}/deliveries`, { messageId: t2.json.reply.messageId });
 
     const console1 = await call("GET", `/api/operator/sessions/${id}`);
-    const requestId = console1.json.state.pendingApproval.requestId as string;
-    const approved = await call("POST", `/api/operator/sessions/${id}/approvals/${requestId}`, { decision: "approved" });
+    const { requestId, offerId, mandateRevision } = console1.json.state.pendingApproval;
+    const approved = await call("POST", `/api/operator/sessions/${id}/approvals/${requestId}`, { decision: "approved", offerId, mandateRevision });
     expect(approved.status).toBe(200);
     expect(approved.json.state.outcome.kind).toBe("agreement");
 

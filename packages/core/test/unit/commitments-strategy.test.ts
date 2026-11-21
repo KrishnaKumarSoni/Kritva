@@ -380,7 +380,7 @@ describe("Epic 8, Story 2: questions that reveal what blocks agreement", () => {
   it('"₹20,000 is too much because pickup will cost me ₹2,000": ask about the budget, no automatic ₹2,000 discount', async () => {
     const { say, events } = await setup(listingOnlyDeliveryMandate());
     const t = await say("₹20,000 is too much because pickup will cost me ₹2,000.", { intent: "other", notes: [costNote] });
-    expect(t.reply!.text).toContain("what amount could you pay for the item itself?");
+    expect(t.reply!.text).toContain("what amount would work for you?");
     expect(proposed(await events()).every((o) => priceOf(o.terms) === 20_000)).toBe(true);
   });
 
@@ -391,7 +391,7 @@ describe("Epic 8, Story 2: questions that reveal what blocks agreement", () => {
     const t = await say("₹20,000 is too much because pickup will cost me ₹2,000.", { ...offer(20_000), intent: "reject", notes: [{ ...costNote, kind: "reason", term_id: "term_price" }] });
     expect(t.reply!.text).toMatch(/stay(ing)? at ₹19,000/);
     expect(t.reply!.text).not.toContain("Is that what you're agreeing to");
-    expect(t.reply!.text).toContain("what amount could you pay for the item itself?");
+    expect(t.reply!.text).toContain("what amount would work for you?");
     expect((await events()).filter((e) => e.type === "offer_extracted")).toHaveLength(1);
   });
 
@@ -400,7 +400,7 @@ describe("Epic 8, Story 2: questions that reveal what blocks agreement", () => {
     const t = await say("I can do ₹17,000 because pickup will cost me ₹2,000.", { ...offer(17_000), notes: [{ ...costNote, quote: "pickup will cost me ₹2,000" }] });
     expect((await decisions()).at(-1)!.action).toBe("ask");
     expect(t.reply!.text).toMatch(/stay(ing)? at ₹20,000/);
-    expect(t.reply!.text).toContain("what amount could you pay for the item itself?");
+    expect(t.reply!.text).toContain("what amount would work for you?");
     expect(proposed(await events()).every((o) => priceOf(o.terms) === 20_000)).toBe(true);
   });
 
@@ -448,7 +448,7 @@ describe("Epic 8, Story 2: questions that reveal what blocks agreement", () => {
     await say("₹20,000 is too much because pickup will cost me ₹2,000.", { intent: "other", notes: [costNote] });
     const asked = (await events()).find((e) => e.type === "question_asked")!.payload as PayloadOf<"question_asked">;
     const t = await say("About ₹16,000 for the item.", { ...offer(16_000), answers: [{ question_id: asked.questionId, quote: "About ₹16,000 for the item.", resolution: "answered" }] });
-    expect(t.reply!.text).not.toContain("what amount could you pay for the item itself?");
+    expect(t.reply!.text).not.toContain("what amount would work for you?");
     expect((await events()).some((e) => e.type === "question_answered")).toBe(true);
   });
 
@@ -457,7 +457,7 @@ describe("Epic 8, Story 2: questions that reveal what blocks agreement", () => {
     await say("₹20,000 is too much because pickup will cost me ₹2,000.", { intent: "other", notes: [costNote] });
     const asked = (await events()).find((e) => e.type === "question_asked")!.payload as PayloadOf<"question_asked">;
     const t = await say("I'd rather not say.", { answers: [{ question_id: asked.questionId, quote: "I'd rather not say.", resolution: "refused" }] });
-    expect(t.reply!.text).not.toContain("what amount could you pay for the item itself?");
+    expect(t.reply!.text).not.toContain("what amount would work for you?");
     expect(t.reply!.text).toMatch(/^No problem\. .*stay(ing)? at ₹20,000/);
     expect((await events()).filter((e) => e.type === "question_asked")).toHaveLength(1);
   });

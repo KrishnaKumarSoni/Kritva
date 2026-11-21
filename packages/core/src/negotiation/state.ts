@@ -146,11 +146,13 @@ export function projectState(ctx: SessionContext): NegotiationState {
         const p = e.payload as PayloadOf<"proposal_checked">;
         checks.set(p.offerId, { eventId: e.id, result: p.result, mandateRevision: p.mandateRevision, termsHash: p.termsHash, checkedTerms: p.checkedTerms });
         checkFindings.set(p.offerId, p.findings);
-        if (ctx.byId.get(p.offerId)?.type === "offer_extracted") lastCounterpartyCheck = { offerId: p.offerId, checkedTerms: p.checkedTerms, result: p.result, findings: p.findings };
+        const extracted = ctx.payloadOf(p.offerId, "offer_extracted");
+        if (extracted && (!extracted.kind || extracted.kind === "offer")) lastCounterpartyCheck = { offerId: p.offerId, checkedTerms: p.checkedTerms, result: p.result, findings: p.findings };
         break;
       }
       case "offer_extracted": {
         const p = ctx.effective.get(e.id) as PayloadOf<"offer_extracted">;
+        if (p.kind && p.kind !== "offer") break;
         for (const t of p.terms) counterpartyTerms.set(t.termId, t.value);
         const amount = amountOf(p.terms);
         // A corrected offer was a mistake, not a position: it leaves the offer history.

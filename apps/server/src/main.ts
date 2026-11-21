@@ -1,10 +1,11 @@
 /** Starts the slice server: local SQLite record, confirmed mandates from cases/, OpenAI turn model. */
 import { mkdirSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { join, resolve } from "node:path";
 import { serve } from "@hono/node-server";
 import { createMappingLlmFromEnv, createSpeechFromEnv, createTurnLlmFromEnv, MandateLibrary, MandateRevisions, NegotiationEngine, NegotiationRecord, SqliteLibraryBackend, SqliteRecordBackend } from "@kritva/core";
 import { createApp } from "./app.ts";
-import { loadConfirmedMandates, loadExamples, loadGuidance, loadListings } from "./main-helpers.ts";
+import { loadCaseGuidance, loadConfirmedMandates, loadExamples, loadListings } from "./main-helpers.ts";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
 
@@ -12,14 +13,17 @@ const dataDir = process.env.KRITVA_DATA_DIR ?? join(ROOT, "data");
 mkdirSync(dataDir, { recursive: true });
 const record = new NegotiationRecord(new SqliteRecordBackend(join(dataDir, "kritva.sqlite")));
 const locale = process.env.KRITVA_LOCALE ?? "en-IN";
-const engine = new NegotiationEngine({ record, llm: createTurnLlmFromEnv(), locale, guidance: loadGuidance(ROOT), voiceWording: process.env.KRITVA_VOICE_WORDING === "template" ? "template" : "composed" });
 const mappingLlm = createMappingLlmFromEnv();
-const revisions = new MandateRevisions({ record, engine, mappingLlm });
 // Case-level mandates live in their own tables, so they exist before any session starts.
 const library = new MandateLibrary({ backend: new SqliteLibraryBackend(join(dataDir, "kritva.sqlite")), mappingLlm });
 const mandates = loadConfirmedMandates(join(ROOT, "cases"));
 const examples = loadExamples(join(ROOT, "cases"));
 const listings = loadListings(join(ROOT, "cases"), mandates, examples, library);
+const subjectFacts = new Map(listings.flatMap((l) => l.subjectFactId ? [[l.caseId, l.subjectFactId] as const] : []));
+const engine = new NegotiationEngine({ record, llm: createTurnLlmFromEnv(), locale, guidanceByCase: loadCaseGuidance(ROOT), subjectFacts });
+const revisions = new MandateRevisions({ record, engine, mappingLlm });
+const configuredKey = process.env.KRITVA_OPERATOR_KEY?.trim();
+const operatorKey = configuredKey || randomBytes(24).toString("base64url");
 const app = createApp({
   record,
   engine,
@@ -30,10 +34,12 @@ const app = createApp({
   examples,
   speech: createSpeechFromEnv(),
   listings,
-  transcriptionPrompt: process.env.KRITVA_TRANSCRIPTION_PROMPT ?? "A buyer in India talking to a seller's assistant about price, pickup and terms. Amounts are in Indian rupees (₹), for example ₹18,000 or ₹19,500. Never use dollars.",
+  operatorKey,
+  transcriptionPrompt: process.env.KRITVA_TRANSCRIPTION_PROMPT,
 });
 const port = Number(process.env.PORT ?? 8787);
 
-serve({ fetch: app.fetch, port }, (info) => {
+serve({ fetch: app.fetch, port, hostname: process.env.KRITVA_HOST ?? "127.0.0.1" }, (info) => {
   console.log(`Kritva slice server listening on http://localhost:${info.port}`);
+  if (!configuredKey) console.log(`Seller access key for this run: ${operatorKey}`);
 });

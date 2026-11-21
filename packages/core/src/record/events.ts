@@ -40,6 +40,10 @@ export const DecisionKind = z.enum([
   "answer",
   "hold",
   "reject_offer",
+  "explore_objection",
+  "explain_price",
+  "acknowledge_budget",
+  "answer_enquiry",
   "end",
 ]);
 export type DecisionKind = z.infer<typeof DecisionKind>;
@@ -102,7 +106,7 @@ export const PAYLOADS = {
     correctsPrevious: z.boolean().default(false),
     /** The counterparty's previous offer this one changes. History is never overwritten. */
     previousOfferId: Id.nullable().default(null),
-    /** Conditions in the counterparty's words that the terms cannot express ("if I get a truck"). */
+    /** Conditions in the counterparty's words that the terms cannot express. */
     conditions: z.array(z.string().trim().min(1).max(300)).max(10).default([]),
   }),
   /** Terms the agent intends to put forward. Proposed is not communicated. */
@@ -194,7 +198,7 @@ export const PAYLOADS = {
     text: ShortText,
     relatedEventIds: z.array(Id).max(10),
   }),
-  question_asked: z.strictObject({ questionId: Id, messageId: Id }),
+  question_asked: z.strictObject({ questionId: Id, messageId: Id, text: ShortText.optional() }),
   question_answered: z.strictObject({
     questionId: Id,
     sourceMessageId: Id,
@@ -271,6 +275,7 @@ export const PAYLOADS = {
     /** For voice: milliseconds from the end of the counterparty's speech to the start of this reply's audio. */
     audioStartMs: z.number().int().min(0).max(600_000).nullable().default(null),
   }),
+  voice_connection: z.strictObject({ status: z.enum(["connected", "interrupted"]) }),
   status_changed: z.strictObject({
     from: SessionStatus,
     to: SessionStatus,
@@ -309,7 +314,7 @@ export const PUBLIC_EVENT_TYPES = new Set<EventType>([
 ]);
 
 /** Types whose channel must be stated. */
-export const CHANNEL_EVENT_TYPES = new Set<EventType>(["message", "transcript_fragment", "delivery_reported"]);
+export const CHANNEL_EVENT_TYPES = new Set<EventType>(["message", "transcript_fragment", "delivery_reported", "voice_connection"]);
 
 /** What a caller supplies. ID is the idempotency key; the store assigns order and time. */
 export interface NewEvent<T extends EventType = EventType> {

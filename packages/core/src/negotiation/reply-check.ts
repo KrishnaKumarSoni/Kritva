@@ -17,7 +17,7 @@ import type { MandateView } from "./mandate-view.ts";
 import type { Plan } from "./policy.ts";
 
 export interface ReplyViolation {
-  rule: "private_amount" | "unplanned_amount" | "crosses_limit" | "missing_offer" | "missing_condition" | "false_commitment" | "private_text" | "internal_term";
+  rule: "private_amount" | "unplanned_amount" | "crosses_limit" | "missing_offer" | "missing_condition" | "false_commitment" | "private_text" | "internal_term" | "action_mismatch";
   detail: string;
 }
 
@@ -29,7 +29,7 @@ export interface CheckContext {
 }
 
 const DECLINE_CUE = /\b(can'?t|cannot|can not|won'?t|unable|not able|too low|too high|not possible|isn'?t|is not|no\b|decline|don'?t|do not|below|under|above|over|beyond)\b/i;
-const AGREEMENT_CLAIM = /\b(we have (a |an )?(deal|agreement)|it'?s a deal|deal (is )?(done|confirmed)|agreement (is )?(confirmed|recorded)|(sold|it'?s yours)\b|i accept (your|the) offer|offer accepted)/i;
+const AGREEMENT_CLAIM = /\b(we have (a |an )?(deal|agreement)|we(?:'re| are) agreed|it'?s (a deal|agreed)|deal (is )?(done|confirmed)|agreement (is )?(confirmed|recorded)|(sold|it'?s yours)\b|i accept (your|the) offer|offer accepted)/i;
 const APPROVAL_CLAIM = /\b(has|have) approved\b|\bapproved (it|this|your offer|the (offer|terms))\b|\bapproval (is )?(given|granted|received)\b/i;
 
 const INTERNAL_TERM = /\b(mandate|governance|zopa|batna|parameter|principal|negotiation core|the core|strategy engine|guidance file|policy engine|score)\b/i;
@@ -45,19 +45,20 @@ export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
   const sentences = splitSentences(text);
   const offered = plannedAmounts(plan);
   const publicAmounts = view.defaultPackage.flatMap((t) => ("amount" in t.value ? [t.value.amount as number] : []));
-  const allowed = new Set([...offered, ...publicAmounts, ...ctx.counterpartyAmounts]);
+  const allowed = new Set([...offered, ...publicAmounts, ...ctx.counterpartyAmounts, plan.referenceAmount]);
 
   for (const sentence of sentences) {
     for (const amount of findAmounts(sentence)) {
+      if (amount === plan.statedBudget && QUOTE_CUE.test(sentence)) continue;
       // Repeating the counterparty's own number reveals nothing; any other private value does.
-      if (view.privateAmounts.includes(amount) && !offered.includes(amount) && !ctx.counterpartyAmounts.includes(amount)) {
+      if (view.privateAmounts.includes(amount) && !offered.includes(amount) && !ctx.counterpartyAmounts.includes(amount) && amount !== plan.referenceAmount) {
         violations.push({ rule: "private_amount", detail: "Mentions a private value that is not being offered." });
       } else if (!allowed.has(amount)) {
         violations.push({ rule: "unplanned_amount", detail: "Mentions an amount that is not part of the planned move." });
       }
       const crosses = n ? (n.direction === "up" ? amount < n.limit : amount > n.limit) : false;
       // Quoting the counterparty's own figure back in a question or "your …" is not offering it.
-      const quotingThem = ctx.counterpartyAmounts.includes(amount) && QUOTE_CUE.test(sentence);
+      const quotingThem = (ctx.counterpartyAmounts.includes(amount) || plan.statedBudget === amount) && QUOTE_CUE.test(sentence);
       if (crosses && !offered.includes(amount) && !DECLINE_CUE.test(sentence) && !quotingThem) {
         violations.push({ rule: "crosses_limit", detail: "States an amount beyond the limit without declining it." });
       }
@@ -80,10 +81,19 @@ export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
     }
   }
 
-  if (plan.move !== "confirm_agreement") {
-    if (AGREEMENT_CLAIM.test(text)) violations.push({ rule: "false_commitment", detail: "Claims an agreement that is not recorded." });
-    if (APPROVAL_CLAIM.test(text)) violations.push({ rule: "false_commitment", detail: "Claims an approval that is not recorded." });
+  if (plan.referenceAmount !== undefined && (plan.move === "explain_price" || plan.move === "answer_enquiry") && !mentioned.has(plan.referenceAmount)) {
+    // Small bare quantities need not be auto-detected by the money-amount scanner.
+    const n = view.negotiable;
+    if (n?.valueType === "money") violations.push({ rule: "missing_offer", detail: "Leaves out the authorized public asking amount." });
   }
+  if (plan.statedBudget !== undefined && !mentioned.has(plan.statedBudget)) {
+    violations.push({ rule: "action_mismatch", detail: "Leaves out the budget stated in the current message." });
+  }
+
+  if (plan.move !== "confirm_agreement" && !(plan.move === "closed" && plan.notice === null) && AGREEMENT_CLAIM.test(text)) {
+    violations.push({ rule: "false_commitment", detail: "Claims an agreement that is not recorded." });
+  }
+  if (!plan.approvalGranted && APPROVAL_CLAIM.test(text)) violations.push({ rule: "false_commitment", detail: "Claims an approval that is not recorded." });
 
   const normalizedReply = normalizeForQuoteMatch(text);
   for (const privateText of view.privateTexts) {

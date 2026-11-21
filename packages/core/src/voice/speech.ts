@@ -22,7 +22,7 @@ export interface OpenAISpeechOptions {
 
 /** How Kritva sounds: warm and unhurried, per the humane conversation guide. */
 const SPEAKING_STYLE =
-  "Speak warmly and naturally, like a helpful person on a call. Relaxed, clear pace. Read amounts and place names clearly. No sales energy, no exaggerated enthusiasm.";
+  "Speak warmly and naturally, like a helpful person on a call. Relaxed, clear pace. Read each word and value clearly. Read the supplied text verbatim. No sales energy, no exaggerated enthusiasm.";
 
 export class OpenAISpeech implements SpeechProvider {
   readonly #client: OpenAI;
@@ -46,7 +46,7 @@ export class OpenAISpeech implements SpeechProvider {
 
   async speak(text: string, options: { signal?: AbortSignal } = {}) {
     const response = await this.#client.audio.speech.create(
-      { model: this.#options.speechModel, voice: this.#options.voice as never, input: text.slice(0, 4_000), instructions: SPEAKING_STYLE, response_format: "mp3" },
+      { model: this.#options.speechModel, voice: this.#options.voice as never, input: text, instructions: SPEAKING_STYLE, response_format: "mp3" },
       { signal: options.signal },
     );
     if (!response.body) throw new Error("The speech service returned no audio.");

@@ -7,6 +7,7 @@
  * The buyer chat and the scenario script call the same engine path.
  */
 import { Hono } from "hono";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { registerLibraryRoutes, type LibraryDeps } from "./library-routes.ts";
 import type { ListingConfig } from "./main-helpers.ts";
 import { registerVoiceRoutes } from "./voice-routes.ts";
@@ -58,6 +59,8 @@ export interface AppDeps {
   /** Epic 14: demo listings and the library mandates their calls use. */
   listings?: ListingConfig[];
   transcriptionPrompt?: string;
+  /** Required by the network server. In-process tools can call the app as the operator. */
+  operatorKey?: string;
 }
 
 export function createApp(deps: AppDeps): Hono {
@@ -73,6 +76,18 @@ export function createApp(deps: AppDeps): Hono {
 
   // ---------- Operator (principal) ----------
 
+  if (deps.operatorKey) {
+    const hash = (value: string) => createHash("sha256").update(value).digest();
+    const expected = hash(`Bearer ${deps.operatorKey}`);
+    app.use("/api/operator/*", async (c, next) => {
+      c.header("Cache-Control", "no-store");
+      if (!timingSafeEqual(hash(c.req.header("Authorization") ?? ""), expected)) {
+        return c.json({ error: "seller_access_required", message: "Enter the seller access key to open the console." }, 401);
+      }
+      await next();
+    });
+  }
+
   if (deps.library) registerLibraryRoutes(app, { library: deps.library, record, engine, locale, examples: deps.examples ?? [] });
   registerVoiceRoutes(app, {
     record,
@@ -82,7 +97,10 @@ export function createApp(deps: AppDeps): Hono {
     listings: deps.listings ?? [],
     locale,
     transcriptionPrompt: deps.transcriptionPrompt,
-    buyerOutcome: async (id) => buyerOutcome(await engine.state(id), await record.context(id), locale),
+    buyerOutcome: async (id) => {
+      const state = await engine.state(id);
+      return buyerOutcome(state, await record.context(id), locale, engine.publicSubject(state.view));
+    },
   });
 
   /** Prepared mandates from cases/, plus saved mandates with a confirmed revision. Unconfirmed drafts never appear. */
@@ -114,7 +132,7 @@ export function createApp(deps: AppDeps): Hono {
       if (!active) return c.json({ error: "not_confirmed", message: "Confirm this mandate before starting a negotiation with it." }, 409);
       started = await record.startSession({ mandate: active.mandate, previousSessionId: body.previousSessionId ?? null, mandateSource: { mandateId: libraryId, revision: active.revision } });
     } else {
-      const entry = mandates.find((m) => m.id === body.mandateId) ?? mandates[0];
+      const entry = body.mandateId === undefined ? mandates[0] : mandates.find((m) => m.id === body.mandateId);
       if (!entry) return c.json({ error: "no_mandate", message: "No confirmed mandate is available." }, 400);
       started = await record.startSession({ mandate: entry.mandate, previousSessionId: body.previousSessionId ?? null });
     }
@@ -135,11 +153,11 @@ export function createApp(deps: AppDeps): Hono {
       session,
       mandateId,
       mandateSource: latestSource?.mandateSource ?? source,
-      state: { ...operatorState(state, locale), voiceInterrupted: voiceInterrupted(ctx.events) },
+      state: { ...operatorState(state, locale), subject: engine.publicSubject(state.view), voiceInterrupted: voiceInterrupted(ctx.events) },
       dealSpace: dealSpaceView(state, locale),
       principal: principalView(state, locale),
       counterparty: counterpartyView(projectCounterparty(ctx, state.view.negotiable?.termId ?? null), state, locale),
-      commitments: commitmentsView(ctx, state, locale, engine.guidance.id),
+      commitments: commitmentsView(ctx, state, locale, engine.guidanceFor(state.view.mandate.caseId).id),
       drafts: (await revisions.drafts(id)).map((d) => draftView(d, locale)),
       events: events.map((e) => describeEvent(e, state.view, locale)),
     });
@@ -148,8 +166,11 @@ export function createApp(deps: AppDeps): Hono {
   app.post("/api/operator/sessions/:id/approvals/:requestId", async (c) => {
     const body = await c.req.json<{ decision?: string; note?: string; offerId?: string; mandateRevision?: number }>().catch(() => ({}) as Record<string, never>);
     if (body.decision !== "approved" && body.decision !== "rejected") return c.json({ error: "invalid_decision" }, 400);
+    if (typeof body.offerId !== "string" || !body.offerId || typeof body.mandateRevision !== "number" || !Number.isInteger(body.mandateRevision) || body.mandateRevision < 1) {
+      return c.json({ error: "approval_version_required", message: "Review the current offer and instruction revision before deciding." }, 400);
+    }
     // The decision names the offer version and mandate revision the principal reviewed; a mismatch is refused.
-    const result = await engine.respondToApproval({ sessionId: c.req.param("id"), requestId: c.req.param("requestId"), decision: body.decision, note: body.note ?? null, expected: { offerId: typeof body.offerId === "string" ? body.offerId : null, mandateRevision: typeof body.mandateRevision === "number" ? body.mandateRevision : null } });
+    const result = await engine.respondToApproval({ sessionId: c.req.param("id"), requestId: c.req.param("requestId"), decision: body.decision, note: body.note ?? null, expected: { offerId: body.offerId, mandateRevision: body.mandateRevision } });
     if (!result.ok) return c.json({ error: result.code, message: result.message }, result.code === "not_pending" ? 409 : 400);
     return c.json({ reply: result.reply, state: operatorState(result.state, locale) });
   });
@@ -207,7 +228,8 @@ export function createApp(deps: AppDeps): Hono {
       // Public listing content only: the principal's public package and public facts.
       listing: { terms: termsView(state.view, state.view.defaultPackage, locale) ?? [], facts: state.view.publicFacts },
       messages: buyerMessages(events),
-      outcome: buyerOutcome(state, await record.context(id), locale),
+      paused: state.status === "paused",
+      outcome: buyerOutcome(state, await record.context(id), locale, engine.publicSubject(state.view)),
     });
   });
 
@@ -224,7 +246,7 @@ export function createApp(deps: AppDeps): Hono {
     if (!result.ok) return c.json({ error: result.code, message: result.message }, result.code === "session_not_found" ? 404 : result.code === "model_unavailable" ? 503 : 400);
     return c.json({
       reply: result.reply ? { messageId: result.reply.messageId, text: result.reply.text } : null,
-      outcome: buyerOutcome(result.state, await record.context(c.req.param("id")), locale),
+      outcome: buyerOutcome(result.state, await record.context(c.req.param("id")), locale, engine.publicSubject(result.state.view)),
       timings: result.timings,
     });
   });
@@ -235,7 +257,10 @@ export function createApp(deps: AppDeps): Hono {
     if (typeof body.messageId !== "string") return c.json({ error: "invalid_delivery" }, 400);
     // Text: shown on screen. Voice: played to the end ("delivered") or cut off ("interrupted", with what was spoken).
     const channel = body.channel === "voice" ? "voice" : "text";
-    const status = channel === "voice" && body.status === "interrupted" ? "interrupted" : "delivered";
+    if (channel === "voice" && body.status !== "interrupted" && body.status !== "delivered" && body.status !== "failed") {
+      return c.json({ error: "invalid_delivery" }, 400);
+    }
+    const status = channel === "voice" && (body.status === "interrupted" || body.status === "failed") ? body.status : "delivered";
     const result = await engine.reportDelivery({
       sessionId: c.req.param("id"),
       messageId: body.messageId,
@@ -433,12 +458,13 @@ function termsView(view: MandateView, terms: OfferTerm[] | null, locale: string)
  * What the counterparty may see about the outcome: the agreed terms and what is still to happen,
  * or, without agreement, each side's last offer the counterparty already saw. Never a private limit.
  */
-function buyerOutcome(state: NegotiationState, ctx: SessionContext, locale: string) {
+function buyerOutcome(state: NegotiationState, ctx: SessionContext, locale: string, subject: string | null) {
   const model = commitmentsFor(ctx, state, locale);
   const options = commitmentOptions(state, locale);
   const ended = model.outcome === "no_agreement";
   return {
     kind: state.outcome.kind,
+    subject,
     terms: termsView(state.view, state.outcome.terms, locale),
     obligations: model.agreement ? model.agreement.obligations.map((o) => o.description) : [],
     noAgreement: ended ? { ...noAgreementSummary(model, options), endedBy: model.stopped?.by ?? null } : null,
@@ -535,6 +561,7 @@ function commitmentsView(ctx: SessionContext, state: NegotiationState, locale: s
 function voiceInterrupted(events: RecordedEvent[]): boolean {
   for (let i = events.length - 1; i >= 0; i -= 1) {
     const e = events[i]!;
+    if (e.type === "voice_connection") return (e.payload as { status: string }).status === "interrupted";
     if (e.type === "message") {
       const p = e.payload as { direction: string };
       if (p.direction === "inbound") return false;
@@ -607,6 +634,9 @@ function describeEvent(e: RecordedEvent, view: MandateView, locale: string) {
     case "delivery_reported":
       title = `Delivery ${p.status}`;
       summary = "";
+      break;
+    case "voice_connection":
+      title = p.status === "interrupted" ? "Voice connection interrupted" : "Voice connected";
       break;
     case "acceptance_recorded":
       title = "Buyer accepted stated terms";

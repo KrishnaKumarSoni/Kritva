@@ -67,7 +67,7 @@ export interface CounterpartyModel {
   items: NoteItem[];
   offers: PackageOffer[];
   estimates: PackageEstimate[];
-  contradictions: Array<{ detail: string; basis: string[] }>;
+  contradictions: Array<{ detail: string; basis: string[]; packageKey: string }>;
   questions: QuestionView[];
   failedMessages: string[];
 }
@@ -96,6 +96,7 @@ export function projectCounterparty(ctx: SessionContext, negotiableTermId: strin
       }
       case "offer_extracted": {
         const p = ctx.effective.get(e.id) as PayloadOf<"offer_extracted">;
+        if (p.kind && p.kind !== "offer") break;
         const amountTerm = p.terms.find((t) => t.termId === negotiableTermId);
         if (!amountTerm || !("amount" in amountTerm.value)) break;
         // The package is what the counterparty's amount came with: their terms over the agent's at that time.
@@ -109,8 +110,12 @@ export function projectCounterparty(ctx: SessionContext, negotiableTermId: strin
         break;
       }
       case "question_asked": {
-        const q = questions.get((e.payload as PayloadOf<"question_asked">).questionId);
-        if (q && q.status === "open") q.status = "asked";
+        const p = e.payload as PayloadOf<"question_asked">;
+        const q = questions.get(p.questionId);
+        if (q && q.status === "open") {
+          q.status = "asked";
+          if (p.text) q.text = p.text;
+        }
         break;
       }
       case "question_answered": {
@@ -137,7 +142,7 @@ export function projectCounterparty(ctx: SessionContext, negotiableTermId: strin
   };
 
   const keys = new Set(offers.map((o) => o.packageKey));
-  const budgets = items.filter((i) => i.kind === "budget" && i.value && "amount" in i.value);
+  const budgets = items.filter((i) => i.kind === "budget" && i.basis === "stated" && i.value && "amount" in i.value);
   for (const b of budgets) keys.add(packageAt(b.messageId, b.at) ?? "");
   const finals = items.filter((i) => i.kind === "final_position");
 
@@ -159,7 +164,7 @@ export function projectCounterparty(ctx: SessionContext, negotiableTermId: strin
       if (above) {
         const detail = `Stated budget of ${ceiling} was followed by an offer of ${above.amount} for the same package.`;
         maximum = { status: "contradicted", reason: `${detail} The actual maximum is uncertain.`, basis: [statedMaximum.eventId, above.offerId] };
-        contradictions.push({ detail, basis: [statedMaximum.eventId, above.offerId] });
+        contradictions.push({ detail, packageKey: key, basis: [statedMaximum.eventId, above.offerId] });
       } else {
         maximum = {
           status: "working_estimate",

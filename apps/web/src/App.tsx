@@ -15,7 +15,14 @@ function sessionFromHash(): string | null {
 }
 
 export function App() {
+  const buyerOnly = new URLSearchParams(window.location.search).get("view") === "buyer";
   const [sessionId, setSessionId] = useState<string | null>(sessionFromHash());
+  const currentSession = useRef(sessionId);
+  currentSession.current = sessionId;
+  const [sellerAccess, setSellerAccess] = useState(false);
+  const [showSellerKey, setShowSellerKey] = useState(false);
+  const [sellerKey, setSellerKey] = useState("");
+  const [checkingKey, setCheckingKey] = useState(false);
   const [buyer, setBuyer] = useState<BuyerView | null>(null);
   const [operator, setOperator] = useState<OperatorView | null>(null);
   const [pending, setPending] = useState<{ text: string } | null>(null);
@@ -30,34 +37,45 @@ export function App() {
   const [view, setView] = useState<"demo" | "negotiation" | "mandates">("demo");
   const [openMandate, setOpenMandate] = useState<string | null>(null);
   const [calling, setCalling] = useState(false);
-  const [autoVoice, setAutoVoice] = useState(false);
+  const [voiceRequest, setVoiceRequest] = useState({ sessionId: "", count: 0 });
   const callId = useRef<string | null>(null);
 
   const loadMandates = useCallback(() => {
-    api
+    if (buyerOnly) return;
+    return api
       .listMandates()
       .then((list) => {
+        setSellerAccess(true);
+        setShowSellerKey(false);
+        setSellerKey("");
+        setConsoleError(null);
         setMandates(list);
         setMandateId((current) => (current && list.some((m) => m.id === current) ? current : (list[0]?.id ?? null)));
       })
-      .catch(() => setConsoleError("Unable to load mandates."));
-  }, []);
-  useEffect(loadMandates, [loadMandates]);
+      .catch((e: unknown) => {
+        setSellerAccess(false);
+        setOperator(null);
+        if (!(e instanceof ApiError && e.status === 401) || api.hasSellerKey()) {
+          setConsoleError(e instanceof ApiError ? e.message : "Unable to load mandates.");
+        }
+      });
+  }, [buyerOnly]);
+  useEffect(() => { if (api.hasSellerKey()) void loadMandates(); }, [loadMandates]);
 
-  // Recover the last session after a refresh; otherwise start one.
+  // Restore the latest seller session when no explicit buyer session is selected.
   useEffect(() => {
-    if (sessionId) return;
+    if (!sellerAccess || sessionId) return;
+    let cancelled = false;
     (async () => {
       try {
         const sessions = await api.listSessions();
-        const latest = sessions.at(-1);
-        const id = latest ? latest.id : (await api.startSession("bed-sale/demo", null)).session.id;
-        setSessionId(id);
+        if (!cancelled && !currentSession.current) setSessionId(sessions.at(-1)?.id ?? null);
       } catch (e) {
         setConsoleError(e instanceof ApiError ? e.message : "Unable to load sessions.");
       }
     })();
-  }, [sessionId]);
+    return () => { cancelled = true; };
+  }, [sellerAccess, sessionId]);
 
   useEffect(() => {
     if (sessionId) window.history.replaceState(null, "", `#session=${sessionId}`);
@@ -65,14 +83,25 @@ export function App() {
 
   const refresh = useCallback(async (id: string) => {
     try {
-      const [b, o] = await Promise.all([api.buyerView(id), api.operatorView(id)]);
+      const b = await api.buyerView(id);
+      if (currentSession.current !== id) return;
       setBuyer(b);
-      setOperator(o);
-      setConsoleError(null);
+      if (sellerAccess) {
+        const o = await api.operatorView(id);
+        if (currentSession.current === id) setOperator(o);
+      }
     } catch (e) {
-      setConsoleError(e instanceof ApiError ? e.message : "Unable to load the session.");
+      if (currentSession.current !== id) return;
+      if (e instanceof ApiError && e.status === 401) {
+        setSellerAccess(false);
+        setOperator(null);
+      }
+      (sellerAccess ? setConsoleError : setError)(e instanceof ApiError ? e.message : "Unable to load the session.");
     }
-  }, []);
+  }, [sellerAccess]);
+  const refreshCurrent = useCallback(() => {
+    if (sessionId) void refresh(sessionId);
+  }, [sessionId, refresh]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -136,19 +165,25 @@ export function App() {
 
   /** Epic 14: Call seller starts a fresh session for the listing's confirmed mandate, then voice. */
   const callSeller = async (withVoice: boolean) => {
-    if (calling) return;
+    if (callId.current) return;
     setCalling(true);
-    callId.current ??= crypto.randomUUID();
+    callId.current = crypto.randomUUID();
     try {
-      const { sessionId: id } = await api.callSeller("bed-sale", callId.current, sessionId);
-      reported.current.clear();
-      setBuyer(null);
-      setOperator(null);
+      const id = buyerOnly && withVoice && sessionId
+        ? sessionId
+        : (await api.callSeller("bed-sale", callId.current, sessionId)).sessionId;
       setError(null);
-      setAutoVoice(withVoice);
-      setSessionId(id);
+      setConsoleError(null);
+      if (withVoice) setVoiceRequest((old) => ({ sessionId: id, count: old.count + 1 }));
+      if (id !== sessionId) {
+        reported.current.clear();
+        currentSession.current = id;
+        setBuyer(null);
+        setOperator(null);
+        setSessionId(id);
+      }
     } catch (e) {
-      setConsoleError(e instanceof ApiError ? e.message : "The call couldn't start. Nothing was created.");
+      setError(e instanceof ApiError ? e.message : "The call couldn't start. Try again.");
     } finally {
       callId.current = null;
       setCalling(false);
@@ -169,9 +204,10 @@ export function App() {
   };
 
   const newSession = async () => {
+    if (!mandateId) return;
     setStarting(true);
     try {
-      const { session } = await api.startSession(mandateId ?? "bed-sale/demo", sessionId);
+      const { session } = await api.startSession(mandateId, sessionId);
       reported.current.clear();
       setBuyer(null);
       setOperator(null);
@@ -191,11 +227,11 @@ export function App() {
           <span className="wordmark" aria-label="Kritva">
             Kritva<span className="wordmark-dot" aria-hidden="true" />
           </span>
-          <span className="brand-context" hidden={view === "mandates"}>
+          <span className="brand-context" hidden={!sellerAccess || view === "mandates"}>
             Negotiation slice · {mandates.find((m) => m.id === operator?.mandateId)?.title ?? "Confirmed seller mandate"}
           </span>
         </div>
-        <nav className="view-switch" aria-label="Views">
+        {sellerAccess && <nav className="view-switch" aria-label="Views">
           {(["demo", "negotiation", "mandates"] as const).map((v) => (
             <button
               key={v}
@@ -211,18 +247,33 @@ export function App() {
               {v === "demo" ? "Demo listing" : v === "negotiation" ? "Negotiation" : "Mandates"}
             </button>
           ))}
-        </nav>
-        <div className="topbar-actions" hidden={view === "mandates"}>
+        </nav>}
+        {!sellerAccess && !buyerOnly && (
+          <form className="topbar-actions" onSubmit={async (event) => {
+            event.preventDefault();
+            if (!showSellerKey) { setShowSellerKey(true); return; }
+            setCheckingKey(true);
+            api.rememberSellerKey(sellerKey.trim());
+            try { await loadMandates(); } finally { setCheckingKey(false); }
+          }}>
+            {showSellerKey && <input className="seller-key" type="password" aria-label="Seller access key" placeholder="Seller access key" autoFocus required value={sellerKey} onChange={(e) => setSellerKey(e.target.value)} />}
+            <button type="submit" className="button button-secondary" disabled={checkingKey}>{showSellerKey ? "Unlock" : "Seller console"}</button>
+          </form>
+        )}
+        {sellerAccess && <div className="topbar-actions" hidden={view === "mandates"}>
           {sessionId && (
             <span className="mono session-id" title={`Session ${sessionId}${operator?.mandateId ? `, mandate ${operator.mandateId}` : ""}`}>
               {sessionId.slice(0, 12)}
             </span>
           )}
           {view === "demo" ? (
+            <>
+            {sessionId && <a className="button button-secondary" href={`?view=buyer#session=${sessionId}`} target="_blank" rel="noopener noreferrer">Open buyer view</a>}
             <button type="button" className="button button-secondary" onClick={() => callSeller(false)} disabled={calling}>
               {calling ? <span className="spinner" aria-hidden="true" /> : <RefreshIcon />}
               New demo session
             </button>
+            </>
           ) : (
           <>
           <Select
@@ -231,15 +282,15 @@ export function App() {
             options={mandates.map((m) => ({ value: m.id, label: m.title, description: m.description }))}
             onChange={setMandateId}
           />
-          <button type="button" className="button button-secondary" onClick={newSession} disabled={starting}>
+          <button type="button" className="button button-secondary" onClick={newSession} disabled={starting || !mandateId}>
             {starting ? <span className="spinner" aria-hidden="true" /> : <RefreshIcon />}
             New session
           </button>
           </>
           )}
-        </div>
+        </div>}
       </header>
-      {view === "mandates" ? (
+      {sellerAccess && view === "mandates" && (
         <MandatesPage
           initialId={openMandate}
           onUse={(id) => {
@@ -248,10 +299,11 @@ export function App() {
             loadMandates();
           }}
         />
-      ) : (
-      <main className="layout">
+      )}
+      <main className={sellerAccess ? "layout" : "layout layout-buyer"} hidden={sellerAccess && view === "mandates"}>
         <h1 className="visually-hidden">Kritva negotiation slice</h1>
         <Chat
+          key={sessionId ?? "listing"}
           view={buyer}
           pending={pending}
           sending={sending}
@@ -260,9 +312,10 @@ export function App() {
           onRetry={retry}
           onDisplayed={onDisplayed}
           header={view === "demo" ? <ListingCard caseId="bed-sale" calling={calling} onCall={() => callSeller(true)} /> : null}
-          voice={{ sessionId, autoStart: autoVoice, onTurn: () => sessionId && refresh(sessionId) }}
+          voice={{ sessionId, startRequest: voiceRequest.sessionId === sessionId ? voiceRequest.count : 0, onTurn: refreshCurrent }}
         />
-        <div className="panel-stack" style={{ display: "grid", gap: "var(--space-4)", minHeight: 0 }}>
+        {(!buyerOnly && consoleError && !sellerAccess) && <p className="composer-error" role="alert">{consoleError}</p>}
+        {sellerAccess && <div className="panel-stack" style={{ display: "grid", gap: "var(--space-4)", minHeight: 0 }}>
           {consoleError && (
             <p className="composer-error" role="alert" style={{ margin: 0 }}>
               {consoleError}
@@ -276,6 +329,7 @@ export function App() {
               if (!sessionId) return;
               try {
                 await api.setPaused(sessionId, paused);
+                setConsoleError(null);
               } catch (e) {
                 setConsoleError(e instanceof ApiError ? e.message : "Unable to change the pause state.");
               }
@@ -284,9 +338,8 @@ export function App() {
             onChanged={() => sessionId && refresh(sessionId)}
             onChangeInstructions={operator?.mandateId?.startsWith("library:") ? changeInstructions : null}
           />
-        </div>
+        </div>}
       </main>
-      )}
     </div>
   );
 }

@@ -32,7 +32,7 @@ export interface GateResult {
   breachedRuleIds: string[];
 }
 
-const NEGOTIATION_MOVES = new Set<Plan["move"]>(["counter", "hold", "state_final_terms", "request_approval", "confirm_agreement", "answer", "await_approval"]);
+const NEGOTIATION_MOVES = new Set<Plan["move"]>(["counter", "hold", "state_final_terms", "request_approval", "confirm_agreement", "answer", "explore_objection", "explain_price", "acknowledge_budget", "answer_enquiry", "await_approval"]);
 
 export function gateTerms(state: NegotiationState, plan: Plan, preparedRevision: number): GateResult {
   const reasons: GateReason[] = [];
@@ -62,6 +62,10 @@ export function gateTerms(state: NegotiationState, plan: Plan, preparedRevision:
     return result("block");
   }
 
+  if (plan.referenceAmount !== undefined && plan.referenceAmount !== state.currentAsk) {
+    reasons.push({ rule: "unverified_reference", detail: "The referenced amount is not the current public ask." });
+    return result("block");
+  }
   const authority = state.view.authority;
 
   if (plan.offer) {

@@ -7,7 +7,7 @@ import { VoiceBar } from "./VoiceBar.tsx";
 
 const spring = { type: "spring", duration: 0.35, bounce: 0 } as const;
 
-const SUGGESTIONS = ["Is it still available?", "Would you take ₹17,000?", "Can you deliver it?", "What's your lowest price?"];
+const SUGGESTIONS = ["What terms are you proposing?", "Which terms are flexible?"];
 
 interface ChatProps {
   view: BuyerView | null;
@@ -18,7 +18,7 @@ interface ChatProps {
   onRetry: (() => void) | null;
   onDisplayed: (messageIds: string[]) => void;
   /** Browser voice for this session (Epic 13). Omit to offer text only. */
-  voice?: { sessionId: string | null; autoStart?: boolean; onTurn: () => void } | null;
+  voice?: { sessionId: string | null; startRequest?: number; onTurn: () => void } | null;
   /** Content shown above the conversation, such as the demo listing. */
   header?: React.ReactNode;
 }
@@ -102,7 +102,7 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
             <p>Write to the seller as a buyer would. Every message, offer and decision appears in the record beside this chat.</p>
             <div className="suggestions">
               {SUGGESTIONS.map((s) => (
-                <button key={s} type="button" className="button button-secondary" onClick={() => setDraft(s)}>
+                <button key={s} type="button" className="button button-secondary" disabled={!view || voiceOn} onClick={() => setDraft(s)}>
                   {s}
                 </button>
               ))}
@@ -137,7 +137,7 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
         </AnimatePresence>
       </div>
 
-      {voice && <VoiceBar sessionId={voice.sessionId} messages={messages} autoStart={voice.autoStart} onActiveChange={setVoiceOn} onTurn={voice.onTurn} />}
+      {voice?.sessionId && <VoiceBar sessionId={voice.sessionId} messages={messages} paused={view?.paused ?? false} startRequest={voice.startRequest} onActiveChange={setVoiceOn} onTurn={voice.onTurn} />}
 
       <form className="composer" onSubmit={submit} aria-disabled={voiceOn}>
         <label className="composer-label" htmlFor="buyer-message">
@@ -149,15 +149,15 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
             ref={inputRef}
             rows={1}
             value={draft}
-            placeholder={voiceOn ? "Voice call in progress" : "e.g. Hi, is the bed still available?"}
-            disabled={voiceOn}
+            placeholder={voiceOn ? "Voice call in progress" : "Ask a question or propose terms"}
+            disabled={voiceOn || !view}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={onKeyDown}
             maxLength={2000}
             aria-describedby={error ? "composer-error composer-hint" : "composer-hint"}
             autoComplete="off"
           />
-          <button type="submit" className="button button-accent" disabled={sending || voiceOn || draft.trim().length === 0}>
+          <button type="submit" className="button button-accent" disabled={!view || sending || voiceOn || draft.trim().length === 0}>
             {sending ? <span className="spinner" aria-hidden="true" /> : <SendIcon />}
             Send
           </button>
@@ -167,7 +167,7 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
             <AlertIcon />
             <span style={{ flex: 1 }}>{error}</span>
             {onRetry && (
-              <button type="button" className="button button-secondary" onClick={onRetry} disabled={sending} style={{ minHeight: 32 }}>
+              <button type="button" className="button button-secondary" onClick={onRetry} disabled={sending || voiceOn} style={{ minHeight: 32 }}>
                 Retry message
               </button>
             )}
@@ -205,6 +205,7 @@ export function OutcomeCard({ outcome }: { outcome: BuyerView["outcome"] }) {
           </span>
           <h3 id="outcome-title">Agreement</h3>
         </div>
+        {outcome.subject && <p>{outcome.subject}</p>}
         <TermsList terms={terms} />
         {outcome.obligations.length > 0 && (
           <div className="outcome-todo">
@@ -219,7 +220,7 @@ export function OutcomeCard({ outcome }: { outcome: BuyerView["outcome"] }) {
             </ul>
           </div>
         )}
-        <p className="outcome-note">You accepted these terms and the seller approved them. Payment and pickup are pending and arranged between you directly.</p>
+        <p className="outcome-note">These terms are agreed. Any outstanding steps are listed above.</p>
       </section>
     );
   }

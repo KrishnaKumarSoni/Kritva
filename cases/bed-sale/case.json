@@ -1,5 +1,6 @@
 {
   "caseId": "bed-sale",
+  "strategyGuidance": "strategy-guidance.json",
   "description": "Selling a used bed. The principal is the seller.",
   "parties": [
     {
@@ -177,6 +178,7 @@
     "location": "Koramangala, Bangalore",
     "mandateFile": "bed-sale/demo",
     "libraryId": "man_bed-sale-listing",
-    "libraryTitle": "King-size bed sale (listing)"
+    "libraryTitle": "King-size bed sale (listing)",
+    "subjectFactId": "fact_f_item"
   }
 }

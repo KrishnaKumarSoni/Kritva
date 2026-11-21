@@ -14,8 +14,10 @@ export interface VoiceCallbacks {
   /** A completed utterance, ready to send. `endedAt` is when the buyer stopped speaking. */
   onUtterance: (wav: Blob, endedAt: number) => void;
   /** The buyer talked over a reply: what was heard before it stopped. */
-  onInterrupted: (messageId: string, heardText: string) => void;
+  onInterrupted: (messageId: string, heardText: string, audioStartMs: number | null) => void;
   onPlayed: (messageId: string, audioStartMs: number | null) => void;
+  onPlaybackFailed: (messageId: string) => void;
+  onDisconnected: () => void;
   onError: (message: string) => void;
 }
 
@@ -39,7 +41,7 @@ export class VoiceSession {
   #capture: Float32Array[] | null = null;
   #rate = 48_000;
   #audio: HTMLAudioElement | null = null;
-  #playing: { messageId: string; text: string; speechEndedAt: number | null } | null = null;
+  #playing: { messageId: string; text: string; audioStartMs: number | null; finish: () => void } | null = null;
   #lastUtteranceEnd: number | null = null;
   #busy = false;
 
@@ -61,25 +63,36 @@ export class VoiceSession {
     if (this.#state !== "idle" && this.#state !== "ended" && this.#state !== "error") return false;
     this.#set("connecting");
     try {
-      this.#stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+      if (!this.#isConnecting()) {
+        stream.getTracks().forEach((track) => track.stop());
+        return false;
+      }
+      this.#stream = stream;
+      for (const track of stream.getAudioTracks()) track.onended = () => this.#cb.onDisconnected();
+      this.#ctx = new AudioContext();
+      this.#rate = this.#ctx.sampleRate;
+      this.#source = this.#ctx.createMediaStreamSource(stream);
+      this.#processor = this.#ctx.createScriptProcessor(FRAME, 1, 1);
+      this.#processor.onaudioprocess = (e) => this.#frame(e.inputBuffer.getChannelData(0));
+      this.#source.connect(this.#processor);
+      this.#processor.connect(this.#ctx.destination);
+      this.#calibrating = 8;
+      this.#floor = 0;
+      this.#busy = true;
+      this.#ctx.resume().catch(() => this.#cb.onDisconnected());
+      return true;
     } catch (error) {
+      if (!this.#isConnecting()) return false;
+      this.end();
       const denied = error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "SecurityError");
-      this.#cb.onError(denied ? "Microphone access was blocked. Allow it in the browser's address bar, then press Start again, or keep typing." : "No microphone could be opened. Check that one is connected, or keep typing.");
+      this.#cb.onError(!window.isSecureContext ? "Microphone access requires HTTPS or localhost." : denied ? "Microphone access was blocked. Allow it in the browser's address bar, then try again." : "No microphone could be opened. Check that one is connected, then try again.");
       this.#set("error");
       return false;
     }
-    this.#ctx = new AudioContext();
-    this.#rate = this.#ctx.sampleRate;
-    this.#source = this.#ctx.createMediaStreamSource(this.#stream);
-    this.#processor = this.#ctx.createScriptProcessor(FRAME, 1, 1);
-    this.#processor.onaudioprocess = (e) => this.#frame(e.inputBuffer.getChannelData(0));
-    this.#source.connect(this.#processor);
-    this.#processor.connect(this.#ctx.destination);
-    this.#calibrating = 8;
-    this.#floor = 0;
-    this.#set("listening");
-    return true;
   }
+
+  #isConnecting() { return this.#state === "connecting"; }
 
   setMuted(muted: boolean) {
     this.#muted = muted;
@@ -88,14 +101,15 @@ export class VoiceSession {
       this.#capture = null;
       this.#loud = 0;
     }
-    if (this.#state === "listening" || this.#state === "hearing" || this.#state === "muted") this.#set(muted ? "muted" : "listening");
+    this.#preroll = [];
+    if (muted || this.#state === "muted") this.#set(muted ? "muted" : this.#playing ? "speaking" : this.#busy ? "thinking" : "listening");
   }
 
   /** While a request is in flight the buyer's turn is being processed. */
   setBusy(busy: boolean) {
     this.#busy = busy;
     if (busy && !this.#playing) this.#set("thinking");
-    else if (!busy && !this.#playing && this.#state === "thinking") this.#set(this.#muted ? "muted" : "listening");
+    else if (!busy && !this.#playing && (this.#state === "thinking" || this.#isConnecting())) this.#set(this.#muted ? "muted" : "listening");
   }
 
   /** Plays one recorded reply. Resolves when it finishes, is interrupted, or fails. */
@@ -103,36 +117,33 @@ export class VoiceSession {
     return new Promise((resolve) => {
       const audio = new Audio(url);
       this.#audio = audio;
-      this.#playing = { messageId, text, speechEndedAt: this.#lastUtteranceEnd };
+      const speechEndedAt = this.#lastUtteranceEnd;
       this.#lastUtteranceEnd = null;
-      let started: number | null = null;
       const done = () => {
         audio.onended = audio.onerror = audio.onplaying = null;
         if (this.#audio === audio) this.#audio = null;
         if (this.#playing?.messageId === messageId) this.#playing = null;
-        if (this.#state === "speaking") this.#set(this.#muted ? "muted" : this.#busy ? "thinking" : "listening");
+        if (this.#state === "speaking" || this.#state === "thinking") this.#set(this.#muted ? "muted" : this.#busy ? "thinking" : "listening");
         resolve();
       };
+      const playback = { messageId, text, audioStartMs: null as number | null, finish: done };
+      this.#playing = playback;
       audio.onplaying = () => {
-        if (started === null) {
-          started = performance.now();
-          const endedAt = this.#playing?.speechEndedAt ?? null;
-          (audio as HTMLAudioElement & { kritvaStart?: number | null }).kritvaStart = endedAt === null ? null : Math.round(started - endedAt);
-        }
-        this.#set("speaking");
+        if (speechEndedAt !== null) playback.audioStartMs ??= Math.round(performance.now() - speechEndedAt);
+        if (!this.#muted) this.#set("speaking");
       };
       audio.onended = () => {
-        this.#cb.onPlayed(messageId, (audio as HTMLAudioElement & { kritvaStart?: number | null }).kritvaStart ?? null);
+        this.#cb.onPlayed(messageId, playback.audioStartMs);
         done();
       };
-      audio.onerror = () => {
+      const failed = () => {
+        if (this.#audio !== audio) return;
         this.#cb.onError("Kritva's voice couldn't play. The reply is shown in the chat.");
+        this.#cb.onPlaybackFailed(messageId);
         done();
       };
-      audio.play().catch(() => {
-        this.#cb.onError("The browser blocked audio playback. Click anywhere on the page, then try again.");
-        done();
-      });
+      audio.onerror = failed;
+      audio.play().catch(failed);
     });
   }
 
@@ -143,11 +154,11 @@ export class VoiceSession {
     if (!audio || !playing) return;
     const fraction = audio.duration && Number.isFinite(audio.duration) ? Math.min(1, audio.currentTime / audio.duration) : 0;
     audio.pause();
-    audio.onended = audio.onerror = audio.onplaying = null;
-    this.#audio = null;
-    this.#playing = null;
-    this.#cb.onInterrupted(playing.messageId, heardPart(playing.text, fraction));
-    this.#set("interrupted");
+    this.#cb.onInterrupted(playing.messageId, heardPart(playing.text, fraction), playing.audioStartMs);
+    playing.finish();
+    audio.removeAttribute("src");
+    audio.load();
+    this.#set(this.#muted ? "muted" : "interrupted");
   }
 
   /** Stops input and output. What was playing counts as interrupted, never as delivered. */
@@ -155,7 +166,10 @@ export class VoiceSession {
     if (this.#playing) this.interrupt();
     this.#processor?.disconnect();
     this.#source?.disconnect();
-    this.#stream?.getTracks().forEach((t) => t.stop());
+    this.#stream?.getTracks().forEach((t) => {
+      t.onended = null;
+      t.stop();
+    });
     this.#ctx?.close().catch(() => undefined);
     this.#processor = null;
     this.#source = null;
@@ -185,7 +199,7 @@ export class VoiceSession {
       this.#capture.push(frame);
       this.#quiet = loud ? 0 : this.#quiet + 1;
       const seconds = (this.#capture.length * FRAME) / this.#rate;
-      if (this.#quiet * FRAME >= this.#rate * 0.85 || seconds > 25) this.#finish();
+      if (this.#quiet * FRAME >= this.#rate * 0.6 || seconds > 25) this.#finish();
       return;
     }
     this.#preroll.push(frame);
@@ -215,7 +229,7 @@ export class VoiceSession {
       this.#set(this.#muted ? "muted" : "listening");
       return;
     }
-    const endedAt = performance.now();
+    const endedAt = performance.now() - (this.#quiet * FRAME * 1000) / this.#rate;
     this.#lastUtteranceEnd = endedAt;
     this.#cb.onUtterance(encodeWav(frames, this.#rate, TARGET_RATE), endedAt);
   }

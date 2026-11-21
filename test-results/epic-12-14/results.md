@@ -1,5 +1,16 @@
 # Epics 12 to 14 and the humane conversation guide: tests
 
+## Closure verification
+
+- Node 24.19.0. All 292 automated tests passed (239 core, 53 server). Workspace type checks and the production web build passed.
+- All [25 live buyer scenarios](../scenarios/epic-12-14-closure/scenario-results.md) passed, including the seven core regressions and the partner-approval case.
+- The seller API requires a seller key. The regression suite checks that buyer access cannot read private data or approve an offer, that seller approval requires the exact offer and mandate revision, and that reconnecting clears the interrupted indicator without replaying an old offer.
+- A desktop Chromium run on localhost passed end to end with injected microphone audio and live OpenAI transcription, reasoning and speech. A double click opened one session. Mute and unmute toggled the microphone track, and the seller paused and resumed during the call. The buyer interrupted a counteroffer with ₹20,000. Kritva read back the king-size bed, price, Koramangala pickup and no delivery. The seller approved after the buyer confirmed. The agreement survived refresh with payment and pickup pending. The buyer-only window made zero seller API requests, ending voice stopped the track, and a fresh demo session kept the mandate and cleared prior offers.
+- The [live speech pipeline](voice-timing-composed.md) measured 11 turns. Median time to the first audio byte was 5.6 seconds and the slowest turn was 7.5 seconds. The target is 1.5 seconds. Browser capture and playback buffering add time.
+- A physical microphone rehearsal and verification on the deployed HTTPS origin remain open.
+
+## Initial implementation checks
+
 - Run at: 2026-11-21
 - Commands: `npm test` (deterministic; scripted models and a fake speech provider), `npm run typecheck`
 - Full suites: core **239 passed (239)**, server **51 passed (51)**

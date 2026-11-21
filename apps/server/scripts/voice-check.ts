@@ -28,13 +28,14 @@ const speech = createSpeechFromEnv();
 if (!speech) throw new Error("OPENAI_API_KEY is not set.");
 const db = join(mkdtempSync(join(tmpdir(), "kritva-voice-check-")), "db.sqlite");
 const record = new NegotiationRecord(new SqliteRecordBackend(db));
-const engine = new NegotiationEngine({ record, llm: createTurnLlmFromEnv(), locale: "en-IN", guidance: loadGuidance(ROOT), voiceWording: process.env.KRITVA_VOICE_WORDING === "template" ? "template" : "composed" });
 const mappingLlm = createMappingLlmFromEnv();
 const library = new MandateLibrary({ backend: new SqliteLibraryBackend(db), mappingLlm });
 const mandates = loadConfirmedMandates(join(ROOT, "cases"));
 const examples = loadExamples(join(ROOT, "cases"));
 const listings = loadListings(join(ROOT, "cases"), mandates, examples, library);
-const app = createApp({ record, engine, revisions: new MandateRevisions({ record, engine, mappingLlm }), mandates, locale: "en-IN", library, examples, speech, listings, transcriptionPrompt: "A buyer in India talking to a seller's assistant about price, pickup and terms. Amounts are in Indian rupees (₹), for example ₹18,000 or ₹19,500. Never use dollars." });
+const subjectFacts = new Map(listings.flatMap((listing) => listing.subjectFactId ? [[listing.caseId, listing.subjectFactId] as const] : []));
+const engine = new NegotiationEngine({ record, llm: createTurnLlmFromEnv(), locale: "en-IN", guidance: loadGuidance(ROOT, "bed-sale"), subjectFacts });
+const app = createApp({ record, engine, revisions: new MandateRevisions({ record, engine, mappingLlm }), mandates, locale: "en-IN", library, examples, speech, listings });
 
 async function audioOf(text: string): Promise<Uint8Array> {
   const out = await speech!.speak(text);
@@ -124,7 +125,7 @@ const pct = (xs: number[], f: (r: Row) => number) => {
   return s.length ? s[Math.floor(s.length / 2)]! : 0;
 };
 const out = [
-  `# Epic 13 voice timing (${process.env.KRITVA_VOICE_WORDING === "template" ? "template wording" : "composed wording"})`,
+  `# Epic 13 voice timing (model-composed wording)`,
   "",
   `- Run at: ${new Date().toISOString()}`,
   "- Path: synthesized buyer speech → POST /voice/utterances (transcription + the text negotiation core + outgoing checks) → GET /voice/speech (Kritva's audio, streamed). Same routes the browser uses, run in-process; network time to and from a browser is not included.",
@@ -137,6 +138,6 @@ const out = [
   "",
 ];
 mkdirSync(join(ROOT, "test-results/epic-12-14"), { recursive: true });
-writeFileSync(join(ROOT, `test-results/epic-12-14/voice-timing-${process.env.KRITVA_VOICE_WORDING === "template" ? "template" : "composed"}.md`), out.join("\n"));
+writeFileSync(join(ROOT, `test-results/epic-12-14/voice-timing-composed.md`), out.join("\n"));
 console.log(out.slice(0, 6).join("\n"));
 process.exit(0);

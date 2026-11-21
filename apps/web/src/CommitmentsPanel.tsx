@@ -174,7 +174,7 @@ function OutcomeSection({ sessionId, view, finished, onChanged }: { sessionId: s
               </li>
             ))}
           </ul>
-          <p className="ds-note">{view.agreement.approved ? "You approved these exact terms." : "Your mandate let Kritva accept these terms."} Payment and pickup are arranged outside Kritva.</p>
+          <p className="ds-note">{view.agreement.approved ? "You approved these exact terms." : "Your mandate let Kritva accept these terms."}</p>
         </div>
       )}
 

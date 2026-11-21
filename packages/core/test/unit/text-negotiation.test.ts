@@ -38,18 +38,21 @@ const GUIDANCE = parseGuidance({
 
 class ScriptedLlm implements StructuredLlm {
   readonly interpretations: Interp[] = [];
-  readonly composed: Array<string | null> = [];
+  readonly composed: Array<string | { text: string; question: string } | null> = [];
+  readonly seen: StructuredRequest[] = [];
+  readonly reviews: Array<Array<{ type: string; quote: string }>> = [];
   failInterpret = false;
   async generate(request: StructuredRequest): Promise<StructuredResponse> {
+    this.seen.push(request);
     const reply = (json: unknown) => ({ json, rawText: JSON.stringify(json), model: "scripted", latencyMs: 0 });
     if (request.purpose === "interpret_counterparty") {
       if (this.failInterpret) throw new Error("model unavailable");
       return reply({ intent: "other", offer_terms: [], accepts_stated_terms: false, asks_private_info: false, claims_authority: false, offer_kind: "none", offer_conditions: [], ends_negotiation: false, corrects_previous: false, pressure: "none", notes: [], answers: [], new_terms: [], questions: [], ...this.interpretations.shift() });
     }
-    if (request.purpose === "language_check") return reply({ concerns: [] });
+    if (request.purpose === "language_check") return reply({ concerns: this.reviews.shift() ?? [] });
     const text = this.composed.shift() ?? null;
     if (text === null) throw new Error("template wording");
-    return reply({ text });
+    return reply(typeof text === "string" ? { text } : text);
   }
 }
 
@@ -60,7 +63,7 @@ async function setup(mandate: ValidConfirmedMandate) {
   const llm = new ScriptedLlm();
   const engine = new NegotiationEngine({ record, llm, locale: "en-IN", guidance: GUIDANCE });
   const sessionId = started.session.id;
-  const say = async (text: string, interp: Interp, options: { composed?: string | null; deliver?: boolean; messageId?: string } = {}): Promise<TurnResult> => {
+  const say = async (text: string, interp: Interp, options: { composed?: string | { text: string; question: string } | null; deliver?: boolean; messageId?: string } = {}): Promise<TurnResult> => {
     llm.interpretations.push(interp);
     llm.composed.push(options.composed ?? null);
     const result = await engine.handleCounterpartyMessage({ sessionId, text, channel: "text", messageId: options.messageId });
@@ -260,7 +263,7 @@ describe("Humane conversation guide", () => {
   it("the opening greeting states public terms only, is recorded once, and offers nothing", async () => {
     const { engine, sessionId, events } = await setup(listingOnlyDeliveryMandate());
     const g = await engine.greet({ sessionId, channel: "voice" });
-    expect(g.ok && g.reply!.text).toBe("Hi, I'm Kritva, the seller's AI assistant. It's listed at ₹20,000. What would you like to know?");
+    expect(g.ok && g.reply!.text).toMatch(/^Hi, I'm Kritva, the seller's AI assistant\. The starting price is ₹20,000\./);
     const again = await engine.greet({ sessionId, channel: "voice" });
     expect(again.ok && again.reply).toBeNull();
     const all = await events();
@@ -303,3 +306,115 @@ describe("Humane conversation guide", () => {
   });
 });
 
+
+
+describe("Current-turn negotiation regressions", () => {
+  const budgetNote = (quote: string, condition: string | null, amount: number) => ({
+    kind: "budget", quote, summary: "Stated budget.", term_id: "term_price",
+    value: v("money", { amount }), condition, basis: "stated",
+  });
+
+  it("passes the same saved message to interpretation, composition and review", async () => {
+    const { say, llm } = await setup(listingOnlyDeliveryMandate());
+    const earlier = "Is it still available?";
+    await say(earlier, { intent: "question", questions: [earlier] }, { composed: "Hi, I'm Kritva, the seller's AI assistant. It's a king-size bed." });
+    const current = "TBH, I want it, but it seems too expensive.";
+    const question = "Is it your budget or what you'd get for the price that's holding you back?";
+    const reply = await say(current, { intent: "reject" }, { composed: { text: "I hear you on the price.", question } });
+    expect(reply.reply?.text).toBe("I hear you on the price. " + question);
+    const input = (purpose: string) => JSON.parse(llm.seen.findLast((request) => request.purpose === purpose)!.messages[0]!.content);
+    expect(input("interpret_counterparty").counterparty_message).toBe(current);
+    expect(input("compose_reply").their_message).toBe(current);
+    expect(input("language_check").their_message).toBe(current);
+    expect(input("language_check").public_amounts).toEqual(["₹20,000"]);
+    expect(reply.events.find((event) => event.type === "question_asked")?.payload).toMatchObject({ text: question });
+  });
+
+  it.each([true, false])("addresses the current price turn with composition=%s", async (compose) => {
+    const { say, events } = await setup(listingOnlyDeliveryMandate());
+    const opening = await say("Is it still available?", { intent: "question", questions: ["Is it still available?"] });
+    expect(opening.reply?.text).toContain("still open for discussion");
+    const objection = await say("I want it, but it's too expensive.", { intent: "reject" }, {
+      composed: compose ? { text: "The price sounds like the sticking point.", question: "Does it exceed your budget, or do the terms need to offer more value?" } : null,
+    });
+    expect(objection.reply?.text).toMatch(/price.*budget/i);
+    expect(objection.reply?.text).not.toMatch(/available|20,000/i);
+    expect(objection.reply?.offerIds).toEqual([]);
+    const result = await say("Do you really think that's a good enough price?", { intent: "question", questions: ["Is that a good enough price?"] }, {
+      composed: compose ? "The asking amount is ₹20,000 for a king-size bed that's one year old. I don't have a market comparison." : null,
+    });
+    expect(result.reply?.text).toMatch(/₹20,000/);
+    expect(result.reply?.text).toMatch(/king-size/);
+    expect(result.reply?.text).toMatch(/one year old/);
+    expect(result.reply?.text).not.toMatch(/that detail confirmed|\?/);
+    expect(result.reply?.offerIds).toEqual([]);
+    expect((await events()).filter((event) => event.type === "question_asked")).toHaveLength(1);
+  });
+
+  it("keeps a bare ceiling out of offer history, including across pause and resume", async () => {
+    const { say, engine, sessionId, events, commitments } = await setup(listingOnlyDeliveryMandate());
+    const text = "My budget is not more than 17500";
+    const wrongRead = offer(17_500, { intent: "question", offer_kind: "enquiry", notes: [budgetNote(text, "including the purchase price", 17_500)] });
+    expect((await engine.setPaused({ sessionId, paused: true })).ok).toBe(true);
+    expect((await say(text, wrongRead)).reply?.text).toMatch(/paused/);
+    expect((await engine.setPaused({ sessionId, paused: false })).ok).toBe(true);
+    const reply = await say(text, wrongRead);
+    expect(reply.reply?.text).toMatch(/budget.*₹17,500/i);
+    expect(reply.reply?.text).not.toMatch(/after|\?/);
+    expect(reply.state.counterpartyAmounts).toEqual([]);
+    expect((await commitments()).currentCounterpartyOffer).toBeNull();
+    const log = await events();
+    expect(log.filter((event) => event.type === "question_prepared" || event.type === "offer_extracted")).toHaveLength(0);
+    for (const event of log.filter((event) => event.type === "counterparty_noted")) {
+      expect((event.payload as PayloadOf<"counterparty_noted">).items[0]).toMatchObject({ kind: "budget", condition: null });
+    }
+  });
+
+  it("asks about a distinct quoted cost once and never subtracts the agreed term from itself", async () => {
+    const { say, engine, sessionId, events } = await setup(listingOnlyDeliveryMandate());
+    const text = "My budget is ₹19,000 including the purchase price and transport.";
+    const interpretation = { notes: [budgetNote(text, "including the purchase price and transport", 19_000)] };
+    const first = await say(text, interpretation);
+    expect(first.reply?.text).toContain("after transport?");
+    expect(first.reply?.text).not.toContain("after the purchase price");
+    await engine.setPaused({ sessionId, paused: true });
+    await engine.setPaused({ sessionId, paused: false });
+    expect((await say(text, interpretation)).reply?.text).not.toMatch(/\?/);
+    expect((await events()).filter((event) => event.type === "question_prepared")).toHaveLength(1);
+  });
+
+  it("answers an enquiry without a price move and preserves a distinct offer made alongside a ceiling", async () => {
+    const { say, events } = await setup(listingOnlyDeliveryMandate());
+    const budget = "My budget is not more than 17500";
+    await say(budget, {});
+    const enquiry = await say("Would you take ₹19,000?", offer(19_000, { notes: [budgetNote(budget, null, 17_500)] }));
+    expect(enquiry.reply?.offerIds).toEqual([]);
+    expect(enquiry.state.counterpartyAmounts).toEqual([]);
+    expect(enquiry.reply?.text).toContain("₹20,000");
+    expect(enquiry.reply?.text).not.toContain("₹17,500");
+    const proposed = await say("My budget is ₹19,000, but I can offer ₹18,500.", offer(18_500));
+    expect(proposed.state.counterpartyAmounts).toEqual([18_500]);
+    expect((await events()).filter((event) => event.type === "offer_extracted").map((event) => event.payload)).toMatchObject([{ kind: "enquiry" }, { kind: "offer", previousOfferId: null }]);
+  });
+
+  it("keeps a checked public asking price when the reviewer flags it as disclosure", async () => {
+    const { say, llm, events } = await setup(listingOnlyDeliveryMandate());
+    const line = "I'd like to stay at ₹20,000.";
+    llm.reviews.push([{ type: "private_disclosure", quote: line }]);
+    const reply = await say("That's more than I had in mind.", { intent: "reject" }, { composed: line });
+    expect(reply.reply?.text).toContain(line);
+    expect((await events()).filter((event) => event.type === "reply_blocked")).toHaveLength(0);
+  });
+
+  it("rejects an obsolete answer and delivers a question about the current objection", async () => {
+    const { say, llm } = await setup(listingOnlyDeliveryMandate());
+    await say("Is it still available?", { intent: "question", questions: ["Is it still available?"] });
+    llm.reviews.push([{ type: "turn_mismatch", quote: "Yes, it's still available." }]);
+    const result = await say("This seems too expensive.", { intent: "reject" }, {
+      composed: "Yes, it's still available. Is the issue your budget or what's included?",
+    });
+    expect(result.reply?.text).toMatch(/concern.*price.*budget/i);
+    expect(result.reply?.text).not.toMatch(/still available/);
+    expect(result.events.some((event) => event.type === "reply_blocked")).toBe(true);
+  });
+});

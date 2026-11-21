@@ -6,8 +6,8 @@
  * passed the outgoing checks, can be turned into audio. Provider credentials stay on the server.
  */
 import type { Hono } from "hono";
-import type { MandateLibrary, NegotiationEngine, NegotiationRecord, SpeechProvider } from "@kritva/core";
-import { formatValue, readMandate } from "@kritva/core";
+import type { ConfirmedMandate, MandateLibrary, NegotiationEngine, NegotiationRecord, PayloadOf, SpeechProvider } from "@kritva/core";
+import { formatValue, newEventId, readMandate } from "@kritva/core";
 import type { ListingConfig } from "./main-helpers.ts";
 
 export interface VoiceDeps {
@@ -24,6 +24,16 @@ export interface VoiceDeps {
 
 const MAX_AUDIO_BYTES = 4 * 1024 * 1024;
 
+function transcriptionContext(mandate: ConfirmedMandate): string {
+  const currencies = new Set(mandate.terms.flatMap((term) => term.disclosure === "public" && term.currency ? [term.currency] : []));
+  const labels = new Intl.DisplayNames(["en"], { type: "currency" });
+  const expected = [...currencies].map((code) => `${labels.of(code)} (${code})`).join(", ");
+  return [
+    "Transcribe the speaker's words and values faithfully. Preserve any corrections and currency they actually say. Do not insert a currency for a bare number.",
+    expected ? `Currencies used in these terms include ${expected}.` : null,
+  ].filter(Boolean).join(" ");
+}
+
 export function registerVoiceRoutes(app: Hono, deps: VoiceDeps): void {
   const { record, engine, speech } = deps;
   const voiceOff = { error: "voice_unavailable", message: "Voice isn't available right now. You can keep typing instead." };
@@ -33,15 +43,25 @@ export function registerVoiceRoutes(app: Hono, deps: VoiceDeps): void {
     if (!speech) return c.json(voiceOff, 503);
     const id = c.req.param("id");
     if (!(await record.getSession(id))) return c.json({ error: "session_not_found" }, 404);
+    const afterSeq = (await record.context(id)).events.at(-1)?.seq ?? 0;
     const greeted = await engine.greet({ sessionId: id, channel: "voice" });
     if (!greeted.ok) return c.json({ error: greeted.code, message: greeted.code === "not_pending" ? "This negotiation isn't active, so there's nothing to say yet." : greeted.message }, 409);
-    return c.json({ reply: greeted.reply ? { messageId: greeted.reply.messageId, text: greeted.reply.text } : null, outcome: await deps.buyerOutcome(id) });
+    const connected = await record.append(id, { id: newEventId(), type: "voice_connection", channel: "voice", payload: { status: "connected" } }, { kind: "system", partyId: null });
+    if (!connected.ok) return c.json({ error: connected.error.code, message: "Voice couldn't connect. You can keep typing." }, 503);
+    return c.json({ afterSeq, reply: greeted.reply ? { messageId: greeted.reply.messageId, text: greeted.reply.text } : null, outcome: await deps.buyerOutcome(id) });
+  });
+
+  app.post("/api/buyer/sessions/:id/voice/interruption", async (c) => {
+    const result = await record.append(c.req.param("id"), { id: newEventId(), type: "voice_connection", channel: "voice", payload: { status: "interrupted" } }, { kind: "system", partyId: null });
+    return result.ok ? c.json({ ok: true }) : c.json({ error: result.error.code }, 409);
   });
 
   /** One completed buyer utterance → transcript → the text negotiation path. */
   app.post("/api/buyer/sessions/:id/voice/utterances", async (c) => {
     if (!speech) return c.json(voiceOff, 503);
     const id = c.req.param("id");
+    const { mandate } = await record.context(id);
+    if (!mandate) return c.json({ error: "session_not_found" }, 404);
     const clientId = c.req.query("clientMessageId") ?? "";
     if (!/^[\w-]{8,100}$/.test(clientId)) return c.json({ error: "invalid_message", message: "Missing message ID." }, 400);
     const mime = c.req.header("content-type") ?? "audio/wav";
@@ -51,7 +71,7 @@ export function registerVoiceRoutes(app: Hono, deps: VoiceDeps): void {
     const started = performance.now();
     let transcript: { text: string; ms: number };
     try {
-      transcript = await speech.transcribe(audio, mime, { prompt: deps.transcriptionPrompt });
+      transcript = await speech.transcribe(audio, mime, { prompt: deps.transcriptionPrompt ?? transcriptionContext(mandate) });
     } catch {
       // Nothing was understood, so nothing is recorded and nothing is said.
       return c.json({ error: "transcription_failed", message: "I couldn't hear that clearly. Nothing was sent. Could you say it again?" }, 503);
@@ -72,12 +92,16 @@ export function registerVoiceRoutes(app: Hono, deps: VoiceDeps): void {
   app.get("/api/buyer/sessions/:id/voice/speech/:messageId", async (c) => {
     if (!speech) return c.json(voiceOff, 503);
     const id = c.req.param("id");
-    const events = await record.read(id, { viewer: "counterparty" });
-    const message = events.find((e) => e.id === c.req.param("messageId") && e.type === "message" && (e.payload as { direction: string }).direction === "outbound");
-    if (!message) return c.json({ error: "not_found" }, 404);
+    const ctx = await record.context(id);
+    const message = ctx.byId.get(c.req.param("messageId"));
+    const payload = message && ctx.payloadOf(message.id, "message");
+    if (message?.channel !== "voice" || payload?.direction !== "outbound") return c.json({ error: "not_found" }, 404);
+    if (payload.offerIds.length > 0 && (ctx.status === "paused" || ctx.events.some((e) => e.seq > message.seq && (e.type === "mandate_revised" || (e.type === "status_changed" && (e.payload as PayloadOf<"status_changed">).to === "paused"))))) {
+      return c.json({ error: "reply_superseded" }, 409);
+    }
     try {
-      const audio = await speech.speak((message.payload as { text: string }).text);
-      return new Response(audio.body, { headers: { "content-type": audio.contentType, "cache-control": "private, max-age=3600" } });
+      const audio = await speech.speak(payload.text);
+      return new Response(audio.body, { headers: { "content-type": audio.contentType, "cache-control": "no-store" } });
     } catch {
       return c.json({ error: "speech_failed", message: "Kritva's voice couldn't play. The reply is shown in the chat." }, 503);
     }
@@ -99,8 +123,9 @@ export function registerVoiceRoutes(app: Hono, deps: VoiceDeps): void {
     if ("error" in r) return c.json(r.error!.body, r.error!.status);
     const view = readMandate(r.active.mandate);
     const terms = view.defaultPackage.map((t) => ({ termId: t.termId, name: view.terms.get(t.termId)?.name ?? t.termId, value: formatValue(t.value, deps.locale) }));
-    const price = view.negotiable ? terms.find((t) => t.termId === view.negotiable!.termId)?.value ?? null : null;
-    return c.json({ caseId: r.listing.caseId, title: r.listing.title, location: r.listing.location, price, terms: terms.filter((t) => t.value !== price), facts: view.publicFacts, sellerRole: view.principalRole });
+    const priceTermId = view.negotiable?.termId;
+    const price = terms.find((t) => t.termId === priceTermId)?.value ?? null;
+    return c.json({ caseId: r.listing.caseId, title: r.listing.title, location: r.listing.location, price, terms: terms.filter((t) => t.termId !== priceTermId), facts: view.publicFacts, sellerRole: view.principalRole });
   });
 
   /**

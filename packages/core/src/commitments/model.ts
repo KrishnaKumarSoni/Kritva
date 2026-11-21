@@ -172,7 +172,8 @@ export function projectCommitments(ctx: SessionContext, options: { negotiableTer
   const accepted = new Set(ctx.events.filter((e) => e.type === "acceptance_recorded").map((e) => (e.payload as PayloadOf<"acceptance_recorded">).offerId));
   const agreedOffer = agreement ? (ctx.events.find((e) => e.type === "agreement_recorded")!.payload as PayloadOf<"agreement_recorded">).offerId : null;
   const lastOf = (party: OfferRecord["party"], filter: (o: OfferRecord) => boolean = () => true) => [...offers].reverse().find((o) => o.party === party && filter(o)) ?? null;
-  const latestCounterparty = lastOf("counterparty");
+  const latestOffer = lastOf("counterparty", (o) => o.kind === "offer");
+  const latestCounterparty = latestOffer ?? lastOf("counterparty");
   const latestDelivered = lastOf("principal", (o) => ctx.isCommunicated(o.offerId));
   const checks = latestChecks(ctx);
 
@@ -184,10 +185,10 @@ export function projectCommitments(ctx: SessionContext, options: { negotiableTer
     const check = checks.get(o.offerId);
     if (o.party === "counterparty") {
       if (corrected.has(o.offerId)) o.status = "corrected";
+      else if (o.kind === "enquiry" || o.kind === "interest") o.status = o.kind;
       else if (o.offerId !== latestCounterparty?.offerId) o.status = "superseded";
       else if (agreement) o.status = withinAgreement(o) ? "agreed" : "superseded";
       else if (ended) o.status = stopped?.by === "counterparty" ? "withdrawn" : "rejected";
-      else if (o.kind === "enquiry" || o.kind === "interest") o.status = o.kind;
       else if (o.conditions.length > 0 || check?.result === "needs_clarification") o.status = "pending_clarification";
       else o.status = "proposed";
       continue;
@@ -226,11 +227,11 @@ export function projectCommitments(ctx: SessionContext, options: { negotiableTer
 
 /**
  * What still has to happen after an agreement: paying the agreed amount, and carrying out each
- * agreed logistics term. Recorded as pending; nothing here marks them done.
+ * agreed non-monetary term. Recorded as pending; nothing here marks them done.
  */
 function obligationsFor(terms: OfferTerm[], options: { negotiableTermId: string | null; termName: (id: string) => string; format: (v: Value) => string }): Obligation[] {
   const out: Obligation[] = [];
-  // Payment first, then each logistics term.
+  // Payment first, then other terms.
   const ordered = [...terms].sort((a, b) => Number(b.value.type === "money") - Number(a.value.type === "money"));
   for (const t of ordered) {
     if (t.value.type === "money") out.push({ description: `Payment of ${options.format(t.value)}`, termId: t.termId, status: "pending" });

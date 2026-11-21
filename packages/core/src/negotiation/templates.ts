@@ -2,7 +2,7 @@
  * Deterministic wording for each planned move. Used when the composed reply is blocked,
  * and as the safe baseline. Built only from the plan and public mandate content.
  */
-import { formatValue, orderTerms, type MandateView } from "./mandate-view.ts";
+import { formatValue, numericValue, orderTerms, type MandateView } from "./mandate-view.ts";
 import type { Plan } from "./policy.ts";
 import type { OfferTerm } from "../record/events.ts";
 
@@ -26,7 +26,7 @@ export function principalLabel(view: MandateView): string {
 
 /** Kritva's one-time introduction, as the principal's AI assistant. */
 export function introduction(view: MandateView): string {
-  return `Hi, I'm Kritva, ${principalLabel(view).replace(/^the /, "the ")}'s AI assistant.`;
+  return `Hi, I'm Kritva, ${principalLabel(view)}'s AI assistant.`;
 }
 
 /**
@@ -49,10 +49,9 @@ function pick(variants: string[], turn: number): string {
 
 /**
  * Checked fallback wording, written to the humane conversation guide: warm, short, specific, one
- * question at a time, no internal terms, no em dashes. Used when a composed reply is blocked, and
- * always for read-backs of complete terms and agreements.
+ * question at a time. Used when composition fails or is blocked.
  */
-export function templateReply(view: MandateView, plan: Plan, locale: string): string {
+export function templateReply(view: MandateView, plan: Plan, locale: string, subject: string | null = null): string {
   const n = view.negotiable;
   const turn = plan.turnIndex ?? 0;
   const principal = principalLabel(view);
@@ -64,8 +63,12 @@ export function templateReply(view: MandateView, plan: Plan, locale: string): st
     const tied = extras.map((x) => `${view.terms.get(x.termId)?.name ?? x.termId} ${formatValue(x.value, locale)}`).join(" and ");
     return tied ? `${formatValue(t.value, locale)} with ${tied}` : formatValue(t.value, locale);
   })();
+  const reference = n && plan.referenceAmount !== undefined ? formatValue(numericValue(n, plan.referenceAmount), locale) : null;
+  const budget = n && plan.statedBudget !== undefined ? formatValue(numericValue(n, plan.statedBudget), locale) : null;
   const parts: string[] = [];
   if (plan.introduce) parts.push(introduction(view));
+  if (plan.opening && n) parts.push(`The starting ${n.name} is ${amountText ?? formatValue(view.defaultPackage.find((term) => term.termId === n.termId)!.value, locale)}.`);
+  if (plan.opening) return clean([...parts, "What would you like to discuss?"].join(" "));
   if (plan.acknowledge) parts.push(plan.acknowledge);
 
   if (plan.notice === "approval_rejected") parts.push(`${cap(principal)} didn't approve those terms.`);
@@ -95,6 +98,23 @@ export function templateReply(view: MandateView, plan: Plan, locale: string): st
   }
 
   switch (plan.move) {
+    case "explore_objection":
+      parts.push(plan.ask ? "I hear your concern about the price." : "I hear your concern. The current terms still stand.");
+      break;
+    case "explain_price":
+      if (reference) parts.push(`The current asking amount is ${reference}.`);
+      for (const fact of plan.explanationFacts ?? []) parts.push(/[.!?]$/.test(fact) ? fact : `${fact}.`);
+      parts.push("I don't have a market comparison to say how that amount compares.");
+      break;
+    case "acknowledge_budget":
+      if (budget) parts.push(`I hear your budget is capped at ${budget}.`);
+      if (reference) parts.push(`The current asking amount is ${reference}.`);
+      break;
+    case "answer_enquiry":
+      if (n && plan.enquiredAmount !== undefined) parts.push(`You asked about ${formatValue(numericValue(n, plan.enquiredAmount), locale)}.`);
+      if (reference) parts.push(`The current asking amount is ${reference}.`);
+      if (!reference) parts.push("If you'd like to make an offer, I can consider it.");
+      break;
     case "counter":
       parts.push(amountText ? pick([`I could do ${amountText}.`, `How about ${amountText}?`, `I can offer ${amountText}.`], turn) : "Here's what I can offer.");
       break;
@@ -102,7 +122,7 @@ export function templateReply(view: MandateView, plan: Plan, locale: string): st
       parts.push(amountText ? pick([`I'd like to stay at ${amountText}.`, `I'm staying at ${amountText} for now.`, `I'll stay at ${amountText} for now.`], turn) : "I'd like to keep the terms as they are.");
       break;
     case "state_final_terms":
-      parts.push(`Just to confirm the full terms: ${speakTerms(view, plan.offer!.terms, locale)}. Is that what you're agreeing to?`);
+      parts.push(`Just to confirm the full terms${subject ? ` for the ${subject.toLowerCase()}` : ""}: ${speakTerms(view, plan.offer!.terms, locale)}. Is that what you're agreeing to?`);
       break;
     case "request_approval":
       parts.push(pick([`Thanks. That needs ${principal}'s approval, so I can't confirm it for them yet. I'll let you know as soon as they decide.`, `Thanks for confirming. I'll take this to ${principal} for approval and let you know as soon as they decide.`], turn));
@@ -111,7 +131,7 @@ export function templateReply(view: MandateView, plan: Plan, locale: string): st
       if (plan.notice !== "check_with_principal") parts.push(`I'm still waiting to hear from ${principal}.`);
       break;
     case "confirm_agreement":
-      parts.push(`Good news: that's approved. We're agreed on ${speakTerms(view, plan.offer!.terms, locale)}. Payment and pickup are still to be arranged.`);
+      parts.push(`${plan.approvalGranted ? "That's approved. " : ""}We're agreed on ${speakTerms(view, plan.offer!.terms, locale)}${subject ? ` for ${subject}` : ""}.`);
       break;
     case "closed":
       parts.push("Those terms are already agreed.");
@@ -123,7 +143,7 @@ export function templateReply(view: MandateView, plan: Plan, locale: string): st
     parts.push("I don't have that detail confirmed, so I don't want to guess.");
   }
   if (plan.ask) parts.push(plan.ask.text);
-  if (parts.length === 0 || (parts.length === 1 && plan.introduce)) parts.push(amountText ? `It's listed at ${amountText}. What would you like to know?` : "What would you like to know?");
+  if (parts.length === 0 || (parts.length === 1 && plan.introduce)) parts.push("What would you like to know?");
   return clean(parts.join(" "));
 }
 

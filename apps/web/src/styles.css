@@ -215,6 +215,17 @@ input {
   flex: none;
 }
 
+.seller-key {
+  width: min(42vw, 14rem);
+  min-height: 38px;
+  padding: 0 var(--space-3);
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
 .layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -255,6 +266,16 @@ input {
   .brand-context {
     display: none;
   }
+}
+
+.layout[hidden] {
+  display: none;
+}
+
+.layout-buyer {
+  max-width: 760px;
+  grid-template-columns: minmax(0, 1fr);
+  height: auto;
 }
 
 .panel {

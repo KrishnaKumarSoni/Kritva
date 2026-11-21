@@ -226,7 +226,7 @@ async function kritvaDriver(options: ComparisonOptions, entry: MandateEntry, llm
         const decision = sellerDecision(options.judge, spec, price, named);
         record.interventions.push({ index: record.transcript.length, decision, price, terms: named.map((t) => `${t.name}: ${t.value}`).join("; ") });
         record.transcript.push({ index: record.transcript.length, from: "seller_decision", text: `Seller ${decision} ${named.map((t) => `${t.name}: ${t.value}`).join("; ")}`, ref: `approval:${state.pendingApproval.requestId}` });
-        const answered = await call("POST", `/api/operator/sessions/${sessionId}/approvals/${state.pendingApproval.requestId}`, { decision });
+        const answered = await call("POST", `/api/operator/sessions/${sessionId}/approvals/${state.pendingApproval.requestId}`, { decision, offerId: state.pendingApproval.offerId, mandateRevision: state.mandateRevision });
         if (answered.json.reply) {
           pushSeller(answered.json.reply.text, answered.json.reply.messageId);
           await deliver(answered.json.reply.messageId);

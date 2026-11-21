@@ -25,6 +25,7 @@ export interface NoAgreementSummary {
 
 export interface BuyerOutcome {
   kind: OutcomeKind;
+  subject: string | null;
   terms: TermView[] | null;
   /** What still has to happen after an agreement. Pending, never fulfilled here. */
   obligations: string[];
@@ -34,6 +35,7 @@ export interface BuyerOutcome {
 export interface BuyerView {
   listing: { terms: TermView[]; facts: string[] };
   messages: BuyerMessage[];
+  paused: boolean;
   outcome: BuyerOutcome;
 }
 
@@ -90,6 +92,7 @@ export interface RecordEvent {
 
 export interface OperatorState {
   status: string;
+  subject: string | null;
   mandateRevision: number;
   outcome: { kind: OutcomeKind; terms: TermView[] | null };
   pendingApproval: { requestId: string; offerId: string; mandateRevision: number; purpose: "acceptance" | "exception"; requestedAction: string; breachedRules: string[]; terms: TermView[] | null } | null;
@@ -256,12 +259,20 @@ export class ApiError extends Error {
   }
 }
 
+const sellerKeyStorage = "kritva.seller-key";
+
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response;
+  const headers = new Headers();
+  if (body !== undefined) headers.set("content-type", "application/json");
+  if (path.startsWith("/api/operator/")) {
+    const key = sessionStorage.getItem(sellerKeyStorage);
+    if (key) headers.set("authorization", `Bearer ${key}`);
+  }
   try {
     res = await fetch(path, {
       method,
-      headers: body === undefined ? undefined : { "content-type": "application/json" },
+      headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
@@ -273,6 +284,8 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 }
 
 export const api = {
+  hasSellerKey: () => Boolean(sessionStorage.getItem(sellerKeyStorage)),
+  rememberSellerKey: (key: string) => sessionStorage.setItem(sellerKeyStorage, key),
   listSessions: () => call<SessionRow[]>("GET", "/api/operator/sessions"),
   listMandates: () => call<MandateOption[]>("GET", "/api/operator/mandates"),
   startSession: (mandateId: string, previousSessionId: string | null) =>
@@ -287,9 +300,15 @@ export const api = {
       clientMessageId,
     }),
   reportDelivered: (id: string, messageId: string) => call<unknown>("POST", `/api/buyer/sessions/${id}/deliveries`, { messageId }),
-  reportVoiceDelivery: (id: string, messageId: string, status: "delivered" | "interrupted", deliveredText: string | null, audioStartMs: number | null) =>
-    call<unknown>("POST", `/api/buyer/sessions/${id}/deliveries`, { messageId, channel: "voice", status, deliveredText, audioStartMs }),
-  voiceStart: (id: string) => call<{ reply: { messageId: string; text: string } | null }>("POST", `/api/buyer/sessions/${id}/voice/start`),
+  reportVoiceDelivery: async (id: string, messageId: string, status: "delivered" | "interrupted" | "failed", deliveredText: string | null, audioStartMs: number | null) => {
+    const res = await fetch(`/api/buyer/sessions/${id}/deliveries`, {
+      method: "POST", keepalive: true, headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messageId, channel: "voice", status, deliveredText, audioStartMs }),
+    });
+    if (!res.ok) throw new ApiError(res.status, "The reply's delivery couldn't be saved.");
+  },
+  voiceStart: (id: string) => call<{ afterSeq: number; reply: { messageId: string; text: string } | null }>("POST", `/api/buyer/sessions/${id}/voice/start`),
+  voiceInterrupted: (id: string) => fetch(`/api/buyer/sessions/${id}/voice/interruption`, { method: "POST", keepalive: true }),
   voiceUtterance: async (id: string, clientMessageId: string, wav: Blob) => {
     let res: Response;
     try {

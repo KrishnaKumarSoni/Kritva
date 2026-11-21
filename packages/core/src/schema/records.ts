@@ -91,7 +91,7 @@ const recordBase = {
   sourceRefs: z.array(SourceRef).max(20),
 };
 
-/** A negotiable dimension of the deal: price, pickup location, revision rounds, anything. */
+/** A negotiable dimension of the deal: such as a fee, timing or quantity. */
 export const Term = z.strictObject({
   ...recordBase,
   name: NonEmptyText.max(120),
@@ -131,7 +131,7 @@ export const Fact = z.strictObject({
 });
 export type Fact = z.infer<typeof Fact>;
 
-/** A value a party puts forward for a term, such as an asking price or "delivery excluded". */
+/** A value a party puts forward for a term, such as an asking price or an excluded feature. */
 export const Position = z.strictObject({
   ...recordBase,
   partyId: Id,

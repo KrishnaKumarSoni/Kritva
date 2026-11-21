@@ -22,12 +22,19 @@ const CASES = resolve(import.meta.dirname, "../../../cases");
 
 class ScriptedLlm implements StructuredLlm {
   readonly interpretations: Array<Record<string, unknown>> = [];
+  readonly compositions: string[] = [];
+  readonly reviewedReplies: string[] = [];
   async generate(request: StructuredRequest): Promise<StructuredResponse> {
     const reply = (json: unknown) => ({ json, rawText: JSON.stringify(json), model: "scripted", latencyMs: 0 });
-    if (request.purpose === "language_check") return reply({ concerns: [] });
+    if (request.purpose === "language_check") {
+      this.reviewedReplies.push(JSON.parse(request.messages[0]!.content).reply);
+      return reply({ concerns: [] });
+    }
     if (request.purpose === "interpret_counterparty") {
       return reply({ intent: "other", offer_terms: [], accepts_stated_terms: false, asks_private_info: false, claims_authority: false, offer_kind: "none", offer_conditions: [], ends_negotiation: false, corrects_previous: false, pressure: "none", notes: [], answers: [], new_terms: [], questions: [], ...this.interpretations.shift() });
     }
+    const text = request.purpose === "compose_reply" ? this.compositions.shift() : undefined;
+    if (text !== undefined) return reply({ text });
     throw new Error("template wording");
   }
 }
@@ -35,8 +42,10 @@ class ScriptedLlm implements StructuredLlm {
 /** Transcribes from a queue; "speaks" by returning the text as bytes so the test can see what was voiced. */
 class FakeSpeech implements SpeechProvider {
   readonly transcripts: Array<string | Error> = [];
+  readonly transcriptionPrompts: Array<string | undefined> = [];
   readonly spoken: string[] = [];
-  async transcribe() {
+  async transcribe(_audio: Uint8Array, _mime: string, options?: { prompt?: string }) {
+    this.transcriptionPrompts.push(options?.prompt);
     const next = this.transcripts.shift() ?? "";
     if (next instanceof Error) throw next;
     return { text: next, ms: 5, model: "fake" };
@@ -47,19 +56,19 @@ class FakeSpeech implements SpeechProvider {
   }
 }
 
-function setup(options: { library?: boolean } = {}) {
+function setup(options: { library?: boolean; operatorKey?: string } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "kritva-voice-"));
   const db = join(dir, "db.sqlite");
   const record = new NegotiationRecord(new SqliteRecordBackend(db));
   const llm = new ScriptedLlm();
-  const engine = new NegotiationEngine({ record, llm, locale: "en-IN" });
+  const engine = new NegotiationEngine({ record, llm, locale: "en-IN", subjectFacts: new Map([["bed-sale", "fact_f_item"]]) });
   const revisions = new MandateRevisions({ record, engine, mappingLlm: llm });
   const mandates = loadConfirmedMandates(CASES);
   const examples = loadExamples(CASES);
   const library = options.library === false ? null : new MandateLibrary({ backend: new SqliteLibraryBackend(db), mappingLlm: llm });
   const listings = loadListings(CASES, mandates, examples, library);
   const speech = new FakeSpeech();
-  const app = createApp({ record, engine, revisions, mandates, locale: "en-IN", library: library ?? undefined, examples, speech, listings });
+  const app = createApp({ record, engine, revisions, mandates, locale: "en-IN", library: library ?? undefined, examples, speech, listings, operatorKey: options.operatorKey });
   const call = async (method: string, path: string, body?: unknown, headers: Record<string, string> = { "content-type": "application/json" }) => {
     const res = await app.request(path, { method, headers, body: body === undefined ? undefined : body instanceof Uint8Array ? body : JSON.stringify(body) });
     const text = await res.text();
@@ -131,6 +140,42 @@ describe("Epic 14: the demo listing and Call seller", () => {
 });
 
 describe("Epic 13: voice uses the text core and the shared record", () => {
+  it("composes spoken greetings and read-backs while code supplies the exact terms", async () => {
+    const { callSeller, call, llm, speech, speak, hear, offer } = setup();
+    const id = (await callSeller("call-model-wording")).json.sessionId;
+    llm.compositions.push("Hello, I'm Kritva, the seller's AI assistant. What would you like to discuss?");
+    const greeting = await call("POST", `/api/buyer/sessions/${id}/voice/start`);
+    expect(greeting.json.reply.text).toMatch(/^Hello,/);
+    llm.compositions.push("Here is the full package. [[TERMS]] Do you confirm all of those terms?");
+    const turn = await speak(id, "I can pay nineteen thousand five hundred.", offer(19_500));
+    expect(turn.json.reply.text).toBe("Here is the full package. King-size bed, ₹19,500, pickup location Koramangala, Bangalore, and no delivery included. Do you confirm all of those terms?");
+    expect(llm.reviewedReplies.at(-1)).toBe("Here is the full package. [[TERMS]]. Do you confirm all of those terms?");
+    await hear(id, turn.json.reply.messageId);
+    expect(speech.spoken).toContain(turn.json.reply.text);
+    expect(speech.transcriptionPrompts.at(-1)).toContain("INR");
+    expect(speech.transcriptionPrompts.at(-1)).not.toMatch(/bed|pickup|19,500/i);
+    await speak(id, "Yes, I confirm all of those terms.", { intent: "accept_stated_terms", accepts_stated_terms: true });
+    const op = (await call("GET", `/api/operator/sessions/${id}`)).json;
+    const pending = op.state.pendingApproval;
+    llm.compositions.push("The seller approved the terms. We're agreed on [[TERMS]].");
+    const approved = await call("POST", `/api/operator/sessions/${id}/approvals/${pending.requestId}`, { decision: "approved", offerId: pending.offerId, mandateRevision: pending.mandateRevision });
+    expect(approved.json.reply.text).toMatch(/^The seller approved the terms\. We're agreed on King-size bed, ₹19,500/);
+    await hear(id, approved.json.reply.messageId);
+    expect(speech.spoken).toContain(approved.json.reply.text);
+  });
+
+  it("replaces a composed read-back that omits the exact terms slot with a checked fallback", async () => {
+    const { callSeller, call, llm, speak, offer } = setup();
+    const id = (await callSeller("call-model-missing-terms")).json.sessionId;
+    llm.compositions.push("We're agreed at ₹19,500.");
+    const turn = await speak(id, "I can pay nineteen thousand five hundred.", offer(19_500));
+    expect(turn.json.reply.text).toContain("Is that what you're agreeing to?");
+    expect(turn.json.reply.text).toContain("Koramangala, Bangalore");
+    expect(turn.json.outcome.kind).toBe("in_progress");
+    const op = (await call("GET", `/api/operator/sessions/${id}`)).json;
+    expect(op.events.find((e: any) => e.type === "reply_blocked")?.payload.draftText).toBe("We're agreed at ₹19,500.");
+  });
+
   it("the call opens with one introduction as the seller's AI assistant", async () => {
     const { callSeller, call, speech } = setup();
     const id = (await callSeller("call-greet-1")).json.sessionId;
@@ -202,7 +247,7 @@ describe("Epic 13, Story 3: interruptions and spoken agreements", () => {
     const t1 = await speak(id, "19,000", offer(19_000));
     await hear(id, t1.json.reply.messageId);
     const t2 = await speak(id, "19,000 is fine", offer(19_000));
-    expect(t2.json.reply.text).toContain("Just to confirm the full terms");
+    expect(t2.json.reply.text).toContain("Just to confirm the full terms for the king-size bed");
     await hear(id, t2.json.reply.messageId, "interrupted", "Just to confirm the full terms: ₹19,000");
     const op1 = await call("GET", `/api/operator/sessions/${id}`);
     expect(op1.json.state.voiceInterrupted).toBe(true);
@@ -227,9 +272,42 @@ describe("Epic 13, Story 3: interruptions and spoken agreements", () => {
     expect(after.commitments.outcome).toBe("agreement");
     expect(after.commitments.agreement.obligations).toEqual(expect.arrayContaining(["Payment of ₹19,500"]));
   });
+
+  it("a dropped call records an interruption without changing the outcome, and a restart does not resend an old offer", async () => {
+    const { callSeller, speak, call, offer } = setup();
+    const id = (await callSeller("call-drop-1")).json.sessionId;
+    const voicePath = `/api/buyer/sessions/${id}/voice`;
+    const greeting = await call("POST", `${voicePath}/start`);
+    expect(greeting.json.reply).not.toBeNull();
+    const first = await speak(id, "19,500", offer(19_500));
+    await call("POST", `${voicePath}/interruption`);
+    const consoleView = (await call("GET", `/api/operator/sessions/${id}`)).json;
+    expect(consoleView.state.voiceInterrupted).toBe(true);
+    expect(consoleView.commitments.outcome).toBe("negotiating");
+    const restarted = await call("POST", `${voicePath}/start`);
+    expect(restarted.json.reply).toBeNull();
+    const savedReply = consoleView.events.find((e: any) => e.id === first.json.reply.messageId);
+    expect(restarted.json.afterSeq).toBeGreaterThan(savedReply.seq);
+  });
 });
 
 describe("Epic 12: seller console controls", () => {
+  it("buyer access cannot open private seller data or act on an approval", async () => {
+    const { callSeller, call, speak, hear, offer } = setup({ operatorKey: "test-seller-key" });
+    const id = (await callSeller("call-seller-access")).json.sessionId;
+    const path = `/api/operator/sessions/${id}`;
+    const expected = { "content-type": "application/json", authorization: "Bearer test-seller-key" };
+    const readback = await speak(id, "19,500", offer(19_500));
+    await hear(id, readback.json.reply.messageId);
+    await speak(id, "Yes, confirmed.", { intent: "accept_stated_terms", accepts_stated_terms: true });
+    expect((await call("GET", path)).status).toBe(401);
+    expect((await call("GET", "/api/operator/library")).status).toBe(401);
+    const { requestId, offerId, mandateRevision } = (await call("GET", path, undefined, expected)).json.state.pendingApproval;
+    expect((await call("POST", `${path}/approvals/${requestId}`, { decision: "approved", offerId, mandateRevision })).status).toBe(401);
+    expect((await call("POST", `${path}/approvals/${requestId}`, { decision: "approved" }, expected)).status).toBe(400);
+    expect((await call("POST", `${path}/approvals/${requestId}`, { decision: "approved", offerId, mandateRevision }, expected)).status).toBe(200);
+  });
+
   it("an approval sent for a different offer version or mandate revision is refused; a repeat creates no second permission", async () => {
     const { callSeller, speak, hear, call, offer } = setup();
     const id = (await callSeller("call-approve-1")).json.sessionId;
@@ -260,8 +338,9 @@ describe("Epic 12: seller console controls", () => {
   it("pause during a voice call stops negotiation replies; the seller can still act", async () => {
     const { callSeller, speak, call, offer } = setup();
     const id = (await callSeller("call-pause-1")).json.sessionId;
-    await speak(id, "17,000", offer(17_000));
+    const first = await speak(id, "17,000", offer(17_000));
     expect((await call("POST", `/api/operator/sessions/${id}/pause`, { paused: true })).status).toBe(200);
+    expect((await call("GET", `/api/buyer/sessions/${id}/voice/speech/${first.json.reply.messageId}`)).status).toBe(409);
     const r = await speak(id, "18,000?", offer(18_000));
     expect(r.json.reply.text).toContain("paused");
     const op = (await call("GET", `/api/operator/sessions/${id}`)).json;

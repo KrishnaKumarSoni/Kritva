@@ -27,18 +27,28 @@ export function loadConfirmedMandates(casesDir: string): MandateEntry[] {
 }
 
 /**
- * Strategy guidance (tactic parameters as data). KRITVA_GUIDANCE names the file; "none" uses the
- * built-in minimal guidance. An invalid file is refused loudly rather than half-applied.
+ * Each case opts into its own strategy guidance. KRITVA_GUIDANCE=none uses the built-in defaults.
  */
-export function loadGuidance(root: string): StrategyGuidance {
-  const setting = process.env.KRITVA_GUIDANCE ?? "cases/bed-sale/strategy-guidance.json";
-  if (setting === "none") return MINIMAL_GUIDANCE;
-  const path = join(root, setting);
-  if (!existsSync(path)) {
-    console.warn(`Strategy guidance ${setting} not found; using the built-in minimal guidance.`);
-    return MINIMAL_GUIDANCE;
+export function loadCaseGuidance(root: string): Map<string, StrategyGuidance> {
+  const guidance = new Map<string, StrategyGuidance>();
+  if (process.env.KRITVA_GUIDANCE === "none") return guidance;
+  const casesDir = join(root, "cases");
+  for (const dir of readdirSync(casesDir, { withFileTypes: true })) {
+    if (!dir.isDirectory()) continue;
+    const config = JSON.parse(readFileSync(join(casesDir, dir.name, "case.json"), "utf8")) as { strategyGuidance?: string };
+    if (!config.strategyGuidance) continue;
+    const path = join(casesDir, dir.name, config.strategyGuidance);
+    if (!existsSync(path)) {
+      console.warn(`Strategy guidance ${path} not found; using the built-in minimal guidance for ${dir.name}.`);
+      continue;
+    }
+    guidance.set(dir.name, parseGuidance(JSON.parse(readFileSync(path, "utf8"))));
   }
-  return parseGuidance(JSON.parse(readFileSync(path, "utf8")));
+  return guidance;
+}
+
+export function loadGuidance(root: string, caseId: string): StrategyGuidance {
+  return loadCaseGuidance(root).get(caseId) ?? MINIMAL_GUIDANCE;
 }
 
 export interface CaseExample {
@@ -71,6 +81,8 @@ export interface ListingConfig {
   caseId: string;
   title: string;
   location: string;
+  /** The public confirmed fact that names the item in a final-terms read-back. */
+  subjectFactId?: string;
   /** The saved, confirmed library mandate the listing's calls use. */
   libraryId: string;
 }
@@ -84,7 +96,7 @@ export function loadListings(casesDir: string, mandates: MandateEntry[], example
   const out: ListingConfig[] = [];
   for (const dir of readdirSync(casesDir, { withFileTypes: true })) {
     if (!dir.isDirectory()) continue;
-    const caseFile = JSON.parse(readFileSync(join(casesDir, dir.name, "case.json"), "utf8")) as { listing?: { title: string; location: string; mandateFile: string; libraryId: string; libraryTitle: string } };
+    const caseFile = JSON.parse(readFileSync(join(casesDir, dir.name, "case.json"), "utf8")) as { listing?: Omit<ListingConfig, "caseId"> & { mandateFile: string; libraryTitle: string } };
     const l = caseFile.listing;
     if (!l) continue;
     const entry = mandates.find((m) => m.id === l.mandateFile);
@@ -92,7 +104,7 @@ export function loadListings(casesDir: string, mandates: MandateEntry[], example
     if (library && entry && example) {
       library.importConfirmed({ mandateId: l.libraryId, title: l.libraryTitle, mandate: entry.mandate, input: { title: l.libraryTitle, principalRole: example.principalRole, counterpartyRole: example.counterpartyRole, publicText: example.publicText, privateText: example.privateText } });
     }
-    out.push({ caseId: dir.name, title: l.title, location: l.location, libraryId: l.libraryId });
+    out.push({ caseId: dir.name, title: l.title, location: l.location, libraryId: l.libraryId, subjectFactId: l.subjectFactId });
   }
   return out;
 }

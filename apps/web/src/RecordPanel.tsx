@@ -105,7 +105,7 @@ export function RecordPanel({ view, responding, onRespond, onPause, onChanged, o
 
       {state && (
         <dl className="summary">
-          <Stat label="Status" value={`${STATUS_LABEL[state.status] ?? state.status}${state.voiceInterrupted ? " · voice reply cut off" : ""}`} />
+          <Stat label="Status" value={`${STATUS_LABEL[state.status] ?? state.status}${state.voiceInterrupted ? " · voice interrupted" : ""}`} />
           <Stat label="Current ask" value={n?.currentAsk ?? "Not set"} />
           <Stat label="Asking price" value={n?.opening ?? "Not set"} />
           <Stat label={n?.limitKind === "maximum" ? "Maximum" : "Minimum"} value={n?.limit ?? "Not set"} isPrivate />
@@ -312,6 +312,7 @@ function OutcomeStrip({ view }: { view: OperatorView }) {
           <h3 id="console-outcome-title">Agreement reached</h3>
         </div>
         <ul className="offer-terms">
+          {view.state.subject && <li>{view.state.subject}</li>}
           {c.agreement.terms.map((t) => (
             <li key={t}>{t}</li>
           ))}
@@ -327,7 +328,7 @@ function OutcomeStrip({ view }: { view: OperatorView }) {
             ))}
           </ul>
         </div>
-        <p className="outcome-note">{c.agreement.approved ? "You approved these exact terms." : "Your mandate let Kritva accept these terms."} Payment and pickup stay pending until they actually happen.</p>
+        <p className="outcome-note">{c.agreement.approved ? "You approved these exact terms." : "Your mandate let Kritva accept these terms."}</p>
       </section>
     );
   }

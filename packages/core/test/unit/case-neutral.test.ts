@@ -18,6 +18,7 @@ const CASE_CONTENT = [
   /\bbed\b/i, /\bking[- ]?size\b/i, /\bmattress/i, /koramangala/i, /bangalore|bengaluru/i, /\bolx\b/i,
   /\blogo\b/i, /\bsvg\b/i, /\bkickoff\b/i, /\bseller\b/i, /\bbuyer\b/i,
   /20,?000/, /18,?000/, /23,?000/, /5,?000/, /₹/, /\bINR\b/, /\brupee/i, /\bsaturday\b/i,
+  /\bpickup\b/i, /\btruck\b/i,
 ];
 
 describe("Story 3: no case content in core code or shared prompts", () => {
