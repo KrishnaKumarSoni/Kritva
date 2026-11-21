@@ -194,8 +194,19 @@ describe("Epic 9, Story 1: buyer messages go through the core", () => {
   it("a question about a mattress, with no mattress fact, gets no invented answer", async () => {
     const { say } = await setup(listingOnlyDeliveryMandate());
     const t = await say("Is a mattress included?", { intent: "question", questions: ["Is a mattress included?"] });
-    expect(t.reply!.text).toContain("I don't have that detail confirmed");
+    expect(t.reply!.text).toMatch(/don't have anything beyond that confirmed/);
     expect(t.reply!.text).not.toMatch(/mattress (is|comes) included|includes a mattress/i);
+  });
+
+  it('"What are you selling?" is answered from the listing facts even when the reviewer wrongly blocks the composed answer', async () => {
+    const { say, llm } = await setup(listingOnlyDeliveryMandate());
+    await say("Hi", { intent: "greeting" });
+    const draft = "It's a king-size bed, one year old and in good condition.";
+    llm.reviews.push([{ type: "turn_mismatch", quote: draft }]);
+    const t = await say("What are you selling?", { intent: "question", questions: ["What are you selling?"] }, { composed: draft });
+    expect(t.reply!.text).toMatch(/king-size/i);
+    expect(t.reply!.text).toMatch(/one year old/);
+    expect(t.reply!.text).not.toMatch(/^I don't have that detail confirmed/);
   });
 
   it('a correction from ₹18,000 to ₹19,000 is recorded; the earlier amount is not the current offer', async () => {

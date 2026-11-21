@@ -162,7 +162,14 @@ export function templateReply(view: MandateView, plan: Plan, locale: string, sub
       break;
   }
   if (plan.questions.length > 0 && plan.move !== "closed") {
-    parts.push("I don't have that detail confirmed, so I don't want to guess.");
+    // Say what is confirmed, then be plain that nothing beyond it is: never a bare "I don't know".
+    const facts = view.publicFacts.slice(0, 3);
+    if (facts.length > 0) {
+      for (const fact of facts) parts.push(/[.!?]$/.test(fact) ? fact : `${fact}.`);
+      parts.push(`I don't have anything beyond that confirmed, so I can check with ${principal}.`);
+    } else {
+      parts.push(`I don't have that detail confirmed, so I can check with ${principal}.`);
+    }
   }
   if (clarifying) parts.push(clarifying);
   if (plan.ask) parts.push(plan.ask.text);
