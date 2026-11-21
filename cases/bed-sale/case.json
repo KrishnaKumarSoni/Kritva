@@ -181,6 +181,12 @@
     "libraryTitle": "King-size bed sale (listing)",
     "subjectFactId": "fact_f_item",
     "publicPrincipalName": "Krishna",
-    "available": true
+    "available": true,
+    "fulfillment": {
+      "responsibilityTermId": "term_t_delivery_included",
+      "counterpartyLocationTermId": "term_t_pickup_location",
+      "principalActions": ["deliver", "drop off", "drop it off"],
+      "counterpartyActions": ["collect", "pick up", "pick it up"]
+    }
   }
 }

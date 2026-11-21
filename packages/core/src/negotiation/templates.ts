@@ -115,7 +115,15 @@ export function templateReply(view: MandateView, plan: Plan, locale: string, sub
     case "answer_enquiry":
       if (n && plan.enquiredAmount !== undefined) parts.push(`You asked about ${formatValue(numericValue(n, plan.enquiredAmount), locale)}.`);
       if (reference) parts.push(`The current asking amount is ${reference}.`);
-      if (!reference) parts.push("If you'd like to make an offer, I can consider it.");
+      parts.push("If you'd like to make an offer, I can consider it.");
+      break;
+    case "price_pressure":
+      if (reference) parts.push(pick([`The current asking amount is ${reference}.`, `The asking amount is still ${reference}.`], turn));
+      if (!plan.ask) parts.push(pick(["I can consider a firm offer on the current terms.", "I can take a look if you have a firm offer."], turn));
+      break;
+    case "compare_terms":
+      if (reference) parts.push(`The current asking amount is ${reference}.`);
+      for (const fact of plan.explanationFacts ?? []) parts.push(/[.!?]$/.test(fact) ? fact : `${fact}.`);
       break;
     case "answer_public_terms":
       for (const term of plan.publicTermAnswers ?? []) {

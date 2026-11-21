@@ -222,6 +222,14 @@ export const PAYLOADS = {
       .default(null),
     mandateRevision: z.number().int().min(1).nullable().default(null),
     guidance: z.string().max(120).nullable().default(null),
+    /** Validated input signals that explain which policy route ran. */
+    interpretation: z.strictObject({
+      intent: z.enum(["offer", "accept_stated_terms", "question", "request_change", "reject", "greeting", "other"]),
+      offerKind: z.enum(["offer", "enquiry", "interest", "budget_ceiling"]).nullable(),
+      pressure: z.enum(["none", "lowest_price", "final_offer", "cheaper_elsewhere"]).nullable(),
+      priceConcern: z.enum(["objection", "value_question"]).nullable(),
+      asksPrivateInfo: z.boolean(),
+    }).optional(),
   }),
   approval_requested: z.strictObject({
     offerId: Id,

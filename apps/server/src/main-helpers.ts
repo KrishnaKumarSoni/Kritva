@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { MINIMAL_GUIDANCE, parseGuidance, validateConfirmedMandate, type MandateLibrary, type StrategyGuidance } from "@kritva/core";
+import { MINIMAL_GUIDANCE, parseGuidance, validateConfirmedMandate, type FulfillmentTerms, type MandateLibrary, type StrategyGuidance } from "@kritva/core";
 import type { MandateEntry } from "./app.ts";
 
 /** Loads every confirmed mandate listed in cases/<case>/case.json. Invalid ones are skipped. */
@@ -86,6 +86,7 @@ export interface ListingConfig {
   /** Public details the agent can use in replies about this listing. */
   publicPrincipalName?: string;
   available?: boolean;
+  fulfillment?: FulfillmentTerms;
   /** The saved, confirmed library mandate the listing's calls use. */
   libraryId: string;
 }
@@ -107,7 +108,7 @@ export function loadListings(casesDir: string, mandates: MandateEntry[], example
     if (library && entry && example) {
       library.importConfirmed({ mandateId: l.libraryId, title: l.libraryTitle, mandate: entry.mandate, input: { title: l.libraryTitle, principalRole: example.principalRole, counterpartyRole: example.counterpartyRole, publicText: example.publicText, privateText: example.privateText } });
     }
-    out.push({ caseId: dir.name, title: l.title, location: l.location, libraryId: l.libraryId, subjectFactId: l.subjectFactId, publicPrincipalName: l.publicPrincipalName, available: l.available });
+    out.push({ caseId: dir.name, title: l.title, location: l.location, libraryId: l.libraryId, subjectFactId: l.subjectFactId, publicPrincipalName: l.publicPrincipalName, available: l.available, fulfillment: l.fulfillment });
   }
   return out;
 }

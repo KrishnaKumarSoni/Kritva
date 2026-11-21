@@ -32,7 +32,7 @@ export interface GateResult {
   breachedRuleIds: string[];
 }
 
-const NEGOTIATION_MOVES = new Set<Plan["move"]>(["counter", "hold", "state_final_terms", "request_approval", "confirm_agreement", "answer", "answer_public_terms", "explore_objection", "explain_price", "acknowledge_budget", "answer_enquiry", "await_approval"]);
+const NEGOTIATION_MOVES = new Set<Plan["move"]>(["counter", "hold", "state_final_terms", "request_approval", "confirm_agreement", "answer", "answer_public_terms", "explore_objection", "explain_price", "acknowledge_budget", "answer_enquiry", "price_pressure", "compare_terms", "await_approval"]);
 
 export function gateTerms(state: NegotiationState, plan: Plan, preparedRevision: number): GateResult {
   const reasons: GateReason[] = [];

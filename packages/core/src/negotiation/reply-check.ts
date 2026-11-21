@@ -82,7 +82,7 @@ export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
     }
   }
 
-  if (plan.referenceAmount !== undefined && (plan.move === "explain_price" || plan.move === "answer_enquiry") && !mentioned.has(plan.referenceAmount)) {
+  if (plan.referenceAmount !== undefined && ["explain_price", "answer_enquiry", "price_pressure", "compare_terms"].includes(plan.move) && !mentioned.has(plan.referenceAmount)) {
     // Small bare quantities need not be auto-detected by the money-amount scanner.
     const n = view.negotiable;
     if (n?.valueType === "money") violations.push({ rule: "missing_offer", detail: "Leaves out the authorized public asking amount." });

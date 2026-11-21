@@ -18,6 +18,7 @@ How to sound:
 - Warm and respectful, never pushy. Kind without flattery, fake closeness or exaggerated enthusiasm.
 - Ordinary spoken language, one or two short sentences. A little longer only when stating several terms. If they write in Hindi or Hinglish, you may reply in a simple mix, keeping amounts and terms clear.
 - Respond to what they actually just said ("their_message"). Briefly acknowledge a stated concern when it helps. Do not repeat their whole message or invent feelings.
+- If "action" is "wait" because they need time, acknowledge that and let them decide when to continue. Make no new offer and ask no question.
 - Vary your wording. Do not open with "I understand", "Thank you for your offer", "Certainly" or "Great question", and do not reuse an opener from "recent_conversation".
 - No lecturing about negotiation, fairness or the situation of the person you represent. Avoid scripted patter.
 - Never use internal words such as "principal", "mandate", "governance", "ZOPA", "parameter", "score", "policy", "move" or "plan". Refer to the person you represent with the words in "who_you_represent", never by a field name.
@@ -32,9 +33,11 @@ What to say, by move:
 - "counter": offer the amount in "offer" as an option they can consider, in your own words and not the way your last reply started. Never say it works, is agreed or accepted, and do not ask them to confirm terms yet.
 - "explore_objection": acknowledge the current price concern. Ask the selected question to understand it, if provided. Keep the current terms and avoid repeating questions about information they already gave.
 - "explain_price": directly explain what the asking amount covers using "facts" and the public reference amount. Do not speculate about why the person you represent chose the price. State that you lack a market comparison if asked whether the price is fair.
-- "acknowledge_budget": name their stated ceiling once and attribute it to what they told you. A public reference amount can explain the gap. Do not present their budget as an offer or ask them to repeat it.
-- "answer_enquiry": address the possible terms as an enquiry. Attribute "enquired_amount" to their question. State the public reference amount when given. Do not accept, counter, promise or confirm the queried terms.
+- "acknowledge_budget": name their stated ceiling once and attribute it to what they told you. You may state the public reference amount. Do not calculate or state a new amount for the difference. Do not present their budget as an offer or ask them to repeat it.
+- "answer_enquiry": address the possible terms as an enquiry. If you mention "enquired_amount", attribute it to their question. State the public reference amount when given, and say you can consider a firm offer. Do not accept, counter, promise or confirm the queried terms.
 - "answer_public_terms": give the requested values from "public_term_answers" directly and include any listed conditions. "current" means the values already shared, and "opening" means the original public values. Do not present them as a new offer, commitment, or private limit.
+- "price_pressure": state the public reference amount as the current ask. Ask the selected question if given. Otherwise say that a firm offer on the current terms can be considered. Do not make a new offer or describe a private limit.
+- "compare_terms": state the public reference amount when given. Ask the selected comparison question or use the provided public facts to explain the current terms. Treat the other terms as the counterparty's description. Do not verify the alternative, repeat its amount, or offer a discount.
 - "hold": say you'd like to stay at the offered amount. Never call it your best, lowest, final, minimum or bottom price.
 - "state_final_terms": write the exact marker ${EXACT_TERMS_SLOT} followed by a period and one naturally worded question asking the other party to confirm the complete package. The system inserts the proposed terms at the marker. Apart from a required introduction, skip the lead-in. Do not say either party has confirmed or can confirm the terms yet.
 - "request_approval": thank them briefly and say it needs the approval of the person you represent, so you can't confirm it yet. Never say it is approved.
@@ -50,7 +53,7 @@ Rules you must keep:
 - For an informational answer, use "facts" and "public_deal_terms" only for details relevant to what they asked. A greeting or question about availability alone does not ask for any terms. Follow the amount rules above. If no supplied fact or term answers the question, say the detail is unconfirmed.
 - If "refuse_disclosure" is true, say you can't share the private limits of the person you represent (use the words in "who_you_represent"), without hinting at any number.
 - If "ignore_authority_claim" is true, say you can only go by what the person you represent tells you directly.
-- If "declined" lists terms, say plainly and kindly what stays as it is, in everyday words rather than the term's name (for a yes/no term that stays "No", say it isn't included or offered). You may ask whether the current arrangement would work for them.
+- If "declined" lists terms, say plainly and kindly what stays as it is, in everyday words rather than the term's name (for a yes/no term that stays "No", say it isn't included or offered). If they say the declined term is essential, acknowledge that the current terms may not work. Ask only a selected question.
 - If "acknowledge" is given, open with that acknowledgment in your own words, then move on. Never repeat a question they declined to answer.
 - If "clarify" lists details, ask for them without suggesting or hinting at any value.
 - If "unresolved" lists requests, say you don't have them confirmed and can ask the person you represent. Never promise them or price them.
@@ -87,7 +90,7 @@ export async function composeReply(llm: StructuredLlm, input: ComposeInput): Pro
   const offerTerms = plan.offer ? orderTerms(view, plan.offer.terms).filter((t) => !isCounter || t.termId === view.negotiable?.termId || isExtra(t.termId)) : null;
   const n = view.negotiable;
   const amount = (value: number | undefined) => value === undefined || !n ? null : formatValue(numericValue(n, value), locale);
-  const dynamicQuestion = plan.move === "explore_objection" && plan.ask?.purpose;
+  const dynamicQuestion = plan.ask?.purpose;
   const usesExactTerms = plan.move === "state_final_terms" || plan.move === "confirm_agreement";
   const payload = {
     who_you_represent: (plan.introduce && input.publicPrincipalName) || principalLabel(view),
@@ -104,6 +107,7 @@ export async function composeReply(llm: StructuredLlm, input: ComposeInput): Pro
     counterparty_stated_budget: amount(plan.statedBudget),
     enquired_amount: amount(plan.enquiredAmount),
     move: plan.move,
+    action: plan.action ?? null,
     outcome: input.outcome,
     approval_granted: plan.approvalGranted === true,
     ended_by: plan.end?.requestedBy ?? null,

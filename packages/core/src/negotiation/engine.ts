@@ -10,7 +10,7 @@ import type { StructuredLlm } from "../llm/types.ts";
 import { hashTerms, type Actor, type Channel, type NewEvent, type OfferTerm, type PayloadOf, type RecordedEvent } from "../record/events.ts";
 import { newEventId, type NegotiationRecord } from "../record/store.ts";
 import { composeReply, EXACT_TERMS_SLOT } from "./compose.ts";
-import { interpretMessage } from "./interpret.ts";
+import { interpretMessage, type FulfillmentTerms } from "./interpret.ts";
 import { formatValue, numericValue, withTerm, type MandateView } from "./mandate-view.ts";
 import { checkProposal, type DealCheck } from "../dealspace/check.ts";
 import type { ConfirmedMandate } from "../schema/records.ts";
@@ -28,6 +28,7 @@ import { clean, introduction, principalLabel, speakTerms, templateReply } from "
 interface PublicListingDetails {
   publicPrincipalName?: string;
   available?: boolean;
+  fulfillment?: FulfillmentTerms;
 }
 
 export interface EngineOptions {
@@ -158,7 +159,8 @@ export class NegotiationEngine {
         const openQuestions = projectCounterparty(await this.#record.context(sessionId), before.view.negotiable?.termId ?? null)
           .questions.filter((q) => q.status === "asked" || q.status === "partial")
           .map((q) => ({ id: q.id, text: q.text }));
-        interp = await interpretMessage(this.#llm, { view: before.view, publicTerms: publicDealTerms(before), subject: this.publicSubject(before.view), lastStated: before.lastCommunicated, conversation, message: currentMessage, locale: this.#locale, openQuestions });
+        const fulfillment = this.#listingDetails.get(before.view.mandate.caseId)?.fulfillment;
+        interp = await interpretMessage(this.#llm, { view: before.view, publicTerms: publicDealTerms(before), subject: this.publicSubject(before.view), fulfillment, lastStated: before.lastCommunicated, conversation, message: currentMessage, locale: this.#locale, openQuestions });
       } catch {
         // The message could not be read. Record that for the operator, keep the session as it was and
         // send nothing: no guessed reply, no offer. Retrying the same message ID resumes this turn.
@@ -266,12 +268,11 @@ export class NegotiationEngine {
           const q = e.payload as PayloadOf<"question_prepared">;
           return { questionId: e.id, text: q.text, kind: q.issueKind, purpose: q.purpose };
         });
-      const hasStatedBudget = counterparty.items.some((item) => item.kind === "budget" && item.basis === "stated" && item.value?.type === "money");
       let plan: Plan;
       try {
         plan = state.status === "paused"
           ? { ...basePlan("answer", { kind: "hold", reason: "The principal paused the negotiation." }, null), action: "pause" }
-          : decide(state, ctx.interp, deal, { guidance: this.guidanceFor(state.view.mandate.caseId), freshQuestions, hasStatedBudget, conditionAsked: conditionAlreadyAsked(counterparty), listingAvailable: this.#listingDetails.get(state.view.mandate.caseId)?.available, locale: this.#locale });
+          : decide(state, ctx.interp, deal, { guidance: this.guidanceFor(state.view.mandate.caseId), freshQuestions, counterparty, listingAvailable: this.#listingDetails.get(state.view.mandate.caseId)?.available, locale: this.#locale });
       } catch {
         // A strategy failure never improvises: hold, offer nothing, and say we will come back.
         plan = { ...basePlan("answer", { kind: "hold", reason: "The strategy could not choose a move; nothing was offered." }, null), action: "wait", notice: "check_with_principal" };
@@ -313,9 +314,14 @@ export class NegotiationEngine {
         plan.acceptanceOf = null;
         if (plan.move !== "await_approval" && plan.move !== "closed") plan.move = "answer";
       }
-      await writes.put({ id: newEventId(), type: "decision", channel: null, payload: this.#decisionPayload(plan, state, ctx.related) }, ctx.agent);
       if (!plan.ask && plan.strategyQuestion) plan.ask = await this.#strategyQuestion(writes, counterparty, plan.strategyQuestion, ctx.inboundId, ctx.agent);
       plan.ask ??= selectQuestion(freshQuestions, plan);
+      if (plan.ask && plan.action === "decline" && plan.declined.length === 0) plan.action = "ask";
+      if (!plan.ask && plan.strategyQuestion && (plan.action === "ask" || plan.action === "clarify")) {
+        plan.action = "answer";
+        plan.decision.reason += " This question was already put to the counterparty.";
+      }
+      await writes.put({ id: newEventId(), type: "decision", channel: null, payload: this.#decisionPayload(plan, state, plan.ask ? [...ctx.related, plan.ask.questionId] : ctx.related, ctx.interp) }, ctx.agent);
 
       if (plan.move === "confirm_agreement" && plan.acceptanceOf) plan.approvalGranted = Boolean(approvedFor(state, plan.acceptanceOf.termsHash));
       const offerIds = await this.#recordCommitments(writes, state, plan, ctx.inboundId, ctx.agent);
@@ -492,7 +498,7 @@ export class NegotiationEngine {
     try {
       const composed = await composeReply(this.#llm, { view: state.view, plan, publicTerms, publicPrincipalName, conversation, theirMessage: currentMessage, locale: this.#locale, outcome: state.outcome.kind });
       draft = clean(composed.text);
-      if (plan.move === "explore_objection" && plan.ask) {
+      if (plan.ask?.purpose) {
         const lastSentence = draft.split(/(?<=[.!?])\s+/).at(-1);
         const embedded = lastSentence?.endsWith("?") && draft.indexOf("?") === draft.lastIndexOf("?") ? lastSentence : null;
         const separate = composed.question && clean(composed.question);
@@ -530,7 +536,7 @@ export class NegotiationEngine {
         draft = `${draft} ${question}`;
       }
     }
-    if (draft !== null && !question && ["answer_public_terms", "explore_objection", "explain_price", "acknowledge_budget", "answer_enquiry"].includes(plan.move) && draft.includes("?")) {
+    if (draft !== null && !question && (plan.action === "decline" || ["answer_public_terms", "explore_objection", "explain_price", "acknowledge_budget", "answer_enquiry", "price_pressure", "compare_terms"].includes(plan.move)) && draft.includes("?")) {
       await this.#block(writes, draft, [{ rule: "action_mismatch", detail: "This move did not call for a new question." }], agent);
       draft = null;
     }
@@ -546,6 +552,11 @@ export class NegotiationEngine {
       } else {
         const checkedTerms = (plan.offer?.terms ?? []).map((t) => `${state.space.terms.find((x) => x.termId === t.termId)?.name ?? t.termId}: ${formatValue(t.value, this.#locale)}`);
         const permittedFacts = [...state.view.publicFacts];
+        for (const term of publicTerms) {
+          if (plan.declined.some((decline) => decline.termId === term.termId) || term.termId === state.view.negotiable?.termId && plan.referenceAmount !== undefined) {
+            permittedFacts.push(`Current public ${state.view.terms.get(term.termId)!.name}: ${formatValue(term.value, this.#locale)}`);
+          }
+        }
         if (plan.introduce) permittedFacts.push(`Kritva represents ${publicPrincipalName || principalLabel(state.view)}.`);
         if (plan.move === "answer" && (plan.questions.length > 0 || plan.openForDiscussion)) {
           for (const term of publicTerms) permittedFacts.push(`${state.view.terms.get(term.termId)!.name}: ${formatValue(term.value, this.#locale)}`);
@@ -602,7 +613,7 @@ export class NegotiationEngine {
   }
 
   /** The decision record: the action, the package assessment behind it, and what it was decided under. */
-  #decisionPayload(plan: Plan, state: NegotiationState, related: string[]) {
+  #decisionPayload(plan: Plan, state: NegotiationState, related: string[], interp?: Interpretation) {
     return {
       kind: plan.decision.kind,
       reason: plan.decision.reason.slice(0, 500),
@@ -611,6 +622,7 @@ export class NegotiationEngine {
       assessment: plan.assessment ? { verdict: plan.assessment.verdict, drivers: plan.assessment.drivers.map((d) => d.slice(0, 500)) } : null,
       mandateRevision: state.mandateRevision,
       guidance: this.guidanceFor(state.view.mandate.caseId).id,
+      ...(interp ? { interpretation: { intent: interp.intent, offerKind: interp.offerKind ?? null, pressure: interp.pressure ?? null, priceConcern: interp.priceConcern ?? null, asksPrivateInfo: interp.asksPrivateInfo } } : {}),
     };
   }
 
@@ -932,6 +944,7 @@ interface ActContext {
 /** Placeholder until strategy (Epic 8): ask at most one never-asked question, only while holding or answering. */
 function selectQuestion(fresh: Array<NonNullable<Plan["ask"]>>, plan: Plan): Plan["ask"] {
   if (plan.move !== "hold" && plan.move !== "answer") return null;
+  if (plan.strategyQuestion || plan.declined.length > 0) return null;
   if (plan.notice || plan.clarify.length > 0 || plan.unresolved.length > 0 || plan.questions.length > 0 || plan.refuseDisclosure || plan.openForDiscussion || plan.listingAvailable !== undefined) return null;
   return fresh[0] ?? null;
 }
@@ -949,11 +962,6 @@ function opener(text: string): string {
 /** Replies the agent has already sent in this session. */
 function outboundCount(ctx: { events: RecordedEvent[] }): number {
   return ctx.events.filter((e) => e.type === "message" && (e.payload as { direction: string }).direction === "outbound").length;
-}
-
-/** A conditional question was already put to the counterparty in this session. */
-function conditionAlreadyAsked(model: CounterpartyModel): boolean {
-  return model.questions.some((q) => q.issueKind === "conditional" && q.status !== "open");
 }
 
 /** True when this inbound message already has a recorded failed read (so a retry does not record it twice). */
@@ -1020,8 +1028,7 @@ function basePlan(move: Plan["move"], decision: Plan["decision"], offer: Plan["o
  * package (so unchanged terms keep the agent's values), checked against the deal space.
  */
 function counterpartyDeal(state: NegotiationState, interp: Interpretation): DealInput {
-  const base = state.pendingFinal?.terms ?? state.lastProposed?.terms ?? state.view.defaultPackage;
-  let pkg = [...base];
+  let pkg = publicDealTerms(state);
   for (const t of interp.offerTerms) pkg = withTerm(pkg, t.termId, t.value);
   return { package: pkg, check: checkProposal(state.space, pkg, interp.newTerms.map((t) => ({ name: t.name, value: t.value }))) };
 }

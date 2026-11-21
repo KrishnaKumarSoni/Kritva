@@ -9,8 +9,9 @@ import { formatValue } from "../../src/negotiation/mandate-view.ts";
 import type { Plan } from "../../src/negotiation/policy.ts";
 import { projectState } from "../../src/negotiation/state.ts";
 import type { OfferTerm, PayloadOf } from "../../src/record/events.ts";
+import type { FulfillmentTerms } from "../../src/negotiation/interpret.ts";
 import { parseGuidance } from "../../src/strategy/guidance.ts";
-import { conditionalMandate, exceptionMandate, listingOnlyDeliveryMandate, noExceptionMandate } from "../support/mandates.ts";
+import { buildMandate, conditionalMandate, exceptionMandate, listingOnlyDeliveryMandate, noExceptionMandate } from "../support/mandates.ts";
 import { openRecord } from "../support/record.ts";
 
 type Interp = Record<string, unknown>;
@@ -56,7 +57,7 @@ class ScriptedLlm implements StructuredLlm {
   }
 }
 
-async function setup(mandate: ValidConfirmedMandate, listingDetails?: { publicPrincipalName?: string; available?: boolean }) {
+async function setup(mandate: ValidConfirmedMandate, listingDetails?: { publicPrincipalName?: string; available?: boolean; fulfillment?: FulfillmentTerms }) {
   const { record } = openRecord();
   const started = await record.startSession({ mandate });
   if (!started.ok) throw new Error("start failed");
@@ -83,8 +84,56 @@ async function setup(mandate: ValidConfirmedMandate, listingDetails?: { publicPr
 }
 
 const priceOf = (terms: OfferTerm[]) => (terms.find((t) => t.termId === "term_price")!.value as { amount: number }).amount;
+const FULFILLMENT: FulfillmentTerms = {
+  responsibilityTermId: "term_delivery", counterpartyLocationTermId: "term_pickup",
+  principalActions: ["deliver"], counterpartyActions: ["collect", "pick up"],
+};
 
 describe("Epic 9, Story 1: buyer messages go through the core", () => {
+  it("uses a stated ceiling to seek a firm offer once and routes casual discount pressure without making a concession", async () => {
+    const { say, events } = await setup(listingOnlyDeliveryMandate());
+    await say("It’s too much for me.", { price_concern: "objection" });
+    const budget = await say("Budget is the problem. I can’t spend more than ₹18,000.", {});
+    expect(budget.reply!.text).toMatch(/firm offer.*\?/);
+    for (const quote of ["What’s the best you could do?", "Can you go any lower than that?"]) {
+      const turn = await say(quote, {
+        intent: "question", price_concern: "objection", public_term_questions: [{ term_id: "term_price", basis: "current", quote }],
+      });
+      expect(turn.reply!.text).toContain("₹20,000");
+      expect(turn.reply!.text).not.toMatch(/18,000|\?/);
+      expect(turn.reply!.offerIds).toEqual([]);
+      expect(turn.events.find((event) => event.type === "decision")?.payload).toMatchObject({ action: "answer", interpretation: { pressure: "lowest_price", asksPrivateInfo: false } });
+    }
+    expect((await events()).filter((event) => event.type === "question_asked")).toHaveLength(2);
+    expect((await events()).some((event) => event.type === "offer_extracted" || event.type === "offer_proposed")).toBe(false);
+  });
+
+  it("keeps the payment offer separate from the ancillary cost and does not create a new place from self-fulfillment", async () => {
+    const { say } = await setup(listingOnlyDeliveryMandate(), { fulfillment: FULFILLMENT });
+    const turn = await say("The truck quote is ₹1,500, so I can pay ₹17,500 for the bed and collect it myself.", {
+      intent: "other", offer_kind: "budget_ceiling",
+      offer_terms: [{ term_id: "term_pickup", value: v("text", { text: "collect it myself" }) }],
+      offer_conditions: ["you collect it yourself"],
+    });
+    expect(turn.events.find((event) => event.type === "offer_extracted")?.payload).toMatchObject({ kind: "offer", terms: [{ termId: "term_price", value: { amount: 17_500 } }], conditions: [] });
+    expect(turn.reply!.text).not.toMatch(/location confirmed|settle before/);
+  });
+
+  it("declines a requested service on a full-price offer without treating its destination as the counterparty's location", async () => {
+    const mandate = buildMandate({
+      instructions: "You can negotiate the price. Pickup only. Ask me before accepting any offer.",
+      build: (draft) => draft.limits.push({ id: "limit_no_delivery", status: "stated", disclosure: "private", sourceRefs: [{ sourceId: "instructions", quote: "Pickup only" }], partyId: "seller", termId: "term_delivery", kind: "must_equal", value: { type: "boolean", value: false }, conditionIds: [] }),
+    });
+    const { say } = await setup(mandate, { fulfillment: FULFILLMENT });
+    const turn = await say("I’ll pay the full ₹20,000 if you deliver to Indiranagar.", offer(20_000, {
+      offer_terms: [price(20_000), { term_id: "term_pickup", value: v("text", { text: "Indiranagar" }) }],
+    }));
+    expect(turn.events.find((event) => event.type === "offer_extracted")?.payload).toMatchObject({ terms: [expect.objectContaining({ termId: "term_price" }), { termId: "term_delivery", value: { type: "boolean", value: true } }] });
+    expect(turn.reply!.text).toMatch(/delivery isn't included/i);
+    expect(turn.reply!.text).not.toContain("?");
+    expect(turn.reply!.offerIds).toEqual([]);
+  });
+
   it('"I can pay ₹18,000 if I collect Saturday": price and Saturday are one offer, assessed as a package', async () => {
     const { say, commitments, events } = await setup(conditionalMandate());
     await say("I can pay ₹18,000 if I collect Saturday.", { intent: "offer", offer_terms: [price(18_000), day("Saturday")], offer_kind: "offer" });
