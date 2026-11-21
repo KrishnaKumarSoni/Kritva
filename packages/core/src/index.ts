@@ -50,6 +50,7 @@ export { interpretMessage, type FulfillmentTerms } from "./negotiation/interpret
 export { StrategyGuidance, MINIMAL_GUIDANCE, parseGuidance } from "./strategy/guidance.ts";
 export { applicableTarget, assessPackage, type Assessment } from "./strategy/assess.ts";
 export { projectAllowance, type AllowanceLedger, type AllowanceEntry } from "./strategy/allowance.ts";
+export { negotiationInsights, type NegotiationInsights } from "./strategy/insights.ts";
 export { projectCommitments, noAgreementSummary, type CommitmentsModel, type OfferRecord, type OfferStatus, type SessionOutcome, type Obligation } from "./commitments/model.ts";
 export { promptVersions } from "./llm/prompt-versions.ts";
 export { MandateLibrary, SqliteLibraryBackend, blockers, type LibraryBackend, type LibraryDetail, type LibraryInput, type LibraryVersion, type Correction, type VersionStatus } from "./mandate/library.ts";

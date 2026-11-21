@@ -1,13 +1,10 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import type React from "react";
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import type { BuyerMessage, BuyerView, TermView } from "./api.ts";
-import { AlertIcon, CheckIcon, ClockIcon, SendIcon, SparkIcon } from "./icons.tsx";
+import type { BuyerMessage, BuyerView, Roles, TermView } from "./api.ts";
+import { AlertIcon, CheckIcon, ClockIcon, SendIcon } from "./icons.tsx";
 import { VoiceBar } from "./VoiceBar.tsx";
 
 const spring = { type: "spring", duration: 0.35, bounce: 0 } as const;
-
-const SUGGESTIONS = ["What terms are you proposing?", "Which terms are flexible?"];
 
 interface ChatProps {
   view: BuyerView | null;
@@ -17,13 +14,14 @@ interface ChatProps {
   onSend: (text: string) => void;
   onRetry: (() => void) | null;
   onDisplayed: (messageIds: string[]) => void;
+  /** True on the counterparty's own page: say plainly that they are talking to an AI. */
+  disclose?: boolean;
   /** Browser voice for this session (Epic 13). Omit to offer text only. */
   voice?: { sessionId: string | null; startRequest?: number; onTurn: () => void } | null;
   /** Content shown above the conversation, such as the demo listing. */
-  header?: React.ReactNode;
 }
 
-export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplayed, voice = null, header = null }: ChatProps) {
+export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplayed, voice = null, disclose = false }: ChatProps) {
   const [draft, setDraft] = useState("");
   const [voiceOn, setVoiceOn] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
@@ -32,7 +30,7 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
   const messages = view?.messages ?? [];
   const unsaved = pending && !messages.some((message) => message.id === pending.id) ? pending : null;
   const bubbles = unsaved ? [...messages, unsaved] : messages;
-  const listing = view?.listing ?? null;
+  const roles: Roles = view?.roles ?? { principal: "principal", counterparty: "other party" };
 
   // Report agent replies as delivered once they are on screen. Only then does an offer count as communicated.
   useEffect(() => {
@@ -68,52 +66,21 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
       <header className="panel-header">
         <div>
           <h2 className="panel-title" id="chat-title">
-            {header ? "Buyer view" : "Buyer chat"}
+            Conversation
           </h2>
-          <p className="panel-subtitle">{header ? "What the buyer sees and hears. Call the seller, or type." : "You are the buyer. Kritva replies for the seller, using the saved mandate."}</p>
-          {listing && !header && (
-            <ul className="listing" aria-label="Listing">
-              {listing.terms.map((t) => (
-                <li key={t.termId} className="chip">
-                  <span className="term-name">{`${t.name}: `}</span>
-                  <span className="tabular">{t.value}</span>
-                </li>
-              ))}
-              {listing.facts.map((f) => (
-                <li key={f} className="chip">
-                  {f}
-                </li>
-              ))}
-            </ul>
-          )}
+          <p className="panel-subtitle">{disclose ? `Kritva is an AI negotiating for the ${roles.principal}. Anything agreed is confirmed with them.` : `You write as the ${roles.counterparty}. Kritva replies for the ${roles.principal}.`}</p>
         </div>
       </header>
-
-      {header}
-      <p className="ai-notice" role="note">
-        <SparkIcon width={16} height={16} />
-        <span>
-          <strong>You're chatting with Kritva, an AI.</strong> It negotiates for the seller and isn't the seller or a person. Anything agreed is confirmed with the seller.
-        </span>
-      </p>
 
       <div className="chat-log" ref={logRef} role="log" aria-label="Conversation" aria-live="polite">
         {messages.length === 0 && !unsaved ? (
           <div className="empty">
-            <h3>Start the negotiation</h3>
-            <p>Write to the seller as a buyer would. Every message, offer and decision appears in the record beside this chat.</p>
-            <div className="suggestions">
-              {SUGGESTIONS.map((s) => (
-                <button key={s} type="button" className="button button-secondary" disabled={!view || voiceOn} onClick={() => setDraft(s)}>
-                  {s}
-                </button>
-              ))}
-            </div>
+            <p>{disclose ? "Send a message to start." : `Write the first message as the ${roles.counterparty}.`}</p>
           </div>
         ) : null}
         <AnimatePresence initial={false}>
           {bubbles.map((m) => (
-            <Bubble key={m.id} message={m} enter={enter} />
+            <Bubble key={m.id} message={m} enter={enter} roles={roles} />
           ))}
           {sending && (
             <motion.div key="typing" className="typing" {...enter} exit={{ opacity: 0 }} transition={spring}>
@@ -127,7 +94,7 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
           )}
           {view && view.outcome.kind !== "in_progress" && (
             <motion.div key={`outcome-${view.outcome.kind}`} {...enter} exit={{ opacity: 0 }} transition={spring}>
-              <OutcomeCard outcome={view.outcome} />
+              <OutcomeCard outcome={view.outcome} roles={roles} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -137,7 +104,7 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
 
       <form className="composer" onSubmit={submit} aria-disabled={voiceOn}>
         <label className="composer-label" htmlFor="buyer-message">
-          {voiceOn ? "Typing is off during the voice call. End voice to type." : "Your message as the buyer"}
+          {voiceOn ? "Typing is off during the voice call. End voice to type." : `Your message as the ${roles.counterparty}`}
         </label>
         <div className="composer-row">
           <textarea
@@ -177,7 +144,7 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
   );
 }
 
-function Bubble({ message, enter }: { message: BuyerMessage | { id: string; text: string }; enter: object }) {
+function Bubble({ message, enter, roles }: { message: BuyerMessage | { id: string; text: string }; enter: object; roles: Roles }) {
   const saved = "at" in message;
   const time = saved ? new Date(message.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : null;
   return (
@@ -186,7 +153,7 @@ function Bubble({ message, enter }: { message: BuyerMessage | { id: string; text
       <span className="bubble-meta">
         {saved ? (
           <>
-            {message.from === "agent" ? "Kritva (AI) for the seller" : "You"}
+            {message.from === "agent" ? `Kritva for the ${roles.principal}` : "You"}
             {message.channel === "voice" ? " · voice" : ""} · <time dateTime={message.at}>{time}</time>
           </>
         ) : "Sending…"}
@@ -195,7 +162,7 @@ function Bubble({ message, enter }: { message: BuyerMessage | { id: string; text
   );
 }
 
-export function OutcomeCard({ outcome }: { outcome: BuyerView["outcome"] }) {
+export function OutcomeCard({ outcome, roles }: { outcome: BuyerView["outcome"]; roles: Roles }) {
   const { kind, terms } = outcome;
   if (kind === "agreement") {
     return (
@@ -232,10 +199,10 @@ export function OutcomeCard({ outcome }: { outcome: BuyerView["outcome"] }) {
           <span className="outcome-icon">
             <ClockIcon />
           </span>
-          <h3 id="outcome-title">Waiting for the seller's approval</h3>
+          <h3 id="outcome-title">Waiting for the {roles.principal}'s approval</h3>
         </div>
         <TermsList terms={terms} />
-        <p className="outcome-note">You confirmed these terms. There is no agreement until the seller approves them.</p>
+        <p className="outcome-note">You confirmed these terms. There is no agreement until the {roles.principal} approves them.</p>
       </section>
     );
   }
@@ -249,7 +216,7 @@ export function OutcomeCard({ outcome }: { outcome: BuyerView["outcome"] }) {
         <dl className="terms">
           {summary.lastPrincipalOffer.length > 0 && (
             <div style={{ display: "contents" }}>
-              <dt>Seller's last offer</dt>
+              <dt>{cap(roles.principal)}'s last offer</dt>
               <dd>{summary.lastPrincipalOffer.map(capitalize).join(" · ")}</dd>
             </div>
           )}
@@ -262,11 +229,13 @@ export function OutcomeCard({ outcome }: { outcome: BuyerView["outcome"] }) {
         </dl>
       )}
       <p className="outcome-note">
-        {summary?.endedBy === "counterparty" ? "You ended the conversation." : summary?.endedBy === "principal" ? "The seller decided not to go ahead." : "No terms worked for both sides."} Nothing was agreed.
+        {summary?.endedBy === "counterparty" ? "You ended the conversation." : summary?.endedBy === "principal" ? `The ${roles.principal} decided not to go ahead.` : "No terms worked for both sides."} Nothing was agreed.
       </p>
     </section>
   );
 }
+
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);

@@ -209,7 +209,7 @@ export function VoiceBar({ sessionId, messages, paused, startRequest = 0, onActi
       </div>
       <div className="voice-actions">
         {!active ? (
-          <button type="button" className="button button-accent" onClick={start} disabled={!sessionId}>
+          <button type="button" className="button button-ghost" onClick={start} disabled={!sessionId}>
             <MicIcon />
             {state === "ended" || state === "error" ? "Start voice again" : "Talk by voice"}
           </button>

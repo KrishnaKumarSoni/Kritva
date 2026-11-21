@@ -554,6 +554,12 @@ function concede(state: NegotiationState, g: StrategyGuidance, n: NegotiableTerm
   return { value: up ? Math.max(limit, next) : Math.min(limit, next), tactic };
 }
 
+/** The largest reduction the next counteroffer may make under the guidance steps, or null when no steps are set. */
+export function nextConcessionCap(state: NegotiationState, g: StrategyGuidance): number | null {
+  if (g.concessionSteps.length === 0 || state.currentAsk === null) return null;
+  return stepCap(state, g, state.currentAsk);
+}
+
 /** The largest reduction the next step allows: the next approved step, and smaller than the last actual reduction. */
 function stepCap(state: NegotiationState, g: StrategyGuidance, ask: number): number {
   if (g.concessionSteps.length === 0) return Number.POSITIVE_INFINITY;

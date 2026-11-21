@@ -50,7 +50,7 @@ apps/server/              HTTP API for the slice (Hono); buyer and operator rout
   src/voice-routes.ts     Epics 13-14: voice turns, reply audio, the demo listing and "Call seller"
   scripts/voice-check.ts  Epic 13 timing check through the real audio pipeline (no microphone needed)
   scripts/run-scenarios.ts  the buyer scenarios, through the same routes as the chat page
-apps/web/                 buyer chat, seller console and outcome card (React + Vite)
+apps/web/                 conversation, negotiation console and mandates (React + Vite)
 cases/                    case content, kept outside the core
   bed-sale/mandates/      confirmed mandates: the demo one, plus conditional and exception test ones (test data)
   bed-sale/buyer-scenarios/  the buyer scenarios (seven core, plus conditional, exception, pause, Epic 7–8 and live chat regression ones)
@@ -103,9 +103,11 @@ npm run dev -w @kritva/server
 npm run dev -w @kritva/web
 ```
 
-Open http://localhost:5173. Select **Seller console** and enter the key printed at server startup. Set `KRITVA_OPERATOR_KEY` in the server environment if the key should persist across restarts. The seller console shows the shared record and approvals beside the buyer conversation. The record is stored in `data/kritva.sqlite`. **New session** starts a fresh negotiation and keeps the previous history.
+Open http://localhost:5173. Select **Open console** and enter the key printed at server startup. Set `KRITVA_OPERATOR_KEY` in the server environment if the key should persist across restarts. The record is stored in `data/kritva.sqlite`.
 
-**Demo listing** shows the prepared bed. **Call seller** starts a new browser voice session. Allow microphone access to speak, or use the text composer after ending the call. **Open buyer view** opens the current session in a separate window that uses only buyer routes. On the seller page, **New demo session** keeps the confirmed bed mandate and starts an empty record. Use `localhost` for development and HTTPS for the deployed demo.
+The console has two views. **Negotiation** shows the conversation (you write as the counterparty, in the mandate's own role names) beside the negotiation panel: status with pause and approvals, a price band with your private limit and target, the offer on the table, the counterparty's best offer and stated budget, and the zone where agreement looks possible, then the strategy (last move and why, counteroffers used, the next allowed concession, the discount earned), the terms side by side, what the counterparty said, and the full record behind one disclosure. Pick a mandate and select **New negotiation** to start fresh. **Mandates** is where instructions are written, reviewed and confirmed. Nothing on screen is specific to one case.
+
+`?view=buyer#session=<id>` opens a session as the counterparty sees it: the conversation only, with the AI disclosure and no private data. **Talk by voice** in the composer starts browser voice on the same session. Use `localhost` for development and HTTPS for the deployed demo.
 
 **Mandates** (top bar) opens the mandate library: describe a negotiation in your own words (or load an example), map it to a draft, check and correct what Kritva understood, and confirm it. "Use for the next negotiation" selects it; "New session" then starts a negotiation from its active revision.
 

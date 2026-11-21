@@ -10,6 +10,9 @@ import type { Plan } from "../../src/negotiation/policy.ts";
 import { projectState } from "../../src/negotiation/state.ts";
 import { hashTerms, newEventId, type OfferTerm, type PayloadOf, type RecordedEvent } from "../../src/index.ts";
 import { assessPackage } from "../../src/strategy/assess.ts";
+import { negotiationInsights } from "../../src/strategy/insights.ts";
+import { projectAllowance } from "../../src/strategy/allowance.ts";
+import { projectCounterparty } from "../../src/counterparty/model.ts";
 import { MINIMAL_GUIDANCE, parseGuidance, type StrategyGuidance } from "../../src/strategy/guidance.ts";
 import type { Value } from "../../src/schema/records.ts";
 import { buildMandate, conditionalMandate, conflictingMinimumsMandate, exceptionMandate, listingOnlyDeliveryMandate, noExceptionMandate } from "../support/mandates.ts";
@@ -722,5 +725,33 @@ describe("Package-specific targets", () => {
     const plain = assessPackage(s, pkg(19_000), "en-IN");
     expect(plain.drivers.join(" ")).toContain("₹19,800");
     expect(plain.drivers.join(" ")).not.toContain("₹18,800");
+  });
+});
+
+describe("Console insights", () => {
+  const insightsOf = async (record: Awaited<ReturnType<typeof setup>>["record"], sessionId: string, guidance: StrategyGuidance = GUIDANCE) => {
+    const ctx = await record.context(sessionId);
+    const s = projectState(ctx);
+    return negotiationInsights(s, projectCounterparty(ctx, "term_price"), guidance, projectAllowance(ctx, s.view, guidance))!;
+  };
+  const budget = (amount: number) => ({ notes: [{ kind: "budget", quote: `My budget is ₹${amount.toLocaleString("en-IN")}.`, summary: "Stated budget.", term_id: "term_price", value: v("money", { amount }), condition: null, basis: "stated" }] });
+
+  it("reports an unknown zone until the other side says something, then the zone between the limit and their stated ceiling", async () => {
+    const { say, record, sessionId } = await setup(listingOnlyDeliveryMandate());
+    const before = await insightsOf(record, sessionId);
+    expect(before).toMatchObject({ opening: 20_000, currentAsk: 20_000, limit: 18_000, zone: { status: "unknown" }, counterparty: { bestOffer: null, statedCeiling: null } });
+    await say("My budget is ₹18,500.", budget(18_500));
+    await say("₹17,500.", offer(17_500));
+    const after = await insightsOf(record, sessionId);
+    expect(after.counterparty).toMatchObject({ bestOffer: 17_500, latestOffer: 17_500, statedCeiling: 18_500 });
+    expect(after.zone).toEqual({ status: "overlap", from: 18_000, to: 18_500 });
+    expect(after.gap).toBe(after.currentAsk! - 17_500);
+    expect(after.strategy).toMatchObject({ countersMade: 1, maxCounteroffers: 3 });
+  });
+
+  it("reports no overlap when the stated ceiling is below the limit", async () => {
+    const { say, record, sessionId } = await setup(listingOnlyDeliveryMandate());
+    await say("My budget is ₹17,000.", budget(17_000));
+    expect((await insightsOf(record, sessionId)).zone).toEqual({ status: "no_overlap", from: null, to: null });
   });
 });

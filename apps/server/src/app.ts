@@ -13,6 +13,8 @@ import type { ListingConfig } from "./main-helpers.ts";
 import { registerVoiceRoutes } from "./voice-routes.ts";
 import {
   formatValue,
+  negotiationInsights,
+  projectAllowance,
   orderTerms,
   numericValue,
   projectCounterparty,
@@ -148,6 +150,9 @@ export function createApp(deps: AppDeps): Hono {
     const ctx = await record.context(id);
     const source = (ctx.events[0]?.payload as { mandateSource?: { mandateId: string; revision: number } | null } | undefined)?.mandateSource ?? null;
     const latestSource = [...ctx.events].reverse().find((e) => e.type === "mandate_revised" && (e.payload as { mandateSource?: unknown }).mandateSource)?.payload as { mandateSource: { mandateId: string; revision: number } } | undefined;
+    const model = projectCounterparty(ctx, state.view.negotiable?.termId ?? null);
+    const guidance = engine.guidanceFor(state.view.mandate.caseId);
+    const insights = negotiationInsights(state, model, guidance, projectAllowance(ctx, state.view, guidance));
     const mandateId = source ? `library:${source.mandateId}` : (mandates.find((m) => JSON.stringify(m.mandate) === JSON.stringify(ctx.events[0]?.payload && (ctx.events[0].payload as { mandate: unknown }).mandate))?.id ?? null);
     return c.json({
       session,
@@ -156,8 +161,11 @@ export function createApp(deps: AppDeps): Hono {
       state: { ...operatorState(state, locale), subject: engine.publicSubject(state.view), voiceInterrupted: voiceInterrupted(ctx.events) },
       dealSpace: dealSpaceView(state, locale),
       principal: principalView(state, locale),
-      counterparty: counterpartyView(projectCounterparty(ctx, state.view.negotiable?.termId ?? null), state, locale),
-      commitments: commitmentsView(ctx, state, locale, engine.guidanceFor(state.view.mandate.caseId).id),
+      counterparty: counterpartyView(model, state, locale),
+      commitments: commitmentsView(ctx, state, locale, guidance.id),
+      roles: rolesOf(state.view),
+      // Private numbers for the console: limit, target, the counterparty's estimated maximum, the zone and the strategy's room.
+      insights: insights ? { ...insights, locale } : null,
       drafts: (await revisions.drafts(id)).map((d) => draftView(d, locale)),
       events: events.map((e) => describeEvent(e, state.view, locale)),
     });
@@ -227,6 +235,7 @@ export function createApp(deps: AppDeps): Hono {
     return c.json({
       // Public listing content only: the principal's public package and public facts.
       listing: { terms: termsView(state.view, state.view.defaultPackage, locale) ?? [], facts: state.view.publicFacts },
+      roles: rolesOf(state.view),
       messages: buyerMessages(events),
       paused: state.status === "paused",
       outcome: buyerOutcome(state, await record.context(id), locale, engine.publicSubject(state.view)),
@@ -402,6 +411,12 @@ function draftView(d: DraftView, locale: string) {
     readiness: d.readiness,
     issues: m.issues.map((i) => ({ id: i.id, kind: i.kind, message: i.message })),
   };
+}
+
+/** The parties' roles in the mandate's own words ("seller" and "buyer", "shipper" and "carrier"). */
+function rolesOf(view: MandateView): { principal: string; counterparty: string } {
+  const counterparty = view.mandate.parties.find((p) => p.id === view.counterpartyId)?.role ?? "other party";
+  return { principal: view.principalRole || "principal", counterparty };
 }
 
 /** What the counterparty said, the estimate of their limit with its basis, and open questions. */

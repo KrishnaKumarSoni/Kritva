@@ -32,8 +32,15 @@ export interface BuyerOutcome {
   noAgreement: (NoAgreementSummary & { endedBy: string | null }) | null;
 }
 
+/** The parties' roles in the mandate's own words, so no screen assumes a case. */
+export interface Roles {
+  principal: string;
+  counterparty: string;
+}
+
 export interface BuyerView {
   listing: { terms: TermView[]; facts: string[] };
+  roles: Roles;
   messages: BuyerMessage[];
   paused: boolean;
   outcome: BuyerOutcome;
@@ -159,8 +166,36 @@ export interface CounterpartyView {
   failedMessages: number;
 }
 
+/** Private numbers for the console (seller side only). Amounts are raw values on the negotiable term. */
+export interface Insights {
+  locale: string;
+  term: { termId: string; name: string; direction: "up" | "down"; currency: string | null; unit: string | null };
+  opening: number;
+  currentAsk: number | null;
+  limit: number | null;
+  target: number | null;
+  counterparty: {
+    latestOffer: number | null;
+    bestOffer: number | null;
+    statedCeiling: number | null;
+    estimate: { status: "unknown" | "working_estimate" | "contradicted"; atLeast: number | null; atMost: number | null };
+  };
+  zone: { status: "overlap" | "no_overlap" | "unknown"; from: number | null; to: number | null };
+  gap: number | null;
+  strategy: {
+    guidanceId: string;
+    countersMade: number;
+    maxCounteroffers: number | null;
+    nextStepCap: number | null;
+    splitAvailable: boolean;
+    allowance: { earned: number; used: number; remaining: number } | null;
+  };
+}
+
 export interface OperatorView {
   session: { id: string; caseId: string; createdAt: string; previousSessionId: string | null };
+  roles: Roles;
+  insights: Insights | null;
   mandateId: string | null;
   state: OperatorState;
   dealSpace: DealSpaceView;
@@ -225,15 +260,6 @@ export interface LibraryDetailView {
 
 export type LibraryCorrection = { recordId: string; value: string } | { recordId: string; mode: string } | { recordId: string; remove: true };
 
-export interface ListingView {
-  caseId: string;
-  title: string;
-  location: string;
-  price: string | null;
-  terms: TermView[];
-  facts: string[];
-  sellerRole: string;
-}
 
 export interface MandateOption {
   id: string;
@@ -321,8 +347,6 @@ export const api = {
     return json as { transcript: string; reply: { messageId: string; text: string } | null; timings: { transcribeMs: number; turnMs: number; serverMs: number } };
   },
   speechUrl: (id: string, messageId: string) => `/api/buyer/sessions/${id}/voice/speech/${encodeURIComponent(messageId)}`,
-  listing: (caseId: string) => call<ListingView>("GET", `/api/public/listings/${caseId}`),
-  callSeller: (caseId: string, clientCallId: string, previousSessionId: string | null) => call<{ sessionId: string; mandateRevision: number }>("POST", `/api/public/listings/${caseId}/call`, { clientCallId, previousSessionId }),
   endNegotiation: (id: string, reason: string) => call<unknown>("POST", `/api/operator/sessions/${id}/end`, { reason }),
   library: {
     list: () => call<LibrarySummary[]>("GET", "/api/operator/library"),
