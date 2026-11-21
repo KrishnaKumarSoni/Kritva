@@ -115,6 +115,15 @@ export function templateReply(view: MandateView, plan: Plan, locale: string, sub
       if (reference) parts.push(`The current asking amount is ${reference}.`);
       if (!reference) parts.push("If you'd like to make an offer, I can consider it.");
       break;
+    case "answer_public_terms":
+      for (const term of plan.publicTermAnswers ?? []) {
+        const name = view.terms.get(term.termId)!.name;
+        const value = formatValue(term.value, locale);
+        if (term.basis === "opening") parts.push(`The listed ${name.toLowerCase()} was ${value}.`);
+        else if (term.value.type === "boolean") parts.push(`${cap(name)}? ${value}.`);
+        else parts.push(`The ${name.toLowerCase()} is ${value}.`);
+      }
+      break;
     case "counter":
       parts.push(amountText ? pick([`I could do ${amountText}.`, `How about ${amountText}?`, `I can offer ${amountText}.`], turn) : "Here's what I can offer.");
       break;

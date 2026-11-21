@@ -3,6 +3,7 @@
  * only; the reply check still runs on whatever it writes.
  */
 import type { StructuredLlm } from "../llm/types.ts";
+import type { OfferTerm } from "../record/events.ts";
 import { formatValue, numericValue, orderTerms, type MandateView } from "./mandate-view.ts";
 import type { Plan } from "./policy.ts";
 import { principalLabel } from "./templates.ts";
@@ -32,6 +33,7 @@ What to say, by move:
 - "explain_price": directly explain what the asking amount covers using "facts" and the public reference amount. Do not speculate about why the person you represent chose the price. State that you lack a market comparison if asked whether the price is fair.
 - "acknowledge_budget": name their stated ceiling once and attribute it to what they told you. A public reference amount can explain the gap. Do not present their budget as an offer or ask them to repeat it.
 - "answer_enquiry": address the possible terms as an enquiry. Attribute "enquired_amount" to their question. State the public reference amount when given. Do not accept, counter, promise or confirm the queried terms.
+- "answer_public_terms": give the requested values from "public_term_answers" directly and include any listed conditions. "current" means the values already shared, and "opening" means the original public values. Do not present them as a new offer, commitment, or private limit.
 - "hold": say you'd like to stay at the offered amount. Never call it your best, lowest, final, minimum or bottom price.
 - "state_final_terms": write the exact marker ${EXACT_TERMS_SLOT} followed by a period and one naturally worded question asking the other party to confirm the complete package. The system inserts the proposed terms at the marker. Apart from a required introduction, skip the lead-in. Do not say either party has confirmed or can confirm the terms yet.
 - "request_approval": thank them briefly and say it needs the approval of the person you represent, so you can't confirm it yet. Never say it is approved.
@@ -42,7 +44,7 @@ What to say, by move:
 - "answer" or anything else: answer briefly and naturally.
 
 Rules you must keep:
-- If "exact_terms_slot" is set, use it instead of stating terms or amounts yourself. Otherwise state every planned amount in "offer" exactly as written. Mention no other amounts except a public starting value at opening, a public reference amount supplied this turn, or a value they gave that you are acknowledging or declining.
+- If "exact_terms_slot" is set, use it instead of stating terms or amounts yourself. Otherwise state every planned amount in "offer" or "public_term_answers" exactly as written. Mention no other amounts except a public starting value at opening, a public reference amount supplied this turn, or a value they gave that you are acknowledging or declining. "public_deal_terms" give context only. The move and its selected fields determine what you may say.
 - If "open_for_discussion" is true, say the current terms are still open for discussion. Do not infer or promise anything about inventory, capacity or fulfilment.
 - Mention facts only to answer something in "questions" or to explain the asking price on "explain_price", and only facts from "facts". If a question is not answered there, say you don't have that detail confirmed and won't guess.
 - If "refuse_disclosure" is true, say you can't share the private limits of the person you represent (use the words in "who_you_represent"), without hinting at any number.
@@ -64,6 +66,7 @@ const SCHEMA = {
 
 export interface ComposeInput {
   view: MandateView;
+  publicTerms: OfferTerm[];
   plan: Plan;
   theirMessage: string | null;
   conversation: Array<{ speaker: "agent" | "counterparty"; text: string }>;
@@ -91,6 +94,8 @@ export async function composeReply(llm: StructuredLlm, input: ComposeInput): Pro
     opening: plan.opening === true,
     open_for_discussion: plan.openForDiscussion === true,
     public_opening_term: openingTerm ? { term: nameOf(openingTerm.termId), value: formatValue(openingTerm.value, locale) } : null,
+    public_deal_terms: input.publicTerms.map((term) => ({ term: nameOf(term.termId), value: formatValue(term.value, locale) })),
+    public_term_answers: (plan.publicTermAnswers ?? []).map((term) => ({ term: nameOf(term.termId), value: formatValue(term.value, locale), basis: term.basis })),
     their_message: input.theirMessage,
     public_reference_amount: amount(plan.referenceAmount),
     counterparty_stated_budget: amount(plan.statedBudget),

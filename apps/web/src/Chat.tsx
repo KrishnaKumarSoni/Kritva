@@ -11,7 +11,7 @@ const SUGGESTIONS = ["What terms are you proposing?", "Which terms are flexible?
 
 interface ChatProps {
   view: BuyerView | null;
-  pending: { text: string } | null;
+  pending: { id: string; text: string } | null;
   sending: boolean;
   error: string | null;
   onSend: (text: string) => void;
@@ -30,6 +30,8 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const reduced = useReducedMotion();
   const messages = view?.messages ?? [];
+  const unsaved = pending && !messages.some((message) => message.id === pending.id) ? pending : null;
+  const bubbles = unsaved ? [...messages, unsaved] : messages;
   const listing = view?.listing ?? null;
 
   // Report agent replies as delivered once they are on screen. Only then does an offer count as communicated.
@@ -96,7 +98,7 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
       </p>
 
       <div className="chat-log" ref={logRef} role="log" aria-label="Conversation" aria-live="polite">
-        {messages.length === 0 && !pending ? (
+        {messages.length === 0 && !unsaved ? (
           <div className="empty">
             <h3>Start the negotiation</h3>
             <p>Write to the seller as a buyer would. Every message, offer and decision appears in the record beside this chat.</p>
@@ -110,15 +112,9 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
           </div>
         ) : null}
         <AnimatePresence initial={false}>
-          {messages.map((m) => (
+          {bubbles.map((m) => (
             <Bubble key={m.id} message={m} enter={enter} />
           ))}
-          {pending && (
-            <motion.div key="pending" className="bubble-row from-buyer bubble-pending" {...enter} transition={spring}>
-              <div className="bubble">{pending.text}</div>
-              <span className="bubble-meta">Sending…</span>
-            </motion.div>
-          )}
           {sending && (
             <motion.div key="typing" className="typing" {...enter} exit={{ opacity: 0 }} transition={spring}>
               <span className="typing-dots" aria-hidden="true">
@@ -181,14 +177,19 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
   );
 }
 
-function Bubble({ message, enter }: { message: BuyerMessage; enter: object }) {
-  const time = new Date(message.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+function Bubble({ message, enter }: { message: BuyerMessage | { id: string; text: string }; enter: object }) {
+  const saved = "at" in message;
+  const time = saved ? new Date(message.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : null;
   return (
-    <motion.div className={`bubble-row from-${message.from}`} {...enter} transition={spring}>
+    <motion.div className={`bubble-row ${saved ? `from-${message.from}` : "from-buyer bubble-pending"}`} {...enter} transition={spring}>
       <div className="bubble">{message.text}</div>
       <span className="bubble-meta">
-        {message.from === "agent" ? "Kritva (AI) for the seller" : "You"}
-        {message.channel === "voice" ? " · voice" : ""} · <time dateTime={message.at}>{time}</time>
+        {saved ? (
+          <>
+            {message.from === "agent" ? "Kritva (AI) for the seller" : "You"}
+            {message.channel === "voice" ? " · voice" : ""} · <time dateTime={message.at}>{time}</time>
+          </>
+        ) : "Sending…"}
       </span>
     </motion.div>
   );

@@ -9,9 +9,9 @@
  * Results: allow, block, needs_approval or needs_clarification, each with the rule and reason.
  * Missing information or unavailable state never produces allow for an affected promise.
  */
-import { checkProposal } from "../dealspace/check.ts";
+import { checkProposal, sameValue } from "../dealspace/check.ts";
 import { hashTerms, type OfferTerm } from "../record/events.ts";
-import { approvedFor, clearedNow, type NegotiationState } from "../negotiation/state.ts";
+import { approvedFor, clearedNow, publicDealTerms, type NegotiationState } from "../negotiation/state.ts";
 import type { Plan } from "../negotiation/policy.ts";
 import { checkReply } from "../negotiation/reply-check.ts";
 import { checkClaims } from "./claims.ts";
@@ -32,7 +32,7 @@ export interface GateResult {
   breachedRuleIds: string[];
 }
 
-const NEGOTIATION_MOVES = new Set<Plan["move"]>(["counter", "hold", "state_final_terms", "request_approval", "confirm_agreement", "answer", "explore_objection", "explain_price", "acknowledge_budget", "answer_enquiry", "await_approval"]);
+const NEGOTIATION_MOVES = new Set<Plan["move"]>(["counter", "hold", "state_final_terms", "request_approval", "confirm_agreement", "answer", "answer_public_terms", "explore_objection", "explain_price", "acknowledge_budget", "answer_enquiry", "await_approval"]);
 
 export function gateTerms(state: NegotiationState, plan: Plan, preparedRevision: number): GateResult {
   const reasons: GateReason[] = [];
@@ -65,6 +65,16 @@ export function gateTerms(state: NegotiationState, plan: Plan, preparedRevision:
   if (plan.referenceAmount !== undefined && plan.referenceAmount !== state.currentAsk) {
     reasons.push({ rule: "unverified_reference", detail: "The referenced amount is not the current public ask." });
     return result("block");
+  }
+  if (plan.publicTermAnswers?.length) {
+    const current = publicDealTerms(state);
+    for (const answer of plan.publicTermAnswers) {
+      const terms = answer.basis === "opening" ? state.view.defaultPackage : current;
+      if (!terms.some((term) => term.termId === answer.termId && sameValue(term.value, answer.value))) {
+        reasons.push({ rule: "unverified_reference", detail: "The term value does not match the confirmed public terms." });
+        return result("block");
+      }
+    }
   }
   const authority = state.view.authority;
 

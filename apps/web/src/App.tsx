@@ -25,7 +25,7 @@ export function App() {
   const [checkingKey, setCheckingKey] = useState(false);
   const [buyer, setBuyer] = useState<BuyerView | null>(null);
   const [operator, setOperator] = useState<OperatorView | null>(null);
-  const [pending, setPending] = useState<{ text: string } | null>(null);
+  const [pending, setPending] = useState<{ id: string; text: string } | null>(null);
   const [sending, setSending] = useState(false);
   const [responding, setResponding] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -131,7 +131,7 @@ export function App() {
     if (!sessionId) return;
     setError(null);
     setFailed(null);
-    setPending({ text });
+    setPending({ id: `msg_${id}`, text });
     setSending(true);
     try {
       await api.send(sessionId, text, id);

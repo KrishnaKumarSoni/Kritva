@@ -21,7 +21,7 @@ import { quoteAppearsIn } from "../schema/quotes.ts";
 import { languageCheck } from "../governance/language-check.ts";
 import { decide, type DealInput, type Interpretation, type Plan } from "./policy.ts";
 import { checkReply, findAmounts, type ReplyViolation } from "./reply-check.ts";
-import { approvedFor, projectState, type NegotiationState } from "./state.ts";
+import { approvedFor, projectState, publicDealTerms, type NegotiationState } from "./state.ts";
 import { MINIMAL_GUIDANCE, type StrategyGuidance } from "../strategy/guidance.ts";
 import { clean, introduction, speakTerms, templateReply } from "./templates.ts";
 
@@ -150,7 +150,7 @@ export class NegotiationEngine {
         const openQuestions = projectCounterparty(await this.#record.context(sessionId), before.view.negotiable?.termId ?? null)
           .questions.filter((q) => q.status === "asked" || q.status === "partial")
           .map((q) => ({ id: q.id, text: q.text }));
-        interp = await interpretMessage(this.#llm, { view: before.view, lastStated: before.pendingFinal ?? before.lastProposed, conversation, message: currentMessage, locale: this.#locale, openQuestions });
+        interp = await interpretMessage(this.#llm, { view: before.view, publicTerms: publicDealTerms(before), lastStated: before.lastCommunicated, conversation, message: currentMessage, locale: this.#locale, openQuestions });
       } catch {
         // The message could not be read. Record that for the operator, keep the session as it was and
         // send nothing: no guessed reply, no offer. Retrying the same message ID resumes this turn.
@@ -301,6 +301,7 @@ export class NegotiationEngine {
         plan.decision = { kind: "hold", reason: `No offer sent: ${termsGate.decision.replace("_", " ")} (${termsGate.reasons[0]?.detail ?? "gate"})`.slice(0, 500) };
         plan.offer = null;
         plan.referenceAmount = undefined;
+        plan.publicTermAnswers = undefined;
         plan.acceptanceOf = null;
         if (plan.move !== "await_approval" && plan.move !== "closed") plan.move = "answer";
       }
@@ -479,7 +480,7 @@ export class NegotiationEngine {
     let insertedTerms: string | null = null;
     let question = plan.ask?.text ?? null;
     try {
-      const composed = await composeReply(this.#llm, { view: state.view, plan, conversation, theirMessage: currentMessage, locale: this.#locale, outcome: state.outcome.kind });
+      const composed = await composeReply(this.#llm, { view: state.view, plan, publicTerms: publicDealTerms(state), conversation, theirMessage: currentMessage, locale: this.#locale, outcome: state.outcome.kind });
       draft = clean(composed.text);
       if (plan.move === "explore_objection" && plan.ask) {
         const lastSentence = draft.split(/(?<=[.!?])\s+/).at(-1);
@@ -519,7 +520,7 @@ export class NegotiationEngine {
         draft = `${draft} ${question}`;
       }
     }
-    if (draft !== null && !question && ["explore_objection", "explain_price", "acknowledge_budget", "answer_enquiry"].includes(plan.move) && draft.includes("?")) {
+    if (draft !== null && !question && ["answer_public_terms", "explore_objection", "explain_price", "acknowledge_budget", "answer_enquiry"].includes(plan.move) && draft.includes("?")) {
       await this.#block(writes, draft, [{ rule: "action_mismatch", detail: "This move did not call for a new question." }], agent);
       draft = null;
     }
@@ -532,6 +533,10 @@ export class NegotiationEngine {
         const checkedTerms = (plan.offer?.terms ?? []).map((t) => `${state.space.terms.find((x) => x.termId === t.termId)?.name ?? t.termId}: ${formatValue(t.value, this.#locale)}`);
         const opening = plan.opening ? state.view.defaultPackage.find((t) => t.termId === state.view.negotiable?.termId) : undefined;
         const permittedFacts = [...state.view.publicFacts];
+        for (const answer of plan.publicTermAnswers ?? []) {
+          const name = state.view.terms.get(answer.termId)!.name;
+          permittedFacts.push(`${answer.basis === "opening" ? "Originally listed" : "Current public"} ${name}: ${formatValue(answer.value, this.#locale)}`);
+        }
         if (plan.openForDiscussion) permittedFacts.push("The current terms are still open for discussion.");
         if (subject) permittedFacts.push(subject);
         if (opening) permittedFacts.push(`Starting ${state.view.negotiable!.name}: ${formatValue(opening.value, this.#locale)}`);

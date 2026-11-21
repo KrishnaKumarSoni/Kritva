@@ -103,6 +103,45 @@ describe("Epic 9, Story 1: buyer messages go through the core", () => {
     expect(t.reply!.text).not.toMatch(/minimum|floor|lowest (is|i can)/i);
   });
 
+  it("answers a short follow-up from the public deal terms, including when wording is blocked", async () => {
+    const { say, llm, events } = await setup(listingOnlyDeliveryMandate());
+    await say("Is this still available?", { intent: "question" });
+    const question = { intent: "question", public_term_questions: [{ term_id: "term_price", basis: "current" }] };
+    const composed = await say("How much?", question, { composed: "The asking price is ₹20,000." });
+    const fallback = await say("Can you remind me of the asking amount?", question, { composed: "Which price would you like to know?" });
+    for (const turn of [composed, fallback]) {
+      expect(turn.reply!.text).toContain("₹20,000");
+      expect(turn.reply!.text).not.toMatch(/18,000|\?|don't have that detail/);
+      expect(turn.reply!.offerIds).toEqual([]);
+    }
+    const frames = llm.seen.filter((call) => call.purpose === "compose_reply").map((call) => JSON.parse(call.messages[0]!.content));
+    expect(frames.at(-2)).toMatchObject({ their_message: "How much?", move: "answer_public_terms", public_term_answers: [{ value: "₹20,000", basis: "current" }] });
+    expect(JSON.stringify(frames.at(-2))).not.toContain("18,000");
+    expect((await events()).some((event) => event.type === "offer_proposed" || event.type === "offer_extracted")).toBe(false);
+  });
+
+  it("can answer another public term with the same lookup", async () => {
+    const { say } = await setup(listingOnlyDeliveryMandate());
+    const result = await say("Where would I collect it?", {
+      intent: "question", public_term_questions: [{ term_id: "term_pickup", basis: "current" }],
+    });
+    expect(result.reply!.text).toContain("Koramangala, Bangalore");
+    expect(result.reply!.offerIds).toEqual([]);
+  });
+
+  it("distinguishes the delivered asking price from the opening price and an undelivered counter", async () => {
+    const { say, engine, sessionId, state } = await setup(listingOnlyDeliveryMandate());
+    const counter = await say("I'll pay ₹18,500.", offer(18_500), { deliver: false });
+    const question = (basis: string) => ({ intent: "question", public_term_questions: [{ term_id: "term_price", basis }] });
+    expect((await say("How much is it right now?", question("current"))).reply!.text).toContain("₹20,000");
+    await engine.reportDelivery({ sessionId, messageId: counter.reply!.messageId, channel: "text", status: "delivered" });
+    const updatedAsk = (await state()).currentAsk;
+    expect(updatedAsk).toBeLessThan(20_000);
+    const formatted = formatValue({ type: "money", amount: updatedAsk!, currency: "INR" }, "en-IN");
+    expect((await say("What's the current ask?", question("current"))).reply!.text).toContain(formatted);
+    expect((await say("What was it listed for originally?", question("opening"))).reply!.text).toContain("₹20,000");
+  });
+
   it("a question about a mattress, with no mattress fact, gets no invented answer", async () => {
     const { say } = await setup(listingOnlyDeliveryMandate());
     const t = await say("Is a mattress included?", { intent: "question", questions: ["Is a mattress included?"] });

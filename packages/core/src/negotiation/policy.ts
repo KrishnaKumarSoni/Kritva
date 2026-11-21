@@ -13,7 +13,9 @@ import { applicableLimit, sameValue, type DealCheck } from "../dealspace/check.t
 import { numericValue, violatesFixedRule, withTerm, type MandateView, type NegotiableTerm } from "./mandate-view.ts";
 import { assessPackage, type Assessment } from "../strategy/assess.ts";
 import { MINIMAL_GUIDANCE, type StrategyGuidance } from "../strategy/guidance.ts";
-import { approvedFor, clearedNow, type NegotiationState, type StatedOffer } from "./state.ts";
+import { approvedFor, clearedNow, publicDealTerms, type NegotiationState, type StatedOffer } from "./state.ts";
+
+export type PublicTermQuestion = { termId: string; basis: "current" | "opening" };
 
 export interface Interpretation {
   intent: "offer" | "accept_stated_terms" | "question" | "request_change" | "reject" | "greeting" | "other";
@@ -23,6 +25,7 @@ export interface Interpretation {
   asksPrivateInfo: boolean;
   claimsAuthority: boolean;
   questions: string[];
+  publicTermQuestions?: PublicTermQuestion[];
   /** Things the counterparty asked for that no mandate term covers (e.g. an added service). */
   newTerms: Array<{ name: string; description: string | null; value: Value | null }>;
   /** Needs, constraints, reasons, claims and the like, each with the counterparty's exact words. */
@@ -57,6 +60,7 @@ export type Move =
   | "confirm_agreement"
   | "hold"
   | "answer"
+  | "answer_public_terms"
   | "explore_objection"
   | "explain_price"
   | "acknowledge_budget"
@@ -86,6 +90,8 @@ export interface Plan {
   refuseDisclosure: boolean;
   ignoreAuthorityClaim: boolean;
   questions: string[];
+  /** Values read from public positions, without making or changing an offer. */
+  publicTermAnswers?: Array<OfferTerm & PublicTermQuestion>;
   /** The counterparty amount this move responds to, if any. */
   respondingTo: number | null;
   /** Something the reply must tell the counterparty first. */
@@ -412,6 +418,27 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
       ...plan, move: "explain_price", referenceAmount, explanationFacts: view.publicFacts.slice(0, 3), questions: [],
       decision: { kind: "explain_price", reason: "Explain what the current asking amount covers using confirmed public facts." },
     };
+  }
+  if (interp.publicTermQuestions?.length && amount === null && extras.length === 0 && !interp.acceptsStatedTerms && !interp.priceConcern) {
+    const current = publicDealTerms(state);
+    const publicTermAnswers = interp.publicTermQuestions.flatMap((question) => {
+      const terms = question.basis === "opening" ? view.defaultPackage : current;
+      const term = terms.find((t) => t.termId === question.termId);
+      return term ? [{ ...term, basis: question.basis }] : [];
+    });
+    // Preserve the changed conditions that travel with a previously quoted price.
+    if (publicTermAnswers.some((answer) => answer.basis === "current" && answer.value.type === "money"
+      && state.lastCommunicated?.terms.some((term) => term.termId === answer.termId))) {
+      for (const term of state.lastCommunicated!.terms) {
+        if (!view.terms.has(term.termId) || publicTermAnswers.some((answer) => answer.termId === term.termId && answer.basis === "current")) continue;
+        if (view.defaultPackage.some((opening) => opening.termId === term.termId && sameValue(opening.value, term.value))) continue;
+        publicTermAnswers.push({ ...term, basis: "current" });
+      }
+    }
+    if (publicTermAnswers.length > 0) {
+      return { ...plan, move: "answer_public_terms", publicTermAnswers, decision: { kind: "answer", reason: "Answer from the confirmed public terms without making an offer." } };
+    }
+    if (plan.questions.length === 0) plan.questions = interp.publicTermQuestions.map((question) => nameOf(question.termId));
   }
   if (interp.priceConcern === "objection" && referenceAmount !== undefined && interp.pressure !== "cheaper_elsewhere") {
     const question = context.freshQuestions.find((q) => q.kind === "budget_scope" || q.kind === "obstacle");

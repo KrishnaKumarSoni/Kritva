@@ -17,6 +17,15 @@ export interface StatedOffer {
   communicated: boolean;
 }
 
+/** Start with the public listing and overlay only terms the other party has received. */
+export function publicDealTerms(state: NegotiationState): OfferTerm[] {
+  const terms = new Map(state.view.defaultPackage.map((term) => [term.termId, term]));
+  for (const term of state.lastCommunicated?.terms ?? []) {
+    if (state.view.terms.has(term.termId)) terms.set(term.termId, term);
+  }
+  return [...terms.values()];
+}
+
 export interface Outcome {
   kind: "in_progress" | "pending_approval" | "agreement" | "no_agreement";
   terms: OfferTerm[] | null;
@@ -32,6 +41,8 @@ export interface NegotiationState {
   view: MandateView;
   /** The agent's latest stated value on the negotiable term (starts at the opening value). */
   currentAsk: number | null;
+  /** The latest terms the counterparty actually received, if an offer was delivered. */
+  lastCommunicated: StatedOffer | null;
   /** Every value the agent has put forward on the negotiable term, oldest first. */
   askHistory: number[];
   /** The counterparty's offers on the negotiable term, oldest first. */
@@ -104,6 +115,7 @@ export function projectState(ctx: SessionContext): NegotiationState {
   let splitUsed = false;
   let offersSinceAsk = 0;
   let lastProposed: StatedOffer | null = null;
+  let lastCommunicated: StatedOffer | null = null;
   let pendingFinal: StatedOffer | null = null;
   let pendingApproval: NegotiationState["pendingApproval"] = null;
   const acceptances: NegotiationState["acceptances"] = [];
@@ -165,17 +177,19 @@ export function projectState(ctx: SessionContext): NegotiationState {
       }
       case "offer_proposed": {
         const p = ctx.effective.get(e.id) as PayloadOf<"offer_proposed">;
-        lastProposed = { offerId: e.id, basis: p.basis, terms: p.terms, termsHash: p.termsHash, communicated: false };
+        const communicated = ctx.isCommunicated(e.id);
+        lastProposed = { offerId: e.id, basis: p.basis, terms: p.terms, termsHash: p.termsHash, communicated };
+        if (communicated) lastCommunicated = lastProposed;
         const amount = amountOf(p.terms);
         // Only what the counterparty actually received counts as the agent's ask; an exception
         // package waiting for the principal, or a blocked offer, never moved the ask.
-        if (amount !== null && amount !== currentAsk && ctx.isCommunicated(e.id)) {
+        if (amount !== null && amount !== currentAsk && communicated) {
           currentAsk = amount;
           askHistory.push(amount);
           offersSinceAsk = 0;
           if (p.basis === "counter") countersMade += 1;
         }
-        if (p.tactic === "split_difference" && ctx.isCommunicated(e.id)) splitUsed = true;
+        if (p.tactic === "split_difference" && communicated) splitUsed = true;
         if (p.basis === "final_terms") pendingFinal = lastProposed;
         break;
       }
@@ -228,8 +242,6 @@ export function projectState(ctx: SessionContext): NegotiationState {
       }
     }
   }
-  if (lastProposed) lastProposed.communicated = ctx.isCommunicated(lastProposed.offerId);
-  if (pendingFinal) pendingFinal.communicated = ctx.isCommunicated(pendingFinal.offerId);
   // Final terms are pending only while they are the latest thing the agent proposed.
   if (pendingFinal && lastProposed && pendingFinal.offerId !== lastProposed.offerId) pendingFinal = null;
 
@@ -250,6 +262,7 @@ export function projectState(ctx: SessionContext): NegotiationState {
     mandateRevision: ctx.mandateRevision,
     view,
     currentAsk,
+    lastCommunicated,
     askHistory,
     counterpartyAmounts,
     counterpartySaidAmounts: [...counterpartySaidAmounts],

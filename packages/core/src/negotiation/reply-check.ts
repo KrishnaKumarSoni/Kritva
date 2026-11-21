@@ -45,13 +45,14 @@ export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
   const sentences = splitSentences(text);
   const offered = plannedAmounts(plan);
   const publicAmounts = view.defaultPackage.flatMap((t) => ("amount" in t.value ? [t.value.amount as number] : []));
-  const allowed = new Set([...offered, ...publicAmounts, ...ctx.counterpartyAmounts, plan.referenceAmount]);
+  const citedAmounts = (plan.publicTermAnswers ?? []).flatMap((t) => ("amount" in t.value ? [t.value.amount] : []));
+  const allowed = new Set([...offered, ...publicAmounts, ...citedAmounts, ...ctx.counterpartyAmounts, plan.referenceAmount]);
 
   for (const sentence of sentences) {
     for (const amount of findAmounts(sentence)) {
       if (amount === plan.statedBudget && QUOTE_CUE.test(sentence)) continue;
       // Repeating the counterparty's own number reveals nothing; any other private value does.
-      if (view.privateAmounts.includes(amount) && !offered.includes(amount) && !ctx.counterpartyAmounts.includes(amount) && amount !== plan.referenceAmount) {
+      if (view.privateAmounts.includes(amount) && !offered.includes(amount) && !ctx.counterpartyAmounts.includes(amount) && !citedAmounts.includes(amount) && amount !== plan.referenceAmount) {
         violations.push({ rule: "private_amount", detail: "Mentions a private value that is not being offered." });
       } else if (!allowed.has(amount)) {
         violations.push({ rule: "unplanned_amount", detail: "Mentions an amount that is not part of the planned move." });
@@ -59,7 +60,7 @@ export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
       const crosses = n ? (n.direction === "up" ? amount < n.limit : amount > n.limit) : false;
       // Quoting the counterparty's own figure back in a question or "your …" is not offering it.
       const quotingThem = (ctx.counterpartyAmounts.includes(amount) || plan.statedBudget === amount) && QUOTE_CUE.test(sentence);
-      if (crosses && !offered.includes(amount) && !DECLINE_CUE.test(sentence) && !quotingThem) {
+      if (crosses && !offered.includes(amount) && !citedAmounts.includes(amount) && !DECLINE_CUE.test(sentence) && !quotingThem) {
         violations.push({ rule: "crosses_limit", detail: "States an amount beyond the limit without declining it." });
       }
     }
@@ -96,6 +97,12 @@ export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
   if (!plan.approvalGranted && APPROVAL_CLAIM.test(text)) violations.push({ rule: "false_commitment", detail: "Claims an approval that is not recorded." });
 
   const normalizedReply = normalizeForQuoteMatch(text);
+  for (const { value } of plan.publicTermAnswers ?? []) {
+    if ((value.type === "money" && !mentioned.has(value.amount))
+      || ((value.type === "text" || value.type === "date_text") && !normalizedReply.includes(normalizeForQuoteMatch(value.value)))) {
+      violations.push({ rule: "action_mismatch", detail: "Leaves out the requested public term value." });
+    }
+  }
   for (const privateText of view.privateTexts) {
     for (const fragment of fragments(privateText)) {
       if (normalizedReply.includes(fragment)) {

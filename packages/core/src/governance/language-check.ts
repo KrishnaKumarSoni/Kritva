@@ -15,7 +15,7 @@ When "validated_terms_marker" is present, the marker stands for the exact terms 
 
 The reply may only rely on:
 - "checked_terms": the exact terms it is allowed to offer or confirm.
-- "public_amounts": asking amounts already shared with the other party. Holding or explaining an authorized asking amount is not private disclosure. Flag identifying an amount as a private floor, ceiling or refusal point, even if that amount is public. Separately check whether citing an amount fits "action".
+- "public_amounts": asking amounts already shared with the other party. Stating an authorized asking amount in a direct answer, hold or explanation is not private disclosure. Flag identifying an amount as a private floor, ceiling or refusal point, even if that amount is public. Separately check whether citing an amount fits "action". For "answer_public_terms", use permitted_facts to verify the answer, including whether the value is current or historical. Flag presenting it as a new proposal or commitment.
 - "their_message" is the turn the reply must address. Earlier counterparty_words give context only. "stated_budget" is the amount quoted from this turn. Calling it "your budget" or "your ceiling" is attribution to the person who stated it, not verification of a claim or disclosure of a private limit.
 - "permitted_facts": facts it is allowed to state.
 - "declined_terms": terms it may say cannot be changed.
@@ -61,7 +61,7 @@ export interface LanguageConcern {
   quote: string;
 }
 
-const PUBLIC_ASK_MOVES = new Set(["hold", "explain_price", "acknowledge_budget", "answer_enquiry", "explore_objection"]);
+const PUBLIC_ASK_MOVES = new Set(["hold", "explain_price", "acknowledge_budget", "answer_enquiry", "answer_public_terms", "explore_objection"]);
 const PUBLIC_ASK_PREFIX = /^(?:i(?:'d| would) like to stay at|i(?:'m| am) (?:staying|holding) at|i(?:'ll| will) (?:stay|hold) at|(?:the |the [\p{L} -]+'s )(?:current )?(?:asking )?(?:price|amount) (?:is(?: still)?|remains)|the [\p{L} '-]+ is (?:still )?(?:holding at|asking))\s+/iu;
 
 /** The code gate already checked both the public amount and the authorized move. */
