@@ -6,6 +6,24 @@ export const DEFAULT_MAPPING_MODEL = "gpt-5.5";
 
 const EFFORTS = new Set(["none", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
+/**
+ * Turn-time model for interpreting messages and wording replies. Latency matters here,
+ * so it defaults to a small, fast model. Decisions and checks never depend on it.
+ */
+export const DEFAULT_TURN_MODEL = "gpt-5.4-mini";
+
+export function createTurnLlmFromEnv(env: NodeJS.ProcessEnv = process.env): OpenAIStructuredLlm {
+  const apiKey = env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY is not set.");
+  const effort = env.KRITVA_TURN_REASONING_EFFORT ?? "none";
+  return new OpenAIStructuredLlm({
+    apiKey,
+    model: env.KRITVA_TURN_MODEL ?? DEFAULT_TURN_MODEL,
+    timeoutMs: Number(env.KRITVA_TURN_TIMEOUT_MS ?? 20_000),
+    reasoningEffort: EFFORTS.has(effort) ? (effort as ReasoningEffort) : undefined,
+  });
+}
+
 export function createMappingLlmFromEnv(env: NodeJS.ProcessEnv = process.env): OpenAIStructuredLlm {
   const apiKey = env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY is not set.");

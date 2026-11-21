@@ -1,0 +1,24 @@
+{
+  "name": "unknown-details",
+  "description": "Questions about details the mandate does not contain. Kritva does not invent product facts.",
+  "turns": [
+    {
+      "buyer": "What brand is the bed? Does it come with a mattress? Does it have storage drawers?"
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "in_progress"
+    ],
+    "agentMustNotSay": [
+      "(?<!whether |if )\\bit (comes|does come) with (a |the )?mattress",
+      "\\bmattress (is|comes) included",
+      "(?<!whether |if )\\bit (has|does have|includes) (storage|drawers)",
+      "\\bbrand is\\b",
+      "\\bmade by\\b"
+    ],
+    "agentMustSay": [
+      "(don.?t|do not) have (that |this )?(information|details)|not sure|(can|will) check"
+    ]
+  }
+}

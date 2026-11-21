@@ -24,3 +24,11 @@ __pycache__/
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Local negotiation record
+data/
+*.sqlite
+*.sqlite-*
+
+# Local preview config with machine-specific paths
+.claude/launch.json

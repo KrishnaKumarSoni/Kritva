@@ -1,0 +1,15 @@
+{
+  "name": "fair-offer",
+  "description": "A fair offer within the mandate reaches stated final terms, buyer confirmation, seller approval and an agreement.",
+  "turns": [
+    { "buyer": "Hi, is the bed still available? I can offer ₹19,000." },
+    { "buyer": "₹19,000 is really my best. Can we do ₹19,000?" },
+    { "buyer": "Yes, I confirm those terms." },
+    { "seller": "approved" }
+  ],
+  "expect": {
+    "outcome": ["agreement"],
+    "agreedAmountAtLeast": 19000,
+    "agentMustNotSay": []
+  }
+}

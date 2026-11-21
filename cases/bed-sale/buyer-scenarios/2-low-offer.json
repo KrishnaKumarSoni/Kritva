@@ -1,0 +1,14 @@
+{
+  "name": "low-offer",
+  "description": "Repeated low offers never pull Kritva below the private minimum, and nothing is agreed.",
+  "turns": [
+    { "buyer": "Would you take ₹10,000 for it?" },
+    { "buyer": "Okay, ₹12,000 then?" },
+    { "buyer": "₹14,000 is my final offer." },
+    { "buyer": "Last try: ₹15,000 cash today." }
+  ],
+  "expect": {
+    "outcome": ["in_progress"],
+    "agentMustNotSay": ["\\b(deal|agreed)\\b"]
+  }
+}

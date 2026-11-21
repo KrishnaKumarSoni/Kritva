@@ -193,10 +193,9 @@ export type Issue = z.infer<typeof Issue>;
  * A mandate draft. Mapping produces only unapproved drafts; approval and activation
  * belong to a later confirmation flow and cannot be expressed here.
  */
-export const MandateDraft = z.strictObject({
+const mandateBody = {
   schemaVersion: z.literal(SCHEMA_VERSION),
   caseId: Id,
-  approval: z.strictObject({ status: z.literal("unapproved") }),
   parties: z.array(Party).min(1).max(20),
   sources: z.array(Source).min(1).max(50),
   terms: z.array(Term).max(200),
@@ -207,8 +206,29 @@ export const MandateDraft = z.strictObject({
   permissions: z.array(Permission).max(200),
   conditions: z.array(Condition).max(200),
   issues: z.array(Issue).max(200),
+};
+
+export const MandateDraft = z.strictObject({
+  ...mandateBody,
+  approval: z.strictObject({ status: z.literal("unapproved") }),
 });
 export type MandateDraft = z.infer<typeof MandateDraft>;
+
+/**
+ * A mandate the principal reviewed and confirmed. Only a confirmed mandate can start a
+ * negotiation. Every open issue must have been acknowledged at confirmation.
+ */
+export const ConfirmedMandate = z.strictObject({
+  ...mandateBody,
+  approval: z.strictObject({
+    status: z.literal("confirmed"),
+    /** Who confirmed, from application metadata. */
+    confirmedBy: Id,
+    confirmedAt: z.iso.datetime(),
+    acknowledgedIssueIds: z.array(Id).max(200),
+  }),
+});
+export type ConfirmedMandate = z.infer<typeof ConfirmedMandate>;
 
 /** The record collections that carry case content, in a fixed order. */
 export const RECORD_COLLECTIONS = [

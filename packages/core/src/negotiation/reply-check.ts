@@ -1,0 +1,165 @@
+/**
+ * Outgoing reply check. Runs in code on every reply before it is shown or spoken. A
+ * prompt instruction is never relied on: a reply that fails here is blocked and recorded.
+ *
+ * Rules:
+ * - private_amount: no private value (e.g. a private minimum) unless it is the value being offered.
+ * - unplanned_amount: every amount is the planned offer, a public value, or one the counterparty said.
+ * - crosses_limit: an amount beyond the principal's limit may only appear while declining it.
+ * - missing_offer: a reply that carries an offer must state the offered amount.
+ * - false_commitment: no claim of agreement or principal approval that the record does not hold.
+ * - private_text: no passage copied from private instructions.
+ */
+import { normalizeForQuoteMatch } from "../schema/quotes.ts";
+import type { MandateView } from "./mandate-view.ts";
+import type { Plan } from "./policy.ts";
+
+export interface ReplyViolation {
+  rule: "private_amount" | "unplanned_amount" | "crosses_limit" | "missing_offer" | "false_commitment" | "private_text";
+  detail: string;
+}
+
+export interface CheckContext {
+  view: MandateView;
+  plan: Plan;
+  /** Amounts the counterparty itself stated in this session. */
+  counterpartyAmounts: number[];
+}
+
+const DECLINE_CUE = /\b(can'?t|cannot|can not|won'?t|unable|not able|too low|too high|not possible|isn'?t|is not|no\b|decline|don'?t|do not|below|under|above|over|beyond)\b/i;
+const AGREEMENT_CLAIM = /\b(we have (a |an )?(deal|agreement)|it'?s a deal|deal (is )?(done|confirmed)|agreement (is )?(confirmed|recorded)|(sold|it'?s yours)\b|i accept (your|the) offer|offer accepted)/i;
+const APPROVAL_CLAIM = /\b(has|have) approved\b|\bapproved (it|this|your offer|the (offer|terms))\b|\bapproval (is )?(given|granted|received)\b/i;
+
+export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
+  const violations: ReplyViolation[] = [];
+  const { view, plan } = ctx;
+  const n = view.negotiable;
+  const sentences = splitSentences(text);
+  const offered = plannedAmounts(plan);
+  const publicAmounts = view.defaultPackage.flatMap((t) => ("amount" in t.value ? [t.value.amount as number] : []));
+  const allowed = new Set([...offered, ...publicAmounts, ...ctx.counterpartyAmounts]);
+
+  for (const sentence of sentences) {
+    for (const amount of findAmounts(sentence)) {
+      if (view.privateAmounts.includes(amount) && !offered.includes(amount)) {
+        violations.push({ rule: "private_amount", detail: "Mentions a private value that is not being offered." });
+      } else if (!allowed.has(amount)) {
+        violations.push({ rule: "unplanned_amount", detail: "Mentions an amount that is not part of the planned move." });
+      }
+      const crosses = n ? (n.direction === "up" ? amount < n.limit : amount > n.limit) : false;
+      if (crosses && !offered.includes(amount) && !DECLINE_CUE.test(sentence)) {
+        violations.push({ rule: "crosses_limit", detail: "States an amount beyond the limit without declining it." });
+      }
+    }
+  }
+
+  const mentioned = new Set(sentences.flatMap(findAmounts));
+  for (const amount of offered) {
+    if (!mentioned.has(amount)) violations.push({ rule: "missing_offer", detail: "Does not state the amount being offered." });
+  }
+
+  if (plan.move !== "confirm_agreement") {
+    if (AGREEMENT_CLAIM.test(text)) violations.push({ rule: "false_commitment", detail: "Claims an agreement that is not recorded." });
+    if (APPROVAL_CLAIM.test(text)) violations.push({ rule: "false_commitment", detail: "Claims an approval that is not recorded." });
+  }
+
+  const normalizedReply = normalizeForQuoteMatch(text);
+  for (const privateText of view.privateTexts) {
+    for (const fragment of fragments(privateText)) {
+      if (normalizedReply.includes(fragment)) {
+        violations.push({ rule: "private_text", detail: "Repeats a passage from private instructions." });
+        break;
+      }
+    }
+  }
+  return dedupe(violations);
+}
+
+function plannedAmounts(plan: Plan): number[] {
+  if (!plan.offer || (plan.move !== "counter" && plan.move !== "hold" && plan.move !== "state_final_terms" && plan.move !== "confirm_agreement")) {
+    return [];
+  }
+  return plan.offer.terms.flatMap((t) => (t.value.type === "money" ? [t.value.amount] : []));
+}
+
+function splitSentences(text: string): string[] {
+  return text.split(/(?<=[.!?])\s+|\n+/).map((s) => s.trim()).filter(Boolean);
+}
+
+/** Eight-word passages from private text, normalized. Long enough to avoid common phrases. */
+function fragments(text: string): string[] {
+  const words = normalizeForQuoteMatch(text).split(" ").filter(Boolean);
+  const out: string[] = [];
+  for (let i = 0; i + 8 <= words.length; i += 1) out.push(words.slice(i, i + 8).join(" "));
+  return out;
+}
+
+const UNITS: Record<string, number> = {
+  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+  twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90,
+};
+const SCALES: Record<string, number> = { hundred: 100, thousand: 1_000, k: 1_000, lakh: 100_000, lakhs: 100_000, lac: 100_000, million: 1_000_000, crore: 10_000_000 };
+
+/**
+ * Finds amounts written as digits ("19,000", "19000", "19k", "$19,500", "1.5 lakh") or
+ * as words ("nineteen thousand five hundred"). Small bare numbers are ignored, so
+ * "two concepts" or "1 year" are not read as money.
+ */
+export function findAmounts(sentence: string): number[] {
+  const found: number[] = [];
+  const s = sentence.toLowerCase();
+
+  const digitPattern = /(?<![\w.])(\d{1,3}(?:[,\s]\d{2,3})+|\d+(?:\.\d+)?)\s*(k|thousand|lakhs?|lac|million|crore)?(?![\w])/g;
+  for (const match of s.matchAll(digitPattern)) {
+    const raw = match[1]!.replace(/[,\s]/g, "");
+    let value = Number(raw);
+    const scale = match[2];
+    if (scale) value *= SCALES[scale] ?? 1;
+    if (!Number.isFinite(value)) continue;
+    // A currency symbol or code just before the number marks it as money even when small.
+    const hasCurrencyNearby = /(\p{Sc}|\b[A-Z]{3}|\bRs\.?)\s*$/u.test(sentence.slice(0, match.index ?? 0).slice(-5));
+    if (value >= 1000 || scale || hasCurrencyNearby) found.push(value);
+  }
+
+  const words = s.replace(/[^a-z\s-]/g, " ").split(/[\s-]+/).filter(Boolean);
+  let current = 0;
+  let total = 0;
+  let inNumber = false;
+  const flush = () => {
+    const value = total + current;
+    if (inNumber && value >= 1000) found.push(value);
+    current = 0;
+    total = 0;
+    inNumber = false;
+  };
+  for (const w of words) {
+    if (w in UNITS) {
+      current += UNITS[w]!;
+      inNumber = true;
+    } else if (w in SCALES && inNumber) {
+      const scale = SCALES[w]!;
+      if (scale === 100) current *= 100;
+      else {
+        total += current * scale;
+        current = 0;
+      }
+    } else if (w === "and" && inNumber) {
+      continue;
+    } else {
+      flush();
+    }
+  }
+  flush();
+  return found;
+}
+
+function dedupe(v: ReplyViolation[]): ReplyViolation[] {
+  const seen = new Set<string>();
+  return v.filter((x) => {
+    const key = `${x.rule}|${x.detail}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}

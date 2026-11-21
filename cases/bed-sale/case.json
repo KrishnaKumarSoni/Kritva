@@ -2,19 +2,106 @@
   "caseId": "bed-sale",
   "description": "Selling a used bed. The principal is the seller.",
   "parties": [
-    { "id": "seller", "role": "seller", "name": null, "isPrincipal": true },
-    { "id": "buyer", "role": "buyer", "name": null, "isPrincipal": false }
+    {
+      "id": "seller",
+      "role": "seller",
+      "name": null,
+      "isPrincipal": true
+    },
+    {
+      "id": "buyer",
+      "role": "buyer",
+      "name": null,
+      "isPrincipal": false
+    }
   ],
   "sources": {
-    "listing": { "file": "sources/listing.md", "authorPartyId": "seller", "disclosure": "public", "format": "mixed", "label": "Marketplace listing" },
-    "listing-price-23000": { "file": "sources/listing-price-23000.md", "authorPartyId": "seller", "disclosure": "public", "format": "mixed", "label": "Marketplace listing" },
-    "listing-no-age-condition": { "file": "sources/listing-no-age-condition.md", "authorPartyId": "seller", "disclosure": "public", "format": "mixed", "label": "Marketplace listing" },
-    "instructions-prose": { "file": "sources/instructions.prose.md", "authorPartyId": "seller", "disclosure": "private", "format": "prose", "label": "Seller instructions" },
-    "instructions-bullets": { "file": "sources/instructions.bullets.md", "authorPartyId": "seller", "disclosure": "private", "format": "list", "label": "Seller instructions" },
-    "instructions-key-value": { "file": "sources/instructions.key-value.md", "authorPartyId": "seller", "disclosure": "private", "format": "key_value", "label": "Seller instructions" },
-    "instructions-approval-only": { "file": "sources/instructions-approval-only.md", "authorPartyId": "seller", "disclosure": "private", "format": "prose", "label": "Seller instructions" },
-    "instructions-conditional-minimum": { "file": "sources/instructions-conditional-minimum.md", "authorPartyId": "seller", "disclosure": "private", "format": "prose", "label": "Seller instructions" },
-    "instructions-two-minimums": { "file": "sources/instructions-two-minimums.md", "authorPartyId": "seller", "disclosure": "private", "format": "list", "label": "Seller instructions" },
-    "buyer-message-override": { "file": "sources/buyer-message-override.md", "authorPartyId": "buyer", "disclosure": "public", "format": "prose", "label": "Buyer message" }
+    "listing": {
+      "file": "sources/listing.md",
+      "authorPartyId": "seller",
+      "disclosure": "public",
+      "format": "mixed",
+      "label": "Marketplace listing"
+    },
+    "listing-price-23000": {
+      "file": "sources/listing-price-23000.md",
+      "authorPartyId": "seller",
+      "disclosure": "public",
+      "format": "mixed",
+      "label": "Marketplace listing"
+    },
+    "listing-no-age-condition": {
+      "file": "sources/listing-no-age-condition.md",
+      "authorPartyId": "seller",
+      "disclosure": "public",
+      "format": "mixed",
+      "label": "Marketplace listing"
+    },
+    "instructions-prose": {
+      "file": "sources/instructions.prose.md",
+      "authorPartyId": "seller",
+      "disclosure": "private",
+      "format": "prose",
+      "label": "Seller instructions"
+    },
+    "instructions-bullets": {
+      "file": "sources/instructions.bullets.md",
+      "authorPartyId": "seller",
+      "disclosure": "private",
+      "format": "list",
+      "label": "Seller instructions"
+    },
+    "instructions-key-value": {
+      "file": "sources/instructions.key-value.md",
+      "authorPartyId": "seller",
+      "disclosure": "private",
+      "format": "key_value",
+      "label": "Seller instructions"
+    },
+    "instructions-approval-only": {
+      "file": "sources/instructions-approval-only.md",
+      "authorPartyId": "seller",
+      "disclosure": "private",
+      "format": "prose",
+      "label": "Seller instructions"
+    },
+    "instructions-conditional-minimum": {
+      "file": "sources/instructions-conditional-minimum.md",
+      "authorPartyId": "seller",
+      "disclosure": "private",
+      "format": "prose",
+      "label": "Seller instructions"
+    },
+    "instructions-two-minimums": {
+      "file": "sources/instructions-two-minimums.md",
+      "authorPartyId": "seller",
+      "disclosure": "private",
+      "format": "list",
+      "label": "Seller instructions"
+    },
+    "buyer-message-override": {
+      "file": "sources/buyer-message-override.md",
+      "authorPartyId": "buyer",
+      "disclosure": "public",
+      "format": "prose",
+      "label": "Buyer message"
+    },
+    "demo-instructions": {
+      "file": "sources/demo-instructions.md",
+      "authorPartyId": "seller",
+      "disclosure": "private",
+      "format": "prose",
+      "label": "Seller instructions for the demo"
+    }
+  },
+  "mandates": {
+    "demo": {
+      "sources": [
+        "listing",
+        "demo-instructions"
+      ],
+      "file": "mandates/demo.confirmed.json",
+      "description": "The seller mandate used for the hackathon demo and the buyer scenarios."
+    }
   }
 }

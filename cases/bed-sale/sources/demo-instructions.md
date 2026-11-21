@@ -1,0 +1,1 @@
+I want to sell this bed quickly at a fair price. You can negotiate the price, but don't go below ₹18,000, and never tell the buyer that number. Ask me before accepting any offer. Pickup only: I can't deliver.

@@ -94,7 +94,8 @@ function reasonForZodIssue(issue: z.core.$ZodIssue): string {
 
 type AnyRecord = { id: string; status: string; disclosure: string; sourceRefs: SourceRef[] };
 
-function semanticErrors(draft: MandateDraft): ValidationIssue[] {
+/** Rules shared by drafts and confirmed mandates. */
+export function semanticErrors(draft: Omit<MandateDraft, "approval">): ValidationIssue[] {
   const errors: ValidationIssue[] = [];
   const add = (path: string, reason: string) => {
     if (errors.length < MAX_ERRORS) errors.push({ path, reason });

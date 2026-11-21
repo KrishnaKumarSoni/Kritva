@@ -1,0 +1,188 @@
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { useMemo, useState } from "react";
+import type { OperatorView, RecordEvent } from "./api.ts";
+import { LockIcon, ShieldIcon } from "./icons.tsx";
+
+const spring = { type: "spring", duration: 0.35, bounce: 0 } as const;
+
+type Filter = "all" | "conversation" | "commitments" | "blocked";
+const FILTERS: Array<{ id: Filter; label: string; match: (e: RecordEvent) => boolean }> = [
+  { id: "all", label: "All", match: () => true },
+  { id: "conversation", label: "Messages", match: (e) => e.type === "message" || e.type === "delivery_reported" },
+  {
+    id: "commitments",
+    label: "Offers & decisions",
+    match: (e) =>
+      ["offer_extracted", "offer_proposed", "decision", "acceptance_recorded", "approval_requested", "approval_responded", "agreement_recorded", "status_changed"].includes(e.type),
+  },
+  { id: "blocked", label: "Blocked", match: (e) => e.type === "reply_blocked" },
+];
+
+const ACTOR_LABEL: Record<RecordEvent["actor"], string> = {
+  principal: "Seller",
+  counterparty: "Buyer",
+  agent: "Kritva",
+  system: "System",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  active: "Negotiating",
+  awaiting_approval: "Waiting for your approval",
+  agreed: "Agreed",
+  no_agreement: "No agreement",
+  paused: "Paused",
+  ended: "Ended",
+};
+
+interface RecordPanelProps {
+  view: OperatorView | null;
+  responding: boolean;
+  onRespond: (requestId: string, decision: "approved" | "rejected") => void;
+}
+
+export function RecordPanel({ view, responding, onRespond }: RecordPanelProps) {
+  const [filter, setFilter] = useState<Filter>("all");
+  const reduced = useReducedMotion();
+  const events = view?.events ?? [];
+  const visible = useMemo(() => {
+    const match = FILTERS.find((f) => f.id === filter)!.match;
+    return events.filter(match).slice().reverse();
+  }, [events, filter]);
+  const counts = useMemo(() => Object.fromEntries(FILTERS.map((f) => [f.id, events.filter(f.match).length])), [events]);
+  const state = view?.state;
+  const n = state?.negotiable;
+
+  return (
+    <section className="panel" aria-labelledby="record-title">
+      <header className="panel-header">
+        <div>
+          <h2 className="panel-title" id="record-title">
+            Seller console
+          </h2>
+          <p className="panel-subtitle">Operator view of the shared record. Private items never reach the buyer.</p>
+        </div>
+      </header>
+
+      {state && (
+        <dl className="summary">
+          <Stat label="Status" value={STATUS_LABEL[state.status] ?? state.status} />
+          <Stat label="Current ask" value={n?.currentAsk ?? "—"} />
+          <Stat label="Asking price" value={n?.opening ?? "—"} />
+          <Stat label={n?.limitKind === "maximum" ? "Maximum" : "Minimum"} value={n?.limit ?? "Not set"} isPrivate />
+          <Stat label="Buyer offers" value={state.counterpartyOffers.length > 0 ? state.counterpartyOffers.join(", ") : "None yet"} />
+          <Stat label="Accepting" value={state.acceptRequiresApproval ? "Needs your approval" : "Kritva may accept"} isPrivate />
+        </dl>
+      )}
+
+      <AnimatePresence initial={false}>
+        {state?.pendingApproval && (
+          <motion.section
+            key={state.pendingApproval.requestId}
+            className="approval"
+            aria-labelledby="approval-title"
+            initial={reduced ? { opacity: 0 } : { opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={spring}
+          >
+            <h3 id="approval-title">The buyer confirmed these terms</h3>
+            {state.pendingApproval.terms && (
+              <dl className="terms">
+                {state.pendingApproval.terms.map((t) => (
+                  <div key={t.termId} style={{ display: "contents" }}>
+                    <dt>{t.name}</dt>
+                    <dd>{t.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+            <p>Your mandate requires your approval before Kritva records an agreement.</p>
+            <div className="approval-actions">
+              <button type="button" className="button button-accent" disabled={responding} onClick={() => onRespond(state.pendingApproval!.requestId, "approved")}>
+                {responding ? <span className="spinner" aria-hidden="true" /> : null}
+                Approve terms
+              </button>
+              <button type="button" className="button button-secondary" disabled={responding} onClick={() => onRespond(state.pendingApproval!.requestId, "rejected")}>
+                Reject terms
+              </button>
+            </div>
+          </motion.section>
+        )}
+      </AnimatePresence>
+
+      <div className="filters" role="group" aria-label="Filter events">
+        {FILTERS.map((f) => (
+          <button key={f.id} type="button" className="filter" aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>
+            {f.label}
+            <span className="count">{counts[f.id]}</span>
+          </button>
+        ))}
+      </div>
+
+      <ol className="events" aria-label="Recorded events, newest first">
+        {visible.length === 0 && <li className="events-empty">{filter === "blocked" ? "No replies were blocked in this session." : "Nothing recorded yet."}</li>}
+        <AnimatePresence initial={false}>
+          {visible.map((e) => (
+            <motion.li
+              key={e.id}
+              layout={!reduced}
+              className={`event${e.type === "reply_blocked" ? " event-blocked" : ""}`}
+              initial={reduced ? { opacity: 0 } : { opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={spring}
+            >
+              <span className="event-seq" aria-label={`Event ${e.seq}`}>
+                {e.seq}
+              </span>
+              <div>
+                <div className="event-head">
+                  <span className="event-title">
+                    {e.type === "reply_blocked" && <ShieldIcon />}
+                    {e.title}
+                  </span>
+                  <time className="event-time" dateTime={e.at}>
+                    {new Date(e.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}
+                  </time>
+                </div>
+                {e.summary && <p className="event-summary">{e.summary}</p>}
+                <div className="event-tags">
+                  <span className="chip">{ACTOR_LABEL[e.actor]}</span>
+                  {e.channel && <span className="chip">{e.channel === "voice" ? "Voice" : "Text"}</span>}
+                  {e.visibility === "private" && (
+                    <span className="chip chip-strong">
+                      <LockIcon width={12} height={12} />
+                      Private
+                    </span>
+                  )}
+                </div>
+                <details>
+                  <summary>Event data</summary>
+                  <pre>{JSON.stringify(e.payload, null, 2)}</pre>
+                </details>
+              </div>
+            </motion.li>
+          ))}
+        </AnimatePresence>
+      </ol>
+    </section>
+  );
+}
+
+function Stat({ label, value, isPrivate = false }: { label: string; value: string; isPrivate?: boolean }) {
+  return (
+    <div className="stat">
+      <dt className="stat-label">
+        {label}
+        {isPrivate && (
+          <>
+            <LockIcon width={12} height={12} />
+            <span className="visually-hidden">(private)</span>
+          </>
+        )}
+      </dt>
+      <dd className="stat-value" style={{ margin: 0 }}>
+        {value}
+      </dd>
+    </div>
+  );
+}

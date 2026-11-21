@@ -1,0 +1,30 @@
+{
+  "name": "delivery-request",
+  "description": "Delivery is excluded by the mandate. Kritva declines it, and the final agreement keeps pickup only.",
+  "turns": [
+    {
+      "buyer": "Can you deliver it to Whitefield? I'll pay ₹19,500 if you deliver."
+    },
+    {
+      "buyer": "Fine, I'll pick it up from Koramangala. ₹19,500 works."
+    },
+    {
+      "buyer": "Yes, confirmed."
+    },
+    {
+      "seller": "approved"
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "agreement"
+    ],
+    "agreedAmountAtLeast": 19000,
+    "agreedBooleanTermsFalse": true,
+    "agentMustNotSay": [
+      "\\b(we|i)('ll| will| can| could) (deliver|arrange delivery)\\b",
+      "\\bdelivery (is )?(possible|available|free|arranged)\\b",
+      "\\bdelivery included:? yes\\b"
+    ]
+  }
+}

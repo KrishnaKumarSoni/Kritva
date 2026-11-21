@@ -2,11 +2,18 @@
   "name": "kritva",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24" },
-  "workspaces": ["packages/*"],
+  "engines": {
+    "node": ">=24"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
     "typecheck": "npm run typecheck --workspaces",
     "test": "npm run test --workspaces",
-    "test:live": "npm run test:live --workspaces --if-present"
+    "test:live": "npm run test:live --workspaces --if-present",
+    "scenarios": "node --env-file-if-exists=.env apps/server/scripts/run-scenarios.ts",
+    "dev": "echo \"Start the server (npm run dev -w @kritva/server) and the web app (npm run dev -w @kritva/web)\""
   }
 }

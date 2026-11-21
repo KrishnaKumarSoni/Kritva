@@ -1,0 +1,33 @@
+{
+  "name": "changed-terms",
+  "description": "The buyer changes terms after final terms are stated. The change is not a confirmation; only the newly stated terms can be agreed.",
+  "turns": [
+    {
+      "buyer": "I'll pay ₹19,500 for it."
+    },
+    {
+      "buyer": "Yes, but can you deliver it for that price?"
+    },
+    {
+      "buyer": "Okay, no delivery then. Can you do ₹19,000 instead?"
+    },
+    {
+      "buyer": "Yes, I confirm."
+    },
+    {
+      "seller": "approved"
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "agreement"
+    ],
+    "agreedAmountAtLeast": 18000,
+    "agreedBooleanTermsFalse": true,
+    "acceptancesMatchStatedTerms": true,
+    "agentMustNotSay": [
+      "\\b(we|i)('ll| will| can| could) (deliver|arrange delivery)\\b",
+      "\\bdelivery included:? yes\\b"
+    ]
+  }
+}
