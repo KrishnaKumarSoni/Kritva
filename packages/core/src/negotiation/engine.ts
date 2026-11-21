@@ -43,7 +43,7 @@ export interface TurnResult {
 }
 export interface TurnError {
   ok: false;
-  code: "session_not_found" | "invalid_event" | "write_failed" | "not_pending";
+  code: "session_not_found" | "invalid_event" | "write_failed" | "not_pending" | "model_unavailable";
   message: string;
 }
 
@@ -118,7 +118,8 @@ export class NegotiationEngine {
       // A retry. If the turn finished, return it. If it was cut off before any commitment
       // (offer, acceptance, approval, agreement), resume it; otherwise return what was recorded.
       const after = (await this.#record.read(sessionId, { viewer: "operator" })).filter((e) => e.seq > inbound.event.seq);
-      const resumable = after.every((e) => e.type === "offer_extracted" || e.type === "decision");
+      // A turn whose message could not be read (recorded as a failed read) is resumed too.
+      const resumable = after.every((e) => e.type === "offer_extracted" || e.type === "decision" || e.type === "question_prepared" || (e.type === "counterparty_noted" && (e.payload as { failed: boolean }).failed));
       if (!resumable || after.some((e) => e.type === "message")) return this.#replay(sessionId, inbound.event, started);
       existingOfferId = after.find((e) => e.type === "offer_extracted")?.id ?? null;
     } else {
@@ -136,8 +137,13 @@ export class NegotiationEngine {
           .map((q) => ({ id: q.id, text: q.text }));
         interp = await interpretMessage(this.#llm, { view: before.view, lastStated: before.pendingFinal ?? before.lastProposed, conversation, message: input.text, locale: this.#locale, openQuestions });
       } catch {
-        interp = { intent: "other", offerTerms: [], acceptsStatedTerms: false, asksPrivateInfo: false, claimsAuthority: false, questions: [], newTerms: [] };
-        rephrase = true;
+        // The message could not be read. Record that for the operator, keep the session as it was and
+        // send nothing: no guessed reply, no offer. Retrying the same message ID resumes this turn.
+        interp = emptyInterpretation();
+        if (!existingFailure(await this.#record.read(sessionId, { viewer: "operator" }), inbound.event.seq)) {
+          await this.#recordCounterparty(writes, { sessionId, inboundId: inbound.event.id, text: input.text, interp, failed: true, agent, counterpartyId });
+        }
+        return { ok: false, code: "model_unavailable", message: "Kritva couldn't read that message just now. Nothing was sent. Try again." };
       }
       const interpretMs = Math.round(performance.now() - interpretStarted);
 
@@ -175,6 +181,7 @@ export class NegotiationEngine {
               kind: interp.offerKind ?? "offer",
               previousOfferId: lastCounterpartyOfferId(await this.#record.context(sessionId)),
               conditions: interp.offerConditions ?? [],
+              correctsPrevious: interp.correctsPrevious === true && lastCounterpartyOfferId(await this.#record.context(sessionId)) !== null,
             },
           },
           agent,
@@ -234,7 +241,7 @@ export class NegotiationEngine {
       try {
         plan = state.status === "paused"
           ? { ...basePlan("answer", { kind: "hold", reason: "The principal paused the negotiation." }, null), action: "pause" }
-          : decide(state, ctx.interp, deal, { guidance: this.#guidance, freshQuestions, locale: this.#locale });
+          : decide(state, ctx.interp, deal, { guidance: this.#guidance, freshQuestions, conditionAsked: conditionAlreadyAsked(projectCounterparty(await this.#record.context(ctx.sessionId), state.view.negotiable?.termId ?? null)), locale: this.#locale });
       } catch {
         // A strategy failure never improvises: hold, offer nothing, and say we will come back.
         plan = { ...basePlan("answer", { kind: "hold", reason: "The strategy could not choose a move; nothing was offered." }, null), action: "wait", notice: "check_with_principal" };
@@ -540,7 +547,7 @@ export class NegotiationEngine {
    * from both sides are checked again against the new revision, and a pending approval whose
    * terms no longer fit stops being pending.
    */
-  reviseMandate(input: { sessionId: string; mandate: ConfirmedMandate; reason: string; draftId?: string | null }): Promise<{ ok: true; state: NegotiationState; events: RecordedEvent[] } | TurnError> {
+  reviseMandate(input: { sessionId: string; mandate: ConfirmedMandate; reason: string; draftId?: string | null; mandateSource?: { mandateId: string; revision: number } | null }): Promise<{ ok: true; state: NegotiationState; events: RecordedEvent[] } | TurnError> {
     // Not queued behind a running turn: a confirmed revision takes effect at once, and a turn in
     // flight re-reads authority before it sends anything.
     return (async () => {
@@ -549,7 +556,7 @@ export class NegotiationEngine {
       const agent: Actor = { kind: AGENT, partyId: before.view.principalId };
       const writes = new Writer(this.#record, input.sessionId);
       try {
-        await writes.put({ id: newEventId(), type: "mandate_revised", channel: null, payload: { mandate: input.mandate, mandateRevision: before.mandateRevision + 1, reason: input.reason, draftId: input.draftId ?? null } }, principal);
+        await writes.put({ id: newEventId(), type: "mandate_revised", channel: null, payload: { mandate: input.mandate, mandateRevision: before.mandateRevision + 1, mandateSource: input.mandateSource ?? null, reason: input.reason, draftId: input.draftId ?? null } }, principal);
         const after = projectState(await this.#record.context(input.sessionId));
         const rechecks: Array<{ offerId: string; terms: OfferTerm[] }> = [];
         if (after.lastProposed) rechecks.push({ offerId: after.lastProposed.offerId, terms: after.lastProposed.terms });
@@ -781,6 +788,16 @@ function selectQuestion(model: CounterpartyModel, plan: Plan): Plan["ask"] {
   if (plan.notice || plan.clarify.length > 0 || plan.unresolved.length > 0 || plan.questions.length > 0 || plan.refuseDisclosure) return null;
   const q = model.questions.find((x) => x.status === "open");
   return q ? { questionId: q.id, text: q.text } : null;
+}
+
+/** A conditional question was already put to the counterparty in this session. */
+function conditionAlreadyAsked(model: CounterpartyModel): boolean {
+  return model.questions.some((q) => q.issueKind === "conditional" && q.status !== "open");
+}
+
+/** True when this inbound message already has a recorded failed read (so a retry does not record it twice). */
+function existingFailure(events: RecordedEvent[], inboundSeq: number): boolean {
+  return events.some((e) => e.seq > inboundSeq && e.type === "counterparty_noted" && (e.payload as { failed: boolean }).failed);
 }
 
 /** The counterparty's latest offer, so a new one is recorded as its next version. */

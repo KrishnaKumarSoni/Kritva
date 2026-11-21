@@ -20,5 +20,16 @@
     "agentMustSay": [
       "(don.?t|do not) have (that |this )?(information|details)|not sure|(can|will) check"
     ]
+  },
+  "simulator": {
+    "goal": "Understand what you are buying before you decide. You can pay up to ₹19,000 if the answers are honest.",
+    "hiddenLimits": {
+      "maxPrice": 19000,
+      "requires": []
+    },
+    "plannedMoves": "Ask what brand the bed is, whether it comes with a mattress, and whether it has storage drawers. Then make an offer within your maximum and confirm terms that fit.",
+    "openingMessage": "What brand is the bed? Does it come with a mattress? Does it have storage drawers?",
+    "maxBuyerTurns": 6,
+    "sellerApproval": "approved"
   }
 }

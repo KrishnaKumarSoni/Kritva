@@ -7,6 +7,7 @@
  * The buyer chat and the scenario script call the same engine path.
  */
 import { Hono } from "hono";
+import { registerLibraryRoutes, type LibraryDeps } from "./library-routes.ts";
 import {
   formatValue,
   orderTerms,
@@ -19,6 +20,7 @@ import {
   type CounterpartyModel,
   type DraftView,
   type MandateRevisions,
+  type MandateLibrary,
   type Value,
   type ConditionRef,
   type MandateView,
@@ -45,6 +47,9 @@ export interface AppDeps {
   revisions: MandateRevisions;
   mandates: MandateEntry[];
   locale: string;
+  /** Epic 11: the principal's saved, case-level mandates. Optional so tests and scripts can omit it. */
+  library?: MandateLibrary;
+  examples?: LibraryDeps["examples"];
 }
 
 export function createApp(deps: AppDeps): Hono {
@@ -60,16 +65,22 @@ export function createApp(deps: AppDeps): Hono {
 
   // ---------- Operator (principal) ----------
 
+  if (deps.library) registerLibraryRoutes(app, { library: deps.library, record, engine, locale, examples: deps.examples ?? [] });
+
+  /** Prepared mandates from cases/, plus saved mandates with a confirmed revision. Unconfirmed drafts never appear. */
   app.get("/api/operator/mandates", (c) =>
-    c.json(
-      mandates.map((m) => ({
+    c.json([
+      ...mandates.map((m) => ({
         id: m.id,
         title: m.title,
         description: m.description,
         caseId: m.mandate.caseId,
         confirmedAt: m.mandate.approval.confirmedAt,
       })),
-    ),
+      ...(deps.library?.list() ?? [])
+        .filter((m) => m.activeRevision !== null)
+        .map((m) => ({ id: `library:${m.mandateId}`, title: m.title, description: `Saved mandate, revision ${m.activeRevision}`, caseId: m.caseId, confirmedAt: deps.library!.get(m.mandateId)!.active!.confirmedAt })),
+    ]),
   );
 
   app.get("/api/operator/sessions", async (c) => c.json(await record.listSessions()));
@@ -77,9 +88,18 @@ export function createApp(deps: AppDeps): Hono {
   /** Starts a session. With previousSessionId it is a reset: a new session, the old one kept. */
   app.post("/api/operator/sessions", async (c) => {
     const body = await c.req.json<{ mandateId?: string; previousSessionId?: string | null }>().catch(() => ({}) as Record<string, never>);
-    const entry = mandates.find((m) => m.id === body.mandateId) ?? mandates[0];
-    if (!entry) return c.json({ error: "no_mandate", message: "No confirmed mandate is available." }, 400);
-    const started = await record.startSession({ mandate: entry.mandate, previousSessionId: body.previousSessionId ?? null });
+    // A saved mandate starts from its active confirmed revision, and the session records which one.
+    let started;
+    if (typeof body.mandateId === "string" && body.mandateId.startsWith("library:")) {
+      const libraryId = body.mandateId.slice("library:".length);
+      const active = deps.library?.active(libraryId) ?? null;
+      if (!active) return c.json({ error: "not_confirmed", message: "Confirm this mandate before starting a negotiation with it." }, 409);
+      started = await record.startSession({ mandate: active.mandate, previousSessionId: body.previousSessionId ?? null, mandateSource: { mandateId: libraryId, revision: active.revision } });
+    } else {
+      const entry = mandates.find((m) => m.id === body.mandateId) ?? mandates[0];
+      if (!entry) return c.json({ error: "no_mandate", message: "No confirmed mandate is available." }, 400);
+      started = await record.startSession({ mandate: entry.mandate, previousSessionId: body.previousSessionId ?? null });
+    }
     if (!started.ok) return c.json({ error: started.error.code, message: started.error.message }, 400);
     return c.json({ session: started.session, state: operatorState(await engine.state(started.session.id), locale) }, 201);
   });
@@ -89,11 +109,14 @@ export function createApp(deps: AppDeps): Hono {
     const session = await record.getSession(id);
     if (!session) return c.json({ error: "session_not_found" }, 404);
     const [state, events] = await Promise.all([engine.state(id), record.read(id, { viewer: "operator" })]);
-    const mandateId = mandates.find((m) => JSON.stringify(m.mandate) === JSON.stringify(state.view.mandate))?.id ?? null;
     const ctx = await record.context(id);
+    const source = (ctx.events[0]?.payload as { mandateSource?: { mandateId: string; revision: number } | null } | undefined)?.mandateSource ?? null;
+    const latestSource = [...ctx.events].reverse().find((e) => e.type === "mandate_revised" && (e.payload as { mandateSource?: unknown }).mandateSource)?.payload as { mandateSource: { mandateId: string; revision: number } } | undefined;
+    const mandateId = source ? `library:${source.mandateId}` : (mandates.find((m) => JSON.stringify(m.mandate) === JSON.stringify(ctx.events[0]?.payload && (ctx.events[0].payload as { mandate: unknown }).mandate))?.id ?? null);
     return c.json({
       session,
       mandateId,
+      mandateSource: latestSource?.mandateSource ?? source,
       state: operatorState(state, locale),
       dealSpace: dealSpaceView(state, locale),
       principal: principalView(state, locale),
@@ -179,7 +202,7 @@ export function createApp(deps: AppDeps): Hono {
       channel: "text",
       messageId: typeof body.clientMessageId === "string" && /^[\w-]{8,100}$/.test(body.clientMessageId) ? `msg_${body.clientMessageId}` : undefined,
     });
-    if (!result.ok) return c.json({ error: result.code, message: result.message }, result.code === "session_not_found" ? 404 : 400);
+    if (!result.ok) return c.json({ error: result.code, message: result.message }, result.code === "session_not_found" ? 404 : result.code === "model_unavailable" ? 503 : 400);
     return c.json({
       reply: result.reply ? { messageId: result.reply.messageId, text: result.reply.text } : null,
       outcome: buyerOutcome(result.state, await record.context(c.req.param("id")), locale),
@@ -421,6 +444,7 @@ const STATUS_LABEL: Record<string, string> = {
   rejected: "Rejected",
   superseded: "Superseded",
   withdrawn: "Withdrawn",
+  corrected: "Corrected by the buyer",
   expired: "Expired",
 };
 

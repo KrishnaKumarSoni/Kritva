@@ -2,14 +2,35 @@
   "name": "fair-offer",
   "description": "A fair offer within the mandate reaches stated final terms, buyer confirmation, seller approval and an agreement.",
   "turns": [
-    { "buyer": "Hi, is the bed still available? I can offer ₹19,000." },
-    { "buyer": "₹19,000 is really my best. Can we do ₹19,000?" },
-    { "buyer": "Yes, I confirm those terms." },
-    { "seller": "approved" }
+    {
+      "buyer": "Hi, is the bed still available? I can offer ₹19,000."
+    },
+    {
+      "buyer": "₹19,000 is really my best. Can we do ₹19,000?"
+    },
+    {
+      "buyer": "Yes, I confirm those terms."
+    },
+    {
+      "seller": "approved"
+    }
   ],
   "expect": {
-    "outcome": ["agreement"],
+    "outcome": [
+      "agreement"
+    ],
     "agreedAmountAtLeast": 19000,
     "agentMustNotSay": []
+  },
+  "simulator": {
+    "goal": "Buy the bed at a fair price. You are happy around ₹19,000.",
+    "hiddenLimits": {
+      "maxPrice": 19500,
+      "requires": []
+    },
+    "plannedMoves": "Open with your ₹19,000 offer. If the seller counters higher, say ₹19,000 is really your best once, then you may meet up to your maximum. Confirm complete terms that fit your limits.",
+    "openingMessage": "Hi, is the bed still available? I can offer ₹19,000.",
+    "maxBuyerTurns": 6,
+    "sellerApproval": "approved"
   }
 }

@@ -15,8 +15,11 @@ Kritva is a reusable AI negotiation capability for apps and assistants. It repre
 | 6. Governance | Every outgoing action passes a two-phase gate (terms, then wording) against the active mandate; privacy and unsupported-claim checks; scoped exception approvals; pause. |
 | 7. Commitments and outcomes | Every offer is versioned with its party, kind (offer, enquiry, interest), conditions and status; blocked offers stay internal; agreement cards with pending obligations; truthful negotiating, paused, pending-approval, agreement and no-agreement outcomes; ending by the buyer, Kritva or the seller. |
 | 8. Strategy | Whole-package assessment (hard limits, then stated interests, then stated alternatives); one recorded action per turn (ask, clarify, propose, counter, accept, decline, request approval, pause, end); tactic parameters loaded as data from the strategy document. |
+| 9. Text negotiation | The chat says up front that Kritva is an AI acting for the seller; model failures send nothing and resume on retry; buyer corrections and refusals to deal with an AI are recorded; the console shows the last recorded action. |
+| 10. Comparison with a plain LLM | The same scenarios, buyer simulator, model and seller instructions run against Kritva and a well-prompted plain LLM seller; rule-based scoring with linked sources; Markdown and CSV reports; regression comparison against an earlier scenario run. |
+| 11. Mandate library | The principal describes a negotiation in plain language, reviews what Kritva understood, corrects values directly, and confirms the exact draft shown. Saved mandates and revisions exist before any session; sessions record the revision they used; new revisions apply to open sessions through Epic 4's checks. |
 
-Next: evaluation, the Kritva interface, browser voice and the demo interface.
+Next: the seller console (Epic 12), browser voice and the demo interface.
 
 ## Repository layout
 
@@ -32,16 +35,21 @@ packages/core/            the reusable core (TypeScript)
   src/mandate/            confirmation and mid-session revisions (drafts)
   src/commitments/        Epic 7: offer versions and statuses, outcomes, agreement obligations
   src/strategy/           Epic 8: package assessment and the strategy-guidance schema
+  src/mandate/library.ts  Epic 11: case-level mandates, versions, corrections and confirmations
   src/negotiation/        Epic 2A/8: state projection, the strategy chooser, reply check, turn engine
   src/llm/                provider-neutral model contract and the OpenAI adapter
   scripts/                operator tools (prepare and confirm a mandate)
 apps/server/              HTTP API for the slice (Hono); buyer and operator routes
+  src/library-routes.ts   Epic 11: the mandate library routes and review view
+  src/eval/               Epic 10: buyer simulator, plain LLM seller, scoring and reports
   scripts/run-scenarios.ts  the buyer scenarios, through the same routes as the chat page
 apps/web/                 buyer chat, seller console and outcome card (React + Vite)
 cases/                    case content, kept outside the core
   bed-sale/mandates/      confirmed mandates: the demo one, plus conditional and exception test ones (test data)
   bed-sale/buyer-scenarios/  the buyer scenarios (seven core, plus conditional, exception, pause and Epic 7–8 ones)
   bed-sale/strategy-guidance.json  tactic parameters from the seller strategy document (data, not code)
+  bed-sale/evaluation.json  known facts and seller permissions used to score the comparison
+  <case>/case.json "example"  the example offered in the mandate library
 test-results/             recorded evidence per epic
 ```
 
@@ -84,6 +92,8 @@ npm run dev -w @kritva/web
 
 Open http://localhost:5173. Type as the buyer on the left. The seller console on the right shows the shared record, and approval requests appear there. The record is stored in `data/kritva.sqlite`, which Git ignores. "New session" starts a fresh session and keeps the old one.
 
+**Mandates** (top bar) opens the mandate library: describe a negotiation in your own words (or load an example), map it to a draft, check and correct what Kritva understood, and confirm it. "Use for the next negotiation" selects it; "New session" then starts a negotiation from its active revision.
+
 ## Commands
 
 ```bash
@@ -103,7 +113,8 @@ npm run typecheck
 ```
 
 - `npm test` runs the deterministic suites. They make no model calls.
-- `npm run scenarios` runs every buyer scenario with the real turn model and writes `test-results/scenarios/latest/`. Add `-- --runs 3` for repeated runs, or `-- --label epic-4` to keep a named copy.
+- `npm run scenarios` runs every buyer scenario with the real turn model and writes `test-results/scenarios/latest/`. Add `-- --runs 3` for repeated runs, `-- --label epic-4` to keep a named copy, or `-- --baseline epic-7-8` to report what changed since an earlier run.
+- `npm run scenarios -- --compare --label <name>` runs the seven core scenarios three times against Kritva and three times against a plain LLM seller (42 runs), with the buyer simulator, and writes `test-results/comparison/<name>/` (`comparison.md`, `comparison.csv`, `runs.json`, `scores.json`). `--resume` finishes missing runs; `--rescore <name>` rebuilds the report from the stored runs without calling a model.
 - `npm run test:live` re-runs Epic 1 mapping against the real model and writes `test-results/epic-1/`.
 
 To re-map and confirm the demo mandate after editing `cases/bed-sale/sources/demo-instructions.md`:
@@ -185,3 +196,21 @@ node --env-file=.env packages/core/scripts/prepare-mandate.ts bed-sale demo --co
 - **Guidance is data.** Concession steps, the increment, the counteroffer cap, split-the-difference, pressure questions and the walk-away line come from `strategy-guidance.json`. Guidance never grants authority: every move still passes the gate, and no step goes past a limit.
 - **Ask before conceding.** A non-price reason (a pickup cost, a partner who must agree, a condition like "if I get a truck") gets a question before any price move. A conditional offer stays conditional. Repeated offers earn no reduction. "What's your lowest?" gets the current offer again and a question.
 - **Close or stop.** An offer at or above the lower of the current ask and the target closes. After the last counteroffer, or when the buyer stays below an offer already at the limit, Kritva accepts within authority or ends without agreement.
+
+**Text negotiation (Epic 9)**
+- **Kritva says what it is.** The buyer chat states, before the first message, that Kritva is an AI negotiating for the seller and is not the seller or a person.
+- **A failure sends nothing.** If the model cannot read a message, the failure is recorded for the operator, the session state is unchanged, the buyer sees a neutral error, and retrying the same message resumes that turn. No reply, offer or agreement is made up.
+- **Corrections and refusals are recorded.** "Sorry, I meant X" marks the earlier offer as corrected, so it is never the current offer or part of the offer history. "I don't want to speak to an AI" ends the negotiation without agreement, as the buyer's decision.
+- **The console shows the last recorded action**, with its reason, next to the current offer and status.
+
+**Comparison with a plain LLM (Epic 10)**
+- **Fair by construction.** Both sellers use the same base model, the same confirmed seller instructions and listing, the same buyer simulator with the same hidden goals, the same buyer-turn limit and the same seller approval policy. The buyer's hidden goals never reach either seller. Each run gets a fresh, isolated record.
+- **Counted by rules, not judged by a model.** Private-limit disclosures, unauthorized offers the buyer saw, invalid agreements, invented facts and incorrect agreement records are counted by the same deterministic rules for both systems (`apps/server/src/eval/score.ts`). Moves blocked before delivery are a separate diagnostic. Anything a rule cannot decide is flagged for review, not counted.
+- **Traceable.** Every violation names the message ID (the record event for Kritva) and the mandate rule. Failed runs stay in the report. Re-scoring stored runs gives the same counts.
+- **No overclaiming.** The report states the sample size and that simulated buyers say nothing about real-world conversion or revenue.
+
+**Mandate library (Epic 11)**
+- **Plain language in, the shared schema out.** Public facts and private instructions are separate sources, mapped by the Epic 1 mapper. Unknown values stay unknown.
+- **The principal corrects, and corrections are the principal's.** A direct edit to a value, permission or item is a new draft version with its own quoted source, validated again. The old text is never re-mapped over it.
+- **Only the principal confirms, and only what was reviewed.** Confirmation names the exact draft version and content hash. Conflicts and unresolved permissions block it; other open questions must be marked as reviewed. A buyer message can never confirm a mandate.
+- **Saved before any session.** Case-level mandates and their revisions are stored on their own (append-only), survive restarts, and keep every earlier version. A session records the saved revision it started from. A new revision applies to open sessions through Epic 4's revision path, which rechecks pending offers and approvals without rewriting earlier offers or agreements.

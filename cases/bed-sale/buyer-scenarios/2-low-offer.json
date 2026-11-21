@@ -24,5 +24,16 @@
       "\\b(deal|agreed)\\b"
     ],
     "noOfferBelow": 18000
+  },
+  "simulator": {
+    "goal": "Get the bed very cheaply. You will not pay more than ₹15,000.",
+    "hiddenLimits": {
+      "maxPrice": 15000,
+      "requires": []
+    },
+    "plannedMoves": "Start at ₹10,000, then ₹12,000, then call ₹14,000 your final offer, then a last try at ₹15,000 cash today. Never go above ₹15,000. Leave politely if the seller will not meet it.",
+    "openingMessage": "Would you take ₹10,000 for it?",
+    "maxBuyerTurns": 6,
+    "sellerApproval": "approved"
   }
 }

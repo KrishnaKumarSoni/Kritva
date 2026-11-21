@@ -100,11 +100,12 @@ describe("Story 1: the buyer's position and needs", () => {
   });
 
   it("a failed read preserves earlier context and flags the message", async () => {
-    const { say, model, llm } = await setup();
+    const { say, model, llm, engine, sessionId } = await setup();
     await say("My budget is ₹19,000.", { notes: [note("budget", "My budget is ₹19,000", "Budget.", { value: v("money", { amount: 19_000 }) })] });
     const original = llm.generate.bind(llm);
     llm.generate = async (r) => (r.purpose === "interpret_counterparty" ? Promise.reject(new Error("timeout")) : original(r));
-    await say("asdf", {});
+    const failed = await engine.handleCounterpartyMessage({ sessionId, text: "asdf", channel: "text" });
+    expect(failed.ok === false && failed.code).toBe("model_unavailable");
     const m = await model();
     expect(m.items).toHaveLength(1);
     expect(m.failedMessages).toHaveLength(1);

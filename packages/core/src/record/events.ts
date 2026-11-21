@@ -49,10 +49,14 @@ export const PAYLOADS = {
     mandate: ConfirmedMandate,
     mandateRevision: z.literal(1),
     previousSessionId: Id.nullable(),
+    /** The saved case-level mandate and revision this session started from (Epic 11), if any. */
+    mandateSource: z.strictObject({ mandateId: z.string().min(1).max(100), revision: z.number().int().min(1) }).nullable().default(null),
   }),
   mandate_revised: z.strictObject({
     mandate: ConfirmedMandate,
     mandateRevision: z.number().int().min(2),
+    /** The saved case-level revision applied (Epic 11), when the change came from the mandate library. */
+    mandateSource: z.strictObject({ mandateId: z.string().min(1).max(100), revision: z.number().int().min(1) }).nullable().default(null),
     reason: ShortText,
     /** The reviewed draft this revision confirms, when it came through the draft flow. */
     draftId: Id.nullable().default(null),
@@ -94,6 +98,8 @@ export const PAYLOADS = {
     termsHash: z.string().length(64),
     /** An offer, a question about a price ("would you take X?"), or interest without a commitment. */
     kind: z.enum(["offer", "enquiry", "interest"]).default("offer"),
+    /** The counterparty corrected their previous offer ("sorry, I meant X"): it replaces that one as a mistake. */
+    correctsPrevious: z.boolean().default(false),
     /** The counterparty's previous offer this one changes. History is never overwritten. */
     previousOfferId: Id.nullable().default(null),
     /** Conditions in the counterparty's words that the terms cannot express ("if I get a truck"). */

@@ -22,9 +22,11 @@ interface SelectProps {
   options: SelectOption[];
   onChange: (value: string) => void;
   disabled?: boolean;
+  /** Shown when nothing is selected. */
+  placeholder?: string;
 }
 
-export function Select({ label, value, options, onChange, disabled = false }: SelectProps) {
+export function Select({ label, value, options, onChange, disabled = false, placeholder = "Choose…" }: SelectProps) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -115,7 +117,7 @@ export function Select({ label, value, options, onChange, disabled = false }: Se
         onKeyDown={onKeyDown}
       >
         <span id={`${id}-value`} className="select-value">
-          {selected?.label ?? "Choose…"}
+          {selected?.label ?? placeholder}
         </span>
         <ChevronIcon className={`select-chevron${open ? " is-open" : ""}`} />
       </button>

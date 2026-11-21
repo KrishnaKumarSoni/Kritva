@@ -34,7 +34,7 @@ const VERDICT_LABEL: Record<string, string> = {
 function statusClass(status: string): string {
   if (status === "agreed" || status === "accepted") return "status status-fits";
   if (status === "rejected" || status === "internal") return "status status-conflict";
-  if (status === "superseded" || status === "expired" || status === "withdrawn") return "status status-muted";
+  if (status === "superseded" || status === "expired" || status === "withdrawn" || status === "corrected") return "status status-muted";
   return "status status-unclear";
 }
 

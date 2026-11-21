@@ -428,6 +428,15 @@ describe("Epic 8, Story 2: questions that reveal what blocks agreement", () => {
     expect((await events()).some((e) => e.type === "question_asked")).toBe(true);
   });
 
+  it("a conditional clarification is asked once; a repeated conditional offer is then evaluated on its terms", async () => {
+    const { say, decisions } = await setup(listingOnlyDeliveryMandate());
+    const first = await say("I'd pay ₹19,000 if my partner agrees.", { ...offer(19_000), offer_conditions: ["if my partner agrees"] });
+    expect(first.reply!.text).toContain("What do you need to settle");
+    const again = await say("Still ₹19,000 if my partner agrees.", { ...offer(19_000), offer_conditions: ["if my partner agrees"] });
+    expect(again.reply!.text).not.toContain("What do you need to settle");
+    expect((await decisions()).at(-1)!.action).not.toBe("clarify");
+  });
+
   it("a price question that comes with an offer is not treated as an unanswered factual question", async () => {
     const { say } = await setup(listingOnlyDeliveryMandate());
     const t = await say("Can you do ₹19,000 instead?", { ...offer(19_000), questions: ["Can you do ₹19,000 instead?"] });

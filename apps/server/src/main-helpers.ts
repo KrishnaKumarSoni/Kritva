@@ -40,3 +40,29 @@ export function loadGuidance(root: string): StrategyGuidance {
   }
   return parseGuidance(JSON.parse(readFileSync(path, "utf8")));
 }
+
+export interface CaseExample {
+  id: string;
+  title: string;
+  principalRole: string;
+  counterpartyRole: string;
+  publicText: string;
+  privateText: string;
+}
+
+/** Example inputs for the mandate library, read from each case's case.json "example" block. Case content stays in cases/. */
+export function loadExamples(casesDir: string): CaseExample[] {
+  const out: CaseExample[] = [];
+  for (const dir of readdirSync(casesDir, { withFileTypes: true })) {
+    if (!dir.isDirectory()) continue;
+    const caseFile = JSON.parse(readFileSync(join(casesDir, dir.name, "case.json"), "utf8")) as {
+      sources?: Record<string, { file: string }>;
+      example?: { title: string; principalRole: string; counterpartyRole: string; publicSource: string; privateSource: string | null };
+    };
+    const ex = caseFile.example;
+    if (!ex) continue;
+    const read = (key: string | null) => (key && caseFile.sources?.[key] ? readFileSync(join(casesDir, dir.name, caseFile.sources[key]!.file), "utf8").trim() : "");
+    out.push({ id: dir.name, title: ex.title, principalRole: ex.principalRole, counterpartyRole: ex.counterpartyRole, publicText: read(ex.publicSource), privateText: read(ex.privateSource) });
+  }
+  return out;
+}

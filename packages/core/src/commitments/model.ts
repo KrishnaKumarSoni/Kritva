@@ -13,6 +13,7 @@
  * - accepted / agreed / rejected: as recorded.
  * - superseded: a later version from the same party replaced it. History is kept.
  * - withdrawn: the negotiation ended without agreement while it was open.
+ * - corrected: the counterparty said it was a mistake and replaced it ("sorry, I meant X").
  * - expired: it no longer passes a check under the mandate in force.
  */
 import type { OfferTerm, PayloadOf, RecordedEvent } from "../record/events.ts";
@@ -32,6 +33,7 @@ export type OfferStatus =
   | "rejected"
   | "superseded"
   | "withdrawn"
+  | "corrected"
   | "expired";
 
 export interface OfferRecord {
@@ -45,6 +47,8 @@ export interface OfferRecord {
   previousOfferId: string | null;
   version: number;
   conditions: string[];
+  /** This offer corrects the counterparty's previous one as a mistake. */
+  correctsPrevious: boolean;
   status: OfferStatus;
   blocked: boolean;
   approval: "none" | "requested" | "approved" | "rejected";
@@ -96,6 +100,7 @@ export function projectCommitments(ctx: SessionContext, options: { negotiableTer
           previousOfferId: p.previousOfferId ?? null,
           version: prev ? prev.version + 1 : 1,
           conditions: p.conditions ?? [],
+          correctsPrevious: p.correctsPrevious ?? false,
           status: "proposed",
           blocked: false,
           approval: "none",
@@ -119,6 +124,7 @@ export function projectCommitments(ctx: SessionContext, options: { negotiableTer
           previousOfferId: p.previousOfferId ?? null,
           version: prev ? prev.version + 1 : 1,
           conditions: [],
+          correctsPrevious: false,
           status: "internal",
           blocked: false,
           approval: "none",
@@ -173,10 +179,12 @@ export function projectCommitments(ctx: SessionContext, options: { negotiableTer
   const ended = ctx.status === "no_agreement" || ctx.status === "ended";
   const agreedTerms = agreement?.terms ?? [];
   const withinAgreement = (o: OfferRecord) => o.terms.every((t) => agreedTerms.some((a) => a.termId === t.termId && JSON.stringify(a.value) === JSON.stringify(t.value)));
+  const corrected = new Set(offers.filter((o) => o.correctsPrevious && o.previousOfferId).map((o) => o.previousOfferId!));
   for (const o of offers) {
     const check = checks.get(o.offerId);
     if (o.party === "counterparty") {
-      if (o.offerId !== latestCounterparty?.offerId) o.status = "superseded";
+      if (corrected.has(o.offerId)) o.status = "corrected";
+      else if (o.offerId !== latestCounterparty?.offerId) o.status = "superseded";
       else if (agreement) o.status = withinAgreement(o) ? "agreed" : "superseded";
       else if (ended) o.status = stopped?.by === "counterparty" ? "withdrawn" : "rejected";
       else if (o.kind === "enquiry" || o.kind === "interest") o.status = o.kind;

@@ -26,5 +26,16 @@
       "\\bdelivery (is )?(possible|available|free|arranged)\\b",
       "\\bdelivery included:? yes\\b"
     ]
+  },
+  "simulator": {
+    "goal": "You would like delivery to Whitefield, but you can collect from Koramangala if delivery is refused.",
+    "hiddenLimits": {
+      "maxPrice": 19500,
+      "requires": []
+    },
+    "plannedMoves": "Ask for delivery to Whitefield at ₹19,500. If the seller declines delivery, agree to pick it up and keep ₹19,500. Confirm complete terms that fit your limits.",
+    "openingMessage": "Can you deliver it to Whitefield? I'll pay ₹19,500 if you deliver.",
+    "maxBuyerTurns": 6,
+    "sellerApproval": "approved"
   }
 }

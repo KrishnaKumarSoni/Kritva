@@ -76,7 +76,8 @@ export class OpenAIStructuredLlm implements StructuredLlm {
     } catch {
       throw new LlmError("malformed_output", "The model returned text that is not valid JSON.");
     }
-    return { json, rawText, model: response.model, latencyMs };
+    const usage = response.usage ? { inputTokens: response.usage.input_tokens ?? 0, outputTokens: response.usage.output_tokens ?? 0 } : undefined;
+    return { json, rawText, model: response.model, latencyMs, usage };
   }
 }
 

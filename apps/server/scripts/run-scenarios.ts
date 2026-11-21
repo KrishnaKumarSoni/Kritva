@@ -5,7 +5,7 @@
  *
  *   node --env-file=.env apps/server/scripts/run-scenarios.ts [--runs N] [--only name] [--label epic-3]
  */
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execSync } from "node:child_process";
@@ -13,6 +13,7 @@ import {
   createMappingLlmFromEnv,
   MandateRevisions,
   createTurnLlmFromEnv,
+  DEFAULT_TURN_MODEL,
   findAmounts,
   NegotiationEngine,
   NegotiationRecord,
@@ -22,6 +23,10 @@ import {
 } from "@kritva/core";
 import { createApp } from "../src/app.ts";
 import { loadConfirmedMandates, loadGuidance } from "../src/main-helpers.ts";
+import { runComparison, systemPromptVersions } from "../src/eval/compare.ts";
+import { csvReport, markdownReport } from "../src/eval/report.ts";
+import { scoreRun } from "../src/eval/score.ts";
+import type { Judge, RunRecord, SimulatorSpec } from "../src/eval/types.ts";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
 const args = process.argv.slice(2);
@@ -73,6 +78,67 @@ const scenarios: Scenario[] = readdirSync(scenarioDir)
   .filter((s) => !only || s.name === only);
 
 const mandates = loadConfirmedMandates(join(ROOT, "cases"));
+
+// ---- Epic 10: Kritva vs a plain LLM seller, on the same scenarios (only those with a buyer simulator) ----
+if (args.includes("--compare") || args.includes("--rescore")) {
+  await comparisonCli();
+  process.exit(0);
+}
+
+async function comparisonCli(): Promise<void> {
+  const compareLabel = args.includes("--label") ? args[args.indexOf("--label") + 1]! : args.includes("--rescore") ? args[args.indexOf("--rescore") + 1]! : "latest";
+  const outDir = join(ROOT, "test-results/comparison", compareLabel);
+  mkdirSync(outDir, { recursive: true });
+  const runsFile = join(outDir, "runs.json");
+  const stored: RunRecord[] = existsSync(runsFile) ? (JSON.parse(readFileSync(runsFile, "utf8")) as { runs: RunRecord[] }).runs : [];
+  const judge = JSON.parse(readFileSync(join(ROOT, "cases/bed-sale/evaluation.json"), "utf8")) as Judge;
+  const simulated = scenarios.filter((x): x is Scenario & { simulator: SimulatorSpec } => Boolean((x as { simulator?: unknown }).simulator));
+  const perScenario = Number(args[args.indexOf("--runs") + 1] ?? 3) || 3;
+  let all = stored;
+  if (args.includes("--compare")) {
+    if (stored.length > 0 && !args.includes("--resume")) throw new Error(`Results for "${compareLabel}" already exist. Use --resume to finish missing runs, or a new --label.`);
+    const model = process.env.KRITVA_TURN_MODEL ?? DEFAULT_TURN_MODEL;
+    const save = (list: RunRecord[]) => writeFileSync(runsFile, `${JSON.stringify({ label: compareLabel, runs: list }, null, 2)}\n`);
+    const fresh = await runComparison({
+      label: compareLabel,
+      scenarios: simulated.map((x) => ({ name: x.name, mandate: x.mandate ?? "bed-sale/demo", simulator: x.simulator })),
+      runsPerScenario: perScenario,
+      systems: ["kritva", "plain"],
+      mandates,
+      judge,
+      guidance: loadGuidance(ROOT),
+      sellerLlm: () => createTurnLlmFromEnv(),
+      buyerLlm: createTurnLlmFromEnv(),
+      model,
+      dataDir: mkdtempSync(join(tmpdir(), "kritva-compare-")),
+      locale: "en-IN",
+      existing: stored,
+      concurrency: Number(args[args.indexOf("--concurrency") + 1] ?? 4) || 4,
+      onRun: (r) => {
+        all = [...all.filter((x) => x.runId !== r.runId), r];
+        save(all);
+        console.log(`${r.status === "completed" ? "done" : "FAILED"} ${r.runId} → ${r.outcome.kind}${r.error ? ` (${r.error})` : ""}`);
+      },
+    });
+    void fresh;
+  }
+  const order = (r: RunRecord) => `${simulated.findIndex((x) => x.name === r.scenario).toString().padStart(2, "0")}:${r.run}:${r.system}`;
+  all = [...all].sort((x, y) => order(x).localeCompare(order(y)));
+  const specs = new Map(simulated.map((x) => [x.name, x.simulator]));
+  const scores = all.map((r) => scoreRun(r, judge, specs.get(r.scenario)!));
+  const meta = {
+    label: compareLabel,
+    generatedFrom: `test-results/comparison/${compareLabel}/runs.json`,
+    model: [...new Set(all.map((r) => r.model))].join(", ") || "—",
+    promptVersions: { kritva: all.find((r) => r.system === "kritva")?.promptVersions ?? systemPromptVersions("kritva"), plain: all.find((r) => r.system === "plain")?.promptVersions ?? systemPromptVersions("plain") },
+    runsPerScenario: perScenario,
+  };
+  writeFileSync(join(outDir, "comparison.md"), markdownReport(all, scores, meta));
+  writeFileSync(join(outDir, "comparison.csv"), csvReport(all, scores));
+  writeFileSync(join(outDir, "scores.json"), `${JSON.stringify(scores, null, 2)}\n`);
+  console.log(`${scores.length} runs (${scores.filter((x) => x.status === "failed").length} failed). Report: test-results/comparison/${compareLabel}/comparison.md`);
+}
+
 const viewFor = (id: string) => {
   const entry = mandates.find((m) => m.id === id);
   if (!entry) throw new Error(`Mandate ${id} not found.`);
@@ -339,6 +405,33 @@ const summary = {
 };
 writeFileSync(join(outDir, "scenario-results.json"), `${JSON.stringify(summary, null, 2)}\n`);
 
+/** Epic 10.3: with --baseline <label>, list every scenario whose result changed since that earlier run. */
+function baselineChanges(): string[] {
+  if (!args.includes("--baseline")) return [];
+  const base = args[args.indexOf("--baseline") + 1]!;
+  const file = join(ROOT, "test-results/scenarios", base, "scenario-results.json");
+  if (!existsSync(file)) return [`## Changes against ${base}`, "", `No stored results for ${base}.`, ""];
+  const before = JSON.parse(readFileSync(file, "utf8")) as { results: RunResult[]; passed: number; total: number };
+  const key = (r: RunResult) => `${r.scenario}#${r.run}`;
+  const old = new Map(before.results.map((r) => [key(r), r]));
+  const rows: string[] = [];
+  for (const r of results) {
+    const o = old.get(key(r));
+    const failedNow = r.checks.filter((c) => !c.pass).map((c) => c.check);
+    const failedBefore = o ? o.checks.filter((c) => !c.pass).map((c) => c.check) : [];
+    if (!o) rows.push(`| ${r.scenario} | ${r.run} | new | ${r.passed ? "pass" : "fail"} | ${failedNow.join("; ")} |`);
+    else if (o.passed !== r.passed || failedNow.join() !== failedBefore.join()) rows.push(`| ${r.scenario} | ${r.run} | ${o.passed ? "pass" : "fail"} | ${r.passed ? "pass" : "fail"} | ${[...failedNow.filter((c) => !failedBefore.includes(c)).map((c) => `newly failing: ${c}`), ...failedBefore.filter((c) => !failedNow.includes(c)).map((c) => `fixed: ${c}`)].join("; ").replace(/\|/g, "\\|")} |`);
+  }
+  return [
+    `## Changes against ${base}`,
+    "",
+    `Before: ${before.passed} of ${before.total} passed. Now: ${results.filter((r) => r.passed).length} of ${results.length}.`,
+    "",
+    ...(rows.length ? ["| Scenario | Run | Before | Now | What changed |", "| --- | --- | --- | --- | --- |", ...rows] : ["No scenario changed result."]),
+    "",
+  ];
+}
+
 const lines = [
   `# Buyer scenarios (${label})`,
   "",
@@ -353,6 +446,7 @@ const lines = [
   "| --- | --- | --- | --- | --- |",
   ...results.map((r) => `| ${r.scenario} | ${r.run} | ${r.passed ? "pass" : "**fail**"} | ${r.blockedReplies}${r.blockedRules.length ? ` (${[...new Set(r.blockedRules.map((x) => x.split(":")[0]))].join(", ")})` : ""} | ${r.checks.filter((c) => !c.pass).map((c) => `${c.check}${c.detail ? ` (${c.detail})` : ""}`).join("; ").replace(/\|/g, "\\|")} |`),
   "",
+  ...baselineChanges(),
   "## Transcripts",
   "",
   ...results.flatMap((r) => [

@@ -33,6 +33,8 @@ export interface Interpretation {
   offerKind?: "offer" | "enquiry" | "interest";
   /** Conditions the counterparty attached that the terms cannot express ("if I get a truck"). */
   offerConditions?: string[];
+  /** The counterparty corrects their previous offer ("sorry, I meant X"). */
+  correctsPrevious?: boolean;
   /** The counterparty declines to continue or withdraws. */
   endsNegotiation?: boolean;
   /** A pressure move: asking for the lowest price, calling an offer final, or citing a cheaper option. */
@@ -95,6 +97,8 @@ export interface StrategyContext {
   guidance: StrategyGuidance;
   /** Questions prepared from this message (e.g. about a non-price obstacle), not yet asked. */
   freshQuestions: Array<{ questionId: string; text: string; kind: string }>;
+  /** A question about a counterparty condition was already asked in this session: never ask it again. */
+  conditionAsked?: boolean;
   locale: string;
 }
 
@@ -212,7 +216,7 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
 
   // A condition the counterparty attached that the terms cannot express: settle it before committing.
   // (Term-level problems — a declined, unresolved or unclear term — are handled below and take precedence.)
-  if ((interp.offerConditions ?? []).length > 0 && n && state.currentAsk !== null && plan.declined.length === 0 && plan.unresolved.length === 0 && plan.clarify.length === 0) {
+  if ((interp.offerConditions ?? []).length > 0 && !context.conditionAsked && n && state.currentAsk !== null && plan.declined.length === 0 && plan.unresolved.length === 0 && plan.clarify.length === 0) {
     const ask = context.freshQuestions.find((q) => q.kind === "conditional" || q.kind === "authority");
     const condition = interp.offerConditions![0]!;
     return {
@@ -251,7 +255,7 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
     const finalOffer = interp.pressure === "final_offer";
 
     // A new non-price obstacle: understand it before conceding on price.
-    const obstacle = context.freshQuestions.find((x) => ["budget_scope", "obstacle", "conditional", "authority"].includes(x.kind));
+    const obstacle = context.freshQuestions.find((x) => ["budget_scope", "obstacle", "authority"].includes(x.kind) || (x.kind === "conditional" && !context.conditionAsked));
     if (g.askBeforeConceding && obstacle && !finalOffer) {
       return {
         ...holdAt(plan, view, ask, keep, obstacle.kind === "conditional" ? "The offer depends on a condition the counterparty has not settled; ask about it before committing." : "The counterparty gave a non-price reason; ask about it before changing the price."),

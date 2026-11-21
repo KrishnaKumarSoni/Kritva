@@ -164,5 +164,12 @@
       "label": "Exception test mandate",
       "description": "Test data only: a ₹18,000 minimum where lower prices need the seller's approval."
     }
+  },
+  "example": {
+    "title": "King-size bed sale",
+    "principalRole": "seller",
+    "counterpartyRole": "buyer",
+    "publicSource": "listing",
+    "privateSource": "demo-instructions"
   }
 }

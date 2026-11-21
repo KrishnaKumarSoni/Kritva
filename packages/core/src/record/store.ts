@@ -86,6 +86,7 @@ export class NegotiationRecord {
     mandate: ConfirmedMandate;
     sessionId?: string;
     previousSessionId?: string | null;
+    mandateSource?: { mandateId: string; revision: number } | null;
   }): Promise<StartResult> {
     const checked = validateConfirmedMandate(input.mandate);
     if (!checked.ok) return fail("invalid_mandate", "The mandate is not a valid confirmed mandate.", checked.errors);
@@ -102,7 +103,7 @@ export class NegotiationRecord {
       id: newEventId(),
       type: "session_started",
       channel: null,
-      payload: { mandate: checked.mandate, mandateRevision: 1, previousSessionId: previous },
+      payload: { mandate: checked.mandate, mandateRevision: 1, previousSessionId: previous, mandateSource: input.mandateSource ?? null },
     };
     const row = toRow(event, { kind: "system", partyId: null }, sessionId, 1, at, "private");
     try {

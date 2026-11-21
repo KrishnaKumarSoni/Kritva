@@ -32,5 +32,16 @@
       "\\b(we|i)('ll| will| can| could) (deliver|arrange delivery)\\b",
       "\\bdelivery included:? yes\\b"
     ]
+  },
+  "simulator": {
+    "goal": "Buy the bed, trying to add delivery first. You can pay up to ₹19,500.",
+    "hiddenLimits": {
+      "maxPrice": 19500,
+      "requires": []
+    },
+    "plannedMoves": "Offer ₹19,500. When the seller states terms, ask whether they can deliver for that price. When delivery is declined, drop it and ask for ₹19,000 instead. Confirm complete terms that fit your limits.",
+    "openingMessage": "I'll pay ₹19,500 for it.",
+    "maxBuyerTurns": 6,
+    "sellerApproval": "approved"
   }
 }

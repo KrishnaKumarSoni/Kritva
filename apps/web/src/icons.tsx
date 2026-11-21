@@ -68,3 +68,11 @@ export const AlertIcon =(p: SVGProps<SVGSVGElement>) => (
     <path d="M12 16h.01" />
   </svg>
 );
+
+/** Marks AI-generated content: a four-point spark. */
+export const SparkIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M12 3c.4 3.9 2.1 5.6 6 6-3.9.4-5.6 2.1-6 6-.4-3.9-2.1-5.6-6-6 3.9-.4 5.6-2.1 6-6Z" />
+    <path d="M18.5 15.5c.2 1.6.9 2.3 2.5 2.5-1.6.2-2.3.9-2.5 2.5-.2-1.6-.9-2.3-2.5-2.5 1.6-.2 2.3-.9 2.5-2.5Z" />
+  </svg>
+);

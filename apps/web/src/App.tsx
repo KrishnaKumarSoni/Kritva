@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, type BuyerView, type MandateOption, type OperatorView } from "./api.ts";
 import { Chat } from "./Chat.tsx";
 import { RefreshIcon } from "./icons.tsx";
+import { MandatesPage } from "./MandatesPage.tsx";
 import { RecordPanel } from "./RecordPanel.tsx";
 import { Select } from "./Select.tsx";
 
@@ -25,16 +26,18 @@ export function App() {
   const reported = useRef(new Set<string>());
   const [mandates, setMandates] = useState<MandateOption[]>([]);
   const [mandateId, setMandateId] = useState<string | null>(null);
+  const [view, setView] = useState<"negotiation" | "mandates">("negotiation");
 
-  useEffect(() => {
+  const loadMandates = useCallback(() => {
     api
       .listMandates()
       .then((list) => {
         setMandates(list);
-        setMandateId((current) => current ?? list[0]?.id ?? null);
+        setMandateId((current) => (current && list.some((m) => m.id === current) ? current : (list[0]?.id ?? null)));
       })
       .catch(() => setConsoleError("Unable to load mandates."));
   }, []);
+  useEffect(loadMandates, [loadMandates]);
 
   // Recover the last session after a refresh; otherwise start one.
   useEffect(() => {
@@ -146,11 +149,27 @@ export function App() {
           <span className="wordmark" aria-label="Kritva">
             Kritva<span className="wordmark-dot" aria-hidden="true" />
           </span>
-          <span className="brand-context">
+          <span className="brand-context" hidden={view !== "negotiation"}>
             Negotiation slice · {mandates.find((m) => m.id === operator?.mandateId)?.title ?? "Confirmed seller mandate"}
           </span>
         </div>
-        <div className="topbar-actions">
+        <nav className="view-switch" aria-label="Views">
+          {(["negotiation", "mandates"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              className="view-switch-item"
+              aria-current={view === v ? "page" : undefined}
+              onClick={() => {
+                setView(v);
+                if (v === "negotiation") loadMandates();
+              }}
+            >
+              {v === "negotiation" ? "Negotiation" : "Mandates"}
+            </button>
+          ))}
+        </nav>
+        <div className="topbar-actions" hidden={view !== "negotiation"}>
           {sessionId && (
             <span className="mono session-id" title={`Session ${sessionId}${operator?.mandateId ? `, mandate ${operator.mandateId}` : ""}`}>
               {sessionId.slice(0, 12)}
@@ -168,6 +187,15 @@ export function App() {
           </button>
         </div>
       </header>
+      {view === "mandates" ? (
+        <MandatesPage
+          onUse={(id) => {
+            setMandateId(id);
+            setView("negotiation");
+            loadMandates();
+          }}
+        />
+      ) : (
       <main className="layout">
         <h1 className="visually-hidden">Kritva negotiation slice</h1>
         <Chat view={buyer} pending={pending} sending={sending} error={error} onSend={(text) => send(text)} onRetry={retry} onDisplayed={onDisplayed} />
@@ -194,6 +222,7 @@ export function App() {
           />
         </div>
       </main>
+      )}
     </div>
   );
 }

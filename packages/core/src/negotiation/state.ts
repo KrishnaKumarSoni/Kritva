@@ -146,6 +146,8 @@ export function projectState(ctx: SessionContext): NegotiationState {
         const p = ctx.effective.get(e.id) as PayloadOf<"offer_extracted">;
         for (const t of p.terms) counterpartyTerms.set(t.termId, t.value);
         const amount = amountOf(p.terms);
+        // A corrected offer was a mistake, not a position: it leaves the offer history.
+        if (p.correctsPrevious && counterpartyAmounts.length > 0) counterpartyAmounts.pop();
         if (amount !== null) {
           counterpartyAmounts.push(amount);
           offersSinceAsk += 1;

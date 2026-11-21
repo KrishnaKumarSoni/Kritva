@@ -21,7 +21,7 @@ export {
   type MapOptions,
 } from "./mapping/mapper.ts";
 export { MAPPING_PROMPT_VERSION } from "./mapping/prompt.ts";
-export { LlmError, type StructuredLlm, type StructuredRequest, type StructuredResponse } from "./llm/types.ts";
+export { LlmError, type LlmMessage, type StructuredLlm, type StructuredRequest, type StructuredResponse } from "./llm/types.ts";
 export { OpenAIStructuredLlm, type OpenAIStructuredLlmOptions } from "./llm/openai.ts";
 export { createMappingLlmFromEnv, DEFAULT_MAPPING_MODEL } from "./llm/config.ts";
 export { confirmMandate, validateConfirmedMandate, type ValidConfirmedMandate, type ConfirmResult } from "./mandate/confirm.ts";
@@ -50,3 +50,5 @@ export { interpretMessage } from "./negotiation/interpret.ts";
 export { StrategyGuidance, MINIMAL_GUIDANCE, parseGuidance } from "./strategy/guidance.ts";
 export { assessPackage, type Assessment } from "./strategy/assess.ts";
 export { projectCommitments, noAgreementSummary, type CommitmentsModel, type OfferRecord, type OfferStatus, type SessionOutcome, type Obligation } from "./commitments/model.ts";
+export { promptVersions } from "./llm/prompt-versions.ts";
+export { MandateLibrary, SqliteLibraryBackend, blockers, type LibraryBackend, type LibraryDetail, type LibraryInput, type LibraryVersion, type Correction, type VersionStatus } from "./mandate/library.ts";

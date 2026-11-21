@@ -166,6 +166,60 @@ export interface OperatorView {
   events: RecordEvent[];
 }
 
+export interface LibraryInput {
+  title: string;
+  principalRole: string;
+  counterpartyRole: string;
+  publicText: string;
+  privateText: string;
+}
+
+export interface LibrarySummary {
+  mandateId: string;
+  title: string;
+  caseId: string;
+  activeRevision: number | null;
+  hasOpenDraft: boolean;
+  updatedAt: string;
+}
+
+export interface LibraryExample extends LibraryInput {
+  id: string;
+}
+
+export interface ReviewItem {
+  recordId: string;
+  label: string;
+  text: string;
+  private: boolean;
+  edit: "value" | "mode" | null;
+  currentValue: string | null;
+  currentMode: string | null;
+  removable: boolean;
+  inferred: boolean;
+  source: string | null;
+}
+
+export interface MandateReview {
+  parties: { you: string; other: string };
+  sources: Array<{ id: string; label: string; private: boolean }>;
+  sections: Array<{ id: string; title: string; empty: string; items: ReviewItem[] }>;
+  issues: Array<{ id: string; kind: string; message: string; blocking: boolean }>;
+}
+
+export interface LibraryDetailView {
+  mandateId: string;
+  title: string;
+  caseId: string;
+  input: LibraryInput;
+  versions: Array<{ versionId: string; seq: number; origin: "text" | "correction"; status: "draft" | "confirmed" | "superseded" | "discarded"; revision: number | null; createdAt: string; draftHash: string }>;
+  active: { revision: number; versionId: string; confirmedAt: string; review: MandateReview } | null;
+  latest: { versionId: string; status: "draft" | "confirmed" | "superseded" | "discarded"; draftHash: string; review: MandateReview; blockers: string[]; accept: string } | null;
+  appliedToSessions?: string[];
+}
+
+export type LibraryCorrection = { recordId: string; value: string } | { recordId: string; mode: string } | { recordId: string; remove: true };
+
 export interface MandateOption {
   id: string;
   title: string;
@@ -220,6 +274,16 @@ export const api = {
     }),
   reportDelivered: (id: string, messageId: string) => call<unknown>("POST", `/api/buyer/sessions/${id}/deliveries`, { messageId }),
   endNegotiation: (id: string, reason: string) => call<unknown>("POST", `/api/operator/sessions/${id}/end`, { reason }),
+  library: {
+    list: () => call<LibrarySummary[]>("GET", "/api/operator/library"),
+    examples: () => call<LibraryExample[]>("GET", "/api/operator/library/examples"),
+    get: (id: string) => call<LibraryDetailView>("GET", `/api/operator/library/${id}`),
+    create: (input: LibraryInput) => call<LibraryDetailView>("POST", "/api/operator/library", input),
+    remap: (id: string, input: LibraryInput) => call<LibraryDetailView>("POST", `/api/operator/library/${id}/drafts`, input),
+    correct: (id: string, versionId: string, corrections: LibraryCorrection[]) => call<LibraryDetailView>("POST", `/api/operator/library/${id}/corrections`, { versionId, corrections }),
+    confirm: (id: string, versionId: string, draftHash: string, acknowledgedIssueIds: string[]) => call<LibraryDetailView>("POST", `/api/operator/library/${id}/confirm`, { versionId, draftHash, acknowledgedIssueIds }),
+    discard: (id: string, versionId: string) => call<LibraryDetailView>("POST", `/api/operator/library/${id}/discard`, { versionId }),
+  },
   setPaused: (id: string, paused: boolean) => call<unknown>("POST", `/api/operator/sessions/${id}/pause`, { paused }),
   instructions: (id: string) => call<{ instructions: string }>("GET", `/api/operator/sessions/${id}/instructions`),
   proposeDraft: (id: string, instructions: string) => call<{ draft: DraftSummary }>("POST", `/api/operator/sessions/${id}/drafts`, { instructions }),

@@ -102,6 +102,15 @@ export function RecordPanel({ view, responding, onRespond, onPause, onChanged }:
           <Stat label={n?.limitKind === "maximum" ? "Maximum" : "Minimum"} value={n?.limit ?? "Not set"} isPrivate />
           <Stat label="Buyer offers" value={state.counterpartyOffers.length > 0 ? state.counterpartyOffers.join(", ") : "None yet"} />
           <Stat label="Accepting" value={state.acceptRequiresApproval ? "Needs your approval" : "Kritva may accept"} isPrivate />
+          {view?.commitments.decisions[0] && (
+            <div className="stat stat-wide">
+              <dt className="stat-label">Last action</dt>
+              <dd className="stat-value stat-value-text" style={{ margin: 0 }}>
+                {view.commitments.decisions[0].actionLabel ?? "Decision"}
+                <span className="stat-detail">{view.commitments.decisions[0].reason}</span>
+              </dd>
+            </div>
+          )}
         </dl>
       )}
 

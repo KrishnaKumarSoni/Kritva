@@ -2,9 +2,9 @@
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { serve } from "@hono/node-server";
-import { createMappingLlmFromEnv, createTurnLlmFromEnv, MandateRevisions, NegotiationEngine, NegotiationRecord, SqliteRecordBackend } from "@kritva/core";
+import { createMappingLlmFromEnv, createTurnLlmFromEnv, MandateLibrary, MandateRevisions, NegotiationEngine, NegotiationRecord, SqliteLibraryBackend, SqliteRecordBackend } from "@kritva/core";
 import { createApp } from "./app.ts";
-import { loadConfirmedMandates, loadGuidance } from "./main-helpers.ts";
+import { loadConfirmedMandates, loadExamples, loadGuidance } from "./main-helpers.ts";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
 
@@ -13,8 +13,11 @@ mkdirSync(dataDir, { recursive: true });
 const record = new NegotiationRecord(new SqliteRecordBackend(join(dataDir, "kritva.sqlite")));
 const locale = process.env.KRITVA_LOCALE ?? "en-IN";
 const engine = new NegotiationEngine({ record, llm: createTurnLlmFromEnv(), locale, guidance: loadGuidance(ROOT) });
-const revisions = new MandateRevisions({ record, engine, mappingLlm: createMappingLlmFromEnv() });
-const app = createApp({ record, engine, revisions, mandates: loadConfirmedMandates(join(ROOT, "cases")), locale });
+const mappingLlm = createMappingLlmFromEnv();
+const revisions = new MandateRevisions({ record, engine, mappingLlm });
+// Case-level mandates live in their own tables, so they exist before any session starts.
+const library = new MandateLibrary({ backend: new SqliteLibraryBackend(join(dataDir, "kritva.sqlite")), mappingLlm });
+const app = createApp({ record, engine, revisions, mandates: loadConfirmedMandates(join(ROOT, "cases")), locale, library, examples: loadExamples(join(ROOT, "cases")) });
 const port = Number(process.env.PORT ?? 8787);
 
 serve({ fetch: app.fetch, port }, (info) => {

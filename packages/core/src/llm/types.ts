@@ -23,6 +23,8 @@ export interface StructuredResponse {
   rawText: string;
   model: string;
   latencyMs: number;
+  /** Token use, when the provider reports it. */
+  usage?: { inputTokens: number; outputTokens: number };
 }
 
 export interface StructuredLlm {

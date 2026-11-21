@@ -1,7 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { BuyerMessage, BuyerView, TermView } from "./api.ts";
-import { AlertIcon, CheckIcon, ClockIcon, SendIcon } from "./icons.tsx";
+import { AlertIcon, CheckIcon, ClockIcon, SendIcon, SparkIcon } from "./icons.tsx";
 
 const spring = { type: "spring", duration: 0.35, bounce: 0 } as const;
 
@@ -78,6 +78,13 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
           )}
         </div>
       </header>
+
+      <p className="ai-notice" role="note">
+        <SparkIcon width={16} height={16} />
+        <span>
+          <strong>You're chatting with Kritva, an AI.</strong> It negotiates for the seller and isn't the seller or a person. Anything agreed is confirmed with the seller.
+        </span>
+      </p>
 
       <div className="chat-log" ref={logRef} role="log" aria-label="Conversation" aria-live="polite">
         {messages.length === 0 && !pending ? (
@@ -168,7 +175,7 @@ function Bubble({ message, enter }: { message: BuyerMessage; enter: object }) {
     <motion.div className={`bubble-row from-${message.from}`} {...enter} transition={spring}>
       <div className="bubble">{message.text}</div>
       <span className="bubble-meta">
-        {message.from === "agent" ? "Kritva for the seller" : "You"} · <time dateTime={message.at}>{time}</time>
+        {message.from === "agent" ? "Kritva (AI) for the seller" : "You"} · <time dateTime={message.at}>{time}</time>
       </span>
     </motion.div>
   );
