@@ -61,12 +61,12 @@ function setup(options: { library?: boolean; operatorKey?: string } = {}) {
   const db = join(dir, "db.sqlite");
   const record = new NegotiationRecord(new SqliteRecordBackend(db));
   const llm = new ScriptedLlm();
-  const engine = new NegotiationEngine({ record, llm, locale: "en-IN", subjectFacts: new Map([["bed-sale", "fact_f_item"]]) });
-  const revisions = new MandateRevisions({ record, engine, mappingLlm: llm });
   const mandates = loadConfirmedMandates(CASES);
   const examples = loadExamples(CASES);
   const library = options.library === false ? null : new MandateLibrary({ backend: new SqliteLibraryBackend(db), mappingLlm: llm });
   const listings = loadListings(CASES, mandates, examples, library);
+  const engine = new NegotiationEngine({ record, llm, locale: "en-IN", subjectFacts: new Map([["bed-sale", "fact_f_item"]]), listingDetails: new Map(listings.map((listing) => [listing.caseId, listing])) });
+  const revisions = new MandateRevisions({ record, engine, mappingLlm: llm });
   const speech = new FakeSpeech();
   const app = createApp({ record, engine, revisions, mandates, locale: "en-IN", library: library ?? undefined, examples, speech, listings, operatorKey: options.operatorKey });
   const call = async (method: string, path: string, body?: unknown, headers: Record<string, string> = { "content-type": "application/json" }) => {
@@ -143,9 +143,10 @@ describe("Epic 13: voice uses the text core and the shared record", () => {
   it("composes spoken greetings and read-backs while code supplies the exact terms", async () => {
     const { callSeller, call, llm, speech, speak, hear, offer } = setup();
     const id = (await callSeller("call-model-wording")).json.sessionId;
-    llm.compositions.push("Hello, I'm Kritva, the seller's AI assistant. What would you like to discuss?");
+    const line = "Hello, Krishna's assistant Kritva here. How can I help?";
+    llm.compositions.push(line);
     const greeting = await call("POST", `/api/buyer/sessions/${id}/voice/start`);
-    expect(greeting.json.reply.text).toMatch(/^Hello,/);
+    expect(greeting.json.reply.text).toBe(line);
     llm.compositions.push("Here is the full package. [[TERMS]] Do you confirm all of those terms?");
     const turn = await speak(id, "I can pay nineteen thousand five hundred.", offer(19_500));
     expect(turn.json.reply.text).toBe("Here is the full package. King-size bed, ₹19,500, pickup location Koramangala, Bangalore, and no delivery included. Do you confirm all of those terms?");
@@ -176,11 +177,11 @@ describe("Epic 13: voice uses the text core and the shared record", () => {
     expect(op.events.find((e: any) => e.type === "reply_blocked")?.payload.draftText).toBe("We're agreed at ₹19,500.");
   });
 
-  it("the call opens with one introduction as the seller's AI assistant", async () => {
+  it("the call opens with one introduction using the public listing name even if composition fails", async () => {
     const { callSeller, call, speech } = setup();
     const id = (await callSeller("call-greet-1")).json.sessionId;
     const g = await call("POST", `/api/buyer/sessions/${id}/voice/start`);
-    expect(g.json.reply.text).toMatch(/^Hi, I'm Kritva, the seller's AI assistant\./);
+    expect(g.json.reply.text).toMatch(/^Hi, I'm Kritva, Krishna's assistant\./);
     const again = await call("POST", `/api/buyer/sessions/${id}/voice/start`);
     expect(again.json.reply).toBeNull();
     await call("GET", `/api/buyer/sessions/${id}/voice/speech/${g.json.reply.messageId}`);

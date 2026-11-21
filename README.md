@@ -18,7 +18,7 @@ Kritva is a reusable AI negotiation capability for apps and assistants. It repre
 | 9. Text negotiation | The chat says up front that Kritva is an AI acting for the seller; model failures send nothing and resume on retry; buyer corrections and refusals to deal with an AI are recorded; the console shows the last recorded action. |
 | 10. Comparison with a plain LLM | The same scenarios, buyer simulator, model and seller instructions run against Kritva and a well-prompted plain LLM seller; rule-based scoring with linked sources; Markdown and CSV reports; regression comparison against an earlier scenario run. |
 | 11. Mandate library | The principal describes a negotiation in plain language, reviews what Kritva understood, corrects values directly, and confirms the exact draft shown. Saved mandates and revisions exist before any session; sessions record the revision they used; new revisions apply to open sessions through Epic 4's checks. |
-| Humane conversation guide | Replies are warm, short and specific: Kritva introduces itself once as the principal's AI assistant, responds to what was said, asks one useful question, varies its wording, and never uses internal terms or dashes. The guide changes wording only, never what is allowed. See `docs/Kritva_Humane_Negotiation_Instructions_P0.md`. |
+| Humane conversation guide | Replies are warm, short and specific. Kritva introduces itself once as the assistant for the person it represents, responds to what was said, asks one useful question, and varies its wording. See `docs/Kritva_Humane_Negotiation_Instructions_P0.md`. |
 | 12. Seller console | One console on the shared record: messages with their channel, offers marked delivered or held back, approvals scoped to the exact offer version and mandate revision, pause and resume, "Change instructions" through the mandate library, and an outcome card with pending payment and pickup. |
 | 13. Browser voice | The buyer talks in the browser. Each utterance is transcribed and sent through the same text negotiation path; only recorded, checked replies are spoken. Talking over Kritva stops it and records what was heard; a cut-off read-back never counts as delivered. No phone calls. |
 | 14. Demo listing | A clearly labelled demo bed listing built from the confirmed mandate's public content, with "Call seller" opening one browser voice session beside the seller console. "New demo session" starts fresh with the same saved mandate. |
@@ -231,7 +231,7 @@ node --env-file=.env packages/core/scripts/prepare-mandate.ts bed-sale demo --co
 
 **Humane conversation (guide)**
 - **Wording, never permission.** The guide shapes how an approved move is said. Every number, condition and promise still comes from the strategy and passes the outgoing checks.
-- **Introduce once.** The first real reply (not a pause notice) introduces Kritva as the principal's AI assistant; no later reply repeats it.
+- **Introduce once.** The model introduces Kritva as the principal's assistant and uses the principal's public name when the listing provides it.
 - **Sound like a person.** Composed replies respond to the last message, ask one question at most, and avoid scripted openers. A reply that opens like the previous one is replaced by a checked variant.
 - **No internal words, no dashes.** Replies with internal vocabulary ("mandate", "principal", "governance") or field names are blocked, and every em or en dash is removed before sending.
 - **Read-backs stay exact.** Complete-terms and agreement read-backs are built from the checked terms, in natural phrasing.

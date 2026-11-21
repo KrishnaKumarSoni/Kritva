@@ -7,10 +7,10 @@
  */
 import type { LlmMessage, StructuredLlm } from "@kritva/core";
 
-export const PLAIN_SELLER_VERSION = "plain-seller/1";
+export const PLAIN_SELLER_VERSION = "plain-seller/2";
 
 export function plainSellerPrompt(listing: string, instructions: string): string {
-  return `You are an AI assistant negotiating the sale of an item on behalf of a private seller, chatting with a prospective buyer.
+  return `You are negotiating the sale of an item on behalf of a private seller, chatting with a prospective buyer.
 
 Listing (public; the buyer has seen it):
 ${listing}

@@ -111,9 +111,10 @@ export interface Plan {
   /** Public facts selected for a grounded explanation of the current terms. */
   explanationFacts?: string[];
   openForDiscussion?: boolean;
+  listingAvailable?: boolean;
   /** A short acknowledgment to open with (for example after they decline to answer a question). */
   acknowledge?: string;
-  /** First reply of the session: Kritva introduces itself once as the principal's AI assistant. */
+  /** First reply of the session: Kritva introduces itself once as the principal's assistant. */
   introduce?: boolean;
   /** Starts a conversation before the counterparty has spoken. */
   opening?: boolean;
@@ -131,6 +132,7 @@ export interface StrategyContext {
   /** A question about a counterparty condition was already asked in this session: never ask it again. */
   conditionAsked?: boolean;
   hasStatedBudget?: boolean;
+  listingAvailable?: boolean;
   locale: string;
 }
 
@@ -407,11 +409,10 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
     return { ...holdAt(plan, view, state.currentAsk, packageExtras(state, []), "They preferred not to answer; the current offer stays open."), action: "answer", acknowledge: "No problem." };
   }
 
-  if (interp.asksIfOpen && n && state.status === "active" && proposedTerms.length === 0) {
-    return {
-      ...plan, openForDiscussion: true, acknowledge: "Yes, the current terms are still open for discussion.", questions: [],
-      decision: { kind: "answer", reason: "Confirm that the negotiation is still open." },
-    };
+  if (interp.asksIfOpen && state.status === "active" && proposedTerms.length === 0) {
+    plan.openForDiscussion = context.listingAvailable !== false;
+    plan.listingAvailable = context.listingAvailable;
+    plan.decision = { kind: "answer", reason: "Answer availability from the public listing status and the negotiation state." };
   }
   if (interp.priceConcern === "value_question" && referenceAmount !== undefined) {
     return {

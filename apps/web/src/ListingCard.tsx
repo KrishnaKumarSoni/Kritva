@@ -65,7 +65,7 @@ export function ListingCard({ caseId, calling, onCall }: Props) {
           </li>
         ))}
       </ul>
-      <p className="listing-note">Calling opens a voice conversation in this browser with Kritva, the {listing.sellerRole}'s AI assistant. No phone number is used.</p>
+      <p className="listing-note">Kritva takes this browser call for the {listing.sellerRole}. No phone number is used.</p>
     </article>
   );
 }

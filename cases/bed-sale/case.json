@@ -179,6 +179,8 @@
     "mandateFile": "bed-sale/demo",
     "libraryId": "man_bed-sale-listing",
     "libraryTitle": "King-size bed sale (listing)",
-    "subjectFactId": "fact_f_item"
+    "subjectFactId": "fact_f_item",
+    "publicPrincipalName": "Krishna",
+    "available": true
   }
 }

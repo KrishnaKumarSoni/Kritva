@@ -83,6 +83,9 @@ export interface ListingConfig {
   location: string;
   /** The public confirmed fact that names the item in a final-terms read-back. */
   subjectFactId?: string;
+  /** Public details the agent can use in replies about this listing. */
+  publicPrincipalName?: string;
+  available?: boolean;
   /** The saved, confirmed library mandate the listing's calls use. */
   libraryId: string;
 }
@@ -104,7 +107,7 @@ export function loadListings(casesDir: string, mandates: MandateEntry[], example
     if (library && entry && example) {
       library.importConfirmed({ mandateId: l.libraryId, title: l.libraryTitle, mandate: entry.mandate, input: { title: l.libraryTitle, principalRole: example.principalRole, counterpartyRole: example.counterpartyRole, publicText: example.publicText, privateText: example.privateText } });
     }
-    out.push({ caseId: dir.name, title: l.title, location: l.location, libraryId: l.libraryId, subjectFactId: l.subjectFactId });
+    out.push({ caseId: dir.name, title: l.title, location: l.location, libraryId: l.libraryId, subjectFactId: l.subjectFactId, publicPrincipalName: l.publicPrincipalName, available: l.available });
   }
   return out;
 }

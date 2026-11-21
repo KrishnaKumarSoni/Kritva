@@ -23,7 +23,12 @@ import { decide, type DealInput, type Interpretation, type Plan } from "./policy
 import { checkReply, findAmounts, type ReplyViolation } from "./reply-check.ts";
 import { approvedFor, projectState, publicDealTerms, type NegotiationState } from "./state.ts";
 import { MINIMAL_GUIDANCE, type StrategyGuidance } from "../strategy/guidance.ts";
-import { clean, introduction, speakTerms, templateReply } from "./templates.ts";
+import { clean, introduction, principalLabel, speakTerms, templateReply } from "./templates.ts";
+
+interface PublicListingDetails {
+  publicPrincipalName?: string;
+  available?: boolean;
+}
 
 export interface EngineOptions {
   record: NegotiationRecord;
@@ -36,6 +41,7 @@ export interface EngineOptions {
   guidanceByCase?: ReadonlyMap<string, StrategyGuidance>;
   /** Optional public subject fact IDs supplied by the host for final-terms wording. */
   subjectFacts?: ReadonlyMap<string, string>;
+  listingDetails?: ReadonlyMap<string, PublicListingDetails>;
 }
 
 export interface TurnResult {
@@ -60,6 +66,7 @@ export class NegotiationEngine {
   readonly #guidance: StrategyGuidance;
   readonly #guidanceByCase: ReadonlyMap<string, StrategyGuidance>;
   readonly #subjectFacts: ReadonlyMap<string, string>;
+  readonly #listingDetails: ReadonlyMap<string, PublicListingDetails>;
   readonly #locks = new Map<string, Promise<unknown>>();
 
   constructor(options: EngineOptions) {
@@ -69,6 +76,7 @@ export class NegotiationEngine {
     this.#guidance = options.guidance ?? MINIMAL_GUIDANCE;
     this.#guidanceByCase = options.guidanceByCase ?? new Map();
     this.#subjectFacts = options.subjectFacts ?? new Map();
+    this.#listingDetails = options.listingDetails ?? new Map();
   }
 
   guidanceFor(caseId: string): StrategyGuidance {
@@ -150,7 +158,7 @@ export class NegotiationEngine {
         const openQuestions = projectCounterparty(await this.#record.context(sessionId), before.view.negotiable?.termId ?? null)
           .questions.filter((q) => q.status === "asked" || q.status === "partial")
           .map((q) => ({ id: q.id, text: q.text }));
-        interp = await interpretMessage(this.#llm, { view: before.view, publicTerms: publicDealTerms(before), lastStated: before.lastCommunicated, conversation, message: currentMessage, locale: this.#locale, openQuestions });
+        interp = await interpretMessage(this.#llm, { view: before.view, publicTerms: publicDealTerms(before), subject: this.publicSubject(before.view), lastStated: before.lastCommunicated, conversation, message: currentMessage, locale: this.#locale, openQuestions });
       } catch {
         // The message could not be read. Record that for the operator, keep the session as it was and
         // send nothing: no guessed reply, no offer. Retrying the same message ID resumes this turn.
@@ -263,7 +271,7 @@ export class NegotiationEngine {
       try {
         plan = state.status === "paused"
           ? { ...basePlan("answer", { kind: "hold", reason: "The principal paused the negotiation." }, null), action: "pause" }
-          : decide(state, ctx.interp, deal, { guidance: this.guidanceFor(state.view.mandate.caseId), freshQuestions, hasStatedBudget, conditionAsked: conditionAlreadyAsked(counterparty), locale: this.#locale });
+          : decide(state, ctx.interp, deal, { guidance: this.guidanceFor(state.view.mandate.caseId), freshQuestions, hasStatedBudget, conditionAsked: conditionAlreadyAsked(counterparty), listingAvailable: this.#listingDetails.get(state.view.mandate.caseId)?.available, locale: this.#locale });
       } catch {
         // A strategy failure never improvises: hold, offer nothing, and say we will come back.
         plan = { ...basePlan("answer", { kind: "hold", reason: "The strategy could not choose a move; nothing was offered." }, null), action: "wait", notice: "check_with_principal" };
@@ -475,12 +483,14 @@ export class NegotiationEngine {
   /** Compose wording for either channel, then verify it before delivery. */
   async #word(writes: Writer, state: NegotiationState, plan: Plan, conversation: Conversation, agent: Actor, currentMessage: string | null = null): Promise<{ text: string; question: string | null } | null> {
     const subject = this.publicSubject(state.view);
+    const publicPrincipalName = this.#listingDetails.get(state.view.mandate.caseId)?.publicPrincipalName?.trim();
+    const publicTerms = publicDealTerms(state);
     const previousReply = [...conversation].reverse().find((c) => c.speaker === "agent")?.text ?? null;
     let draft: string | null;
     let insertedTerms: string | null = null;
     let question = plan.ask?.text ?? null;
     try {
-      const composed = await composeReply(this.#llm, { view: state.view, plan, publicTerms: publicDealTerms(state), conversation, theirMessage: currentMessage, locale: this.#locale, outcome: state.outcome.kind });
+      const composed = await composeReply(this.#llm, { view: state.view, plan, publicTerms, publicPrincipalName, conversation, theirMessage: currentMessage, locale: this.#locale, outcome: state.outcome.kind });
       draft = clean(composed.text);
       if (plan.move === "explore_objection" && plan.ask) {
         const lastSentence = draft.split(/(?<=[.!?])\s+/).at(-1);
@@ -524,22 +534,29 @@ export class NegotiationEngine {
       await this.#block(writes, draft, [{ rule: "action_mismatch", detail: "This move did not call for a new question." }], agent);
       draft = null;
     }
-    if (draft !== null && plan.introduce && !/\bkritva\b[^.!?]*\bAI assistant\b/i.test(draft)) draft = `${introduction(state.view)} ${draft}`;
+    if (draft !== null && plan.introduce) {
+      const opening = draft.split(/(?<=[.!?])\s+/, 2).join(" ");
+      if (!/\bkritva\b/i.test(opening)) draft = `${introduction(state.view, publicPrincipalName)} ${draft}`;
+      else if (!quoteAppearsIn(opening, publicPrincipalName || principalLabel(state.view))) draft = null;
+    }
     if (draft !== null) {
       const wording = gateWording(state, plan, draft);
       if (wording.decision !== "allow") {
         await this.#block(writes, draft, wording.reasons.map((r) => ({ rule: r.rule as ReplyViolation["rule"], detail: r.detail })), agent);
       } else {
         const checkedTerms = (plan.offer?.terms ?? []).map((t) => `${state.space.terms.find((x) => x.termId === t.termId)?.name ?? t.termId}: ${formatValue(t.value, this.#locale)}`);
-        const opening = plan.opening ? state.view.defaultPackage.find((t) => t.termId === state.view.negotiable?.termId) : undefined;
         const permittedFacts = [...state.view.publicFacts];
+        if (plan.introduce) permittedFacts.push(`Kritva represents ${publicPrincipalName || principalLabel(state.view)}.`);
+        if (plan.move === "answer" && (plan.questions.length > 0 || plan.openForDiscussion)) {
+          for (const term of publicTerms) permittedFacts.push(`${state.view.terms.get(term.termId)!.name}: ${formatValue(term.value, this.#locale)}`);
+        }
         for (const answer of plan.publicTermAnswers ?? []) {
           const name = state.view.terms.get(answer.termId)!.name;
           permittedFacts.push(`${answer.basis === "opening" ? "Originally listed" : "Current public"} ${name}: ${formatValue(answer.value, this.#locale)}`);
         }
         if (plan.openForDiscussion) permittedFacts.push("The current terms are still open for discussion.");
+        if (plan.listingAvailable !== undefined) permittedFacts.push(`The listed subject is ${plan.listingAvailable ? "still available" : "no longer available"}.`);
         if (subject) permittedFacts.push(subject);
-        if (opening) permittedFacts.push(`Starting ${state.view.negotiable!.name}: ${formatValue(opening.value, this.#locale)}`);
         const language = await languageCheck(this.#llm, {
           // The checker reviews generated words. The inserted terms already passed the structured gate and the final code check.
           reply: insertedTerms ? draft.replace(insertedTerms, EXACT_TERMS_SLOT) : draft,
@@ -562,9 +579,9 @@ export class NegotiationEngine {
         await this.#block(writes, draft, violations, agent);
       }
     }
-    let fallback = templateReply(state.view, plan, this.#locale, subject);
+    let fallback = templateReply(state.view, plan, this.#locale, subject, publicPrincipalName);
     for (let shift = 1; previousReply && shift < 3 && opener(fallback) === opener(previousReply); shift += 1) {
-      fallback = templateReply(state.view, { ...plan, turnIndex: (plan.turnIndex ?? 0) + shift }, this.#locale, subject);
+      fallback = templateReply(state.view, { ...plan, turnIndex: (plan.turnIndex ?? 0) + shift }, this.#locale, subject, publicPrincipalName);
     }
     if (plan.ask && !fallback.includes(plan.ask.text)) fallback = `${fallback} ${plan.ask.text}`;
     const fallbackGate = gateWording(state, plan, fallback);
@@ -839,7 +856,7 @@ export class NegotiationEngine {
 
   /**
    * Kritva's opening line when a conversation starts (for example a voice call): it introduces
-   * itself once as the principal's AI assistant and states only public terms. Nothing is offered.
+   * itself once as the principal's assistant and invites the counterparty to speak.
    * If Kritva has already spoken in this session, nothing is sent.
    */
   greet(input: { sessionId: string; channel: Channel }): Promise<{ ok: true; reply: TurnResult["reply"] } | TurnError> {
@@ -915,7 +932,7 @@ interface ActContext {
 /** Placeholder until strategy (Epic 8): ask at most one never-asked question, only while holding or answering. */
 function selectQuestion(fresh: Array<NonNullable<Plan["ask"]>>, plan: Plan): Plan["ask"] {
   if (plan.move !== "hold" && plan.move !== "answer") return null;
-  if (plan.notice || plan.clarify.length > 0 || plan.unresolved.length > 0 || plan.questions.length > 0 || plan.refuseDisclosure) return null;
+  if (plan.notice || plan.clarify.length > 0 || plan.unresolved.length > 0 || plan.questions.length > 0 || plan.refuseDisclosure || plan.openForDiscussion || plan.listingAvailable !== undefined) return null;
   return fresh[0] ?? null;
 }
 

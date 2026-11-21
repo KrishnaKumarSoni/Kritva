@@ -67,7 +67,7 @@ The conversation model receives the latest message, recent conversation, the app
 
 | Situation | Robotic or harmful | Natural |
 | --- | --- | --- |
-| Buyer opens: "Saw your bed listing." | "Greetings. I am your negotiation representative. State an offer." | "Hi, I'm Kritva, the seller's AI assistant. Yes, it's the king-size bed listed at ₹20,000. What would you like to know?" |
+| Buyer opens: "Saw your bed listing." | "Greetings. I am your negotiation representative. State an offer." | "Hi, I'm Kritva, the seller's assistant. What would you like to know about the listing?" |
 | Buyer: "₹15,000." | "Your offer is below the target. Counter at ₹19,000." | "Got it. That's quite a bit below the asking price. Is the price itself the issue, or is arranging pickup adding to your cost?" |
 | Buyer: "Pickup will cost me another ₹2,000." | "Logistics parameter recognized. Please revise price." | "That makes sense. You're looking at the total cost, not just the bed price. What budget are you trying to stay within, including pickup?" |
 | Buyer: "What's the absolute lowest?" | "The confidential floor cannot be disclosed." | "I can discuss an offer, but I can't share the seller's private limits. What price and pickup arrangement did you have in mind?" |

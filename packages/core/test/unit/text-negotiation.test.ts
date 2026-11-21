@@ -56,12 +56,12 @@ class ScriptedLlm implements StructuredLlm {
   }
 }
 
-async function setup(mandate: ValidConfirmedMandate) {
+async function setup(mandate: ValidConfirmedMandate, listingDetails?: { publicPrincipalName?: string; available?: boolean }) {
   const { record } = openRecord();
   const started = await record.startSession({ mandate });
   if (!started.ok) throw new Error("start failed");
   const llm = new ScriptedLlm();
-  const engine = new NegotiationEngine({ record, llm, locale: "en-IN", guidance: GUIDANCE });
+  const engine = new NegotiationEngine({ record, llm, locale: "en-IN", guidance: GUIDANCE, listingDetails: listingDetails ? new Map([[mandate.caseId, listingDetails]]) : undefined });
   const sessionId = started.session.id;
   const say = async (text: string, interp: Interp, options: { composed?: string | { text: string; question: string } | null; deliver?: boolean; messageId?: string } = {}): Promise<TurnResult> => {
     llm.interpretations.push(interp);
@@ -106,9 +106,9 @@ describe("Epic 9, Story 1: buyer messages go through the core", () => {
   it("answers a short follow-up from the public deal terms, including when wording is blocked", async () => {
     const { say, llm, events } = await setup(listingOnlyDeliveryMandate());
     await say("Is this still available?", { intent: "question" });
-    const question = { intent: "question", public_term_questions: [{ term_id: "term_price", basis: "current" }] };
-    const composed = await say("How much?", question, { composed: "The asking price is ₹20,000." });
-    const fallback = await say("Can you remind me of the asking amount?", question, { composed: "Which price would you like to know?" });
+    const question = (quote: string) => ({ intent: "question", public_term_questions: [{ term_id: "term_price", basis: "current", quote }], questions: [quote] });
+    const composed = await say("How much?", question("How much?"), { composed: "The asking price is ₹20,000." });
+    const fallback = await say("Can you remind me of the asking amount?", question("Can you remind me of the asking amount?"), { composed: "Which price would you like to know?" });
     for (const turn of [composed, fallback]) {
       expect(turn.reply!.text).toContain("₹20,000");
       expect(turn.reply!.text).not.toMatch(/18,000|\?|don't have that detail/);
@@ -123,7 +123,7 @@ describe("Epic 9, Story 1: buyer messages go through the core", () => {
   it("can answer another public term with the same lookup", async () => {
     const { say } = await setup(listingOnlyDeliveryMandate());
     const result = await say("Where would I collect it?", {
-      intent: "question", public_term_questions: [{ term_id: "term_pickup", basis: "current" }],
+      intent: "question", public_term_questions: [{ term_id: "term_pickup", basis: "current", quote: "Where would I collect it?" }],
     });
     expect(result.reply!.text).toContain("Koramangala, Bangalore");
     expect(result.reply!.offerIds).toEqual([]);
@@ -132,14 +132,14 @@ describe("Epic 9, Story 1: buyer messages go through the core", () => {
   it("distinguishes the delivered asking price from the opening price and an undelivered counter", async () => {
     const { say, engine, sessionId, state } = await setup(listingOnlyDeliveryMandate());
     const counter = await say("I'll pay ₹18,500.", offer(18_500), { deliver: false });
-    const question = (basis: string) => ({ intent: "question", public_term_questions: [{ term_id: "term_price", basis }] });
-    expect((await say("How much is it right now?", question("current"))).reply!.text).toContain("₹20,000");
+    const ask = (quote: string, basis: string) => say(quote, { intent: "question", public_term_questions: [{ term_id: "term_price", basis, quote }] });
+    expect((await ask("How much is it right now?", "current")).reply!.text).toContain("₹20,000");
     await engine.reportDelivery({ sessionId, messageId: counter.reply!.messageId, channel: "text", status: "delivered" });
     const updatedAsk = (await state()).currentAsk;
     expect(updatedAsk).toBeLessThan(20_000);
     const formatted = formatValue({ type: "money", amount: updatedAsk!, currency: "INR" }, "en-IN");
-    expect((await say("What's the current ask?", question("current"))).reply!.text).toContain(formatted);
-    expect((await say("What was it listed for originally?", question("opening"))).reply!.text).toContain("₹20,000");
+    expect((await ask("What's the current ask?", "current")).reply!.text).toContain(formatted);
+    expect((await ask("What was it listed for originally?", "opening")).reply!.text).toContain("₹20,000");
   });
 
   it("a question about a mattress, with no mattress fact, gets no invented answer", async () => {
@@ -274,12 +274,33 @@ describe("Epic 9, Story 3: pause and resume from the saved record", () => {
 });
 
 describe("Humane conversation guide", () => {
-  it("Kritva introduces itself once as the principal's AI assistant, then never repeats it", async () => {
+  it("Kritva introduces itself once as the principal's assistant, then never repeats it", async () => {
     const { say } = await setup(listingOnlyDeliveryMandate());
     const first = await say("Is it still available?", { intent: "question" });
-    expect(first.reply!.text).toMatch(/^Hi, I'm Kritva, the seller's AI assistant\./);
+    expect(first.reply!.text).toMatch(/^Hi, I'm Kritva, the seller's assistant\./);
     const second = await say("₹15,000.", offer(15_000));
-    expect(second.reply!.text).not.toMatch(/Kritva|AI assistant/);
+    expect(second.reply!.text).not.toContain("Kritva");
+  });
+
+  it("keeps the model's own greeting with the configured public name", async () => {
+    const { say, llm } = await setup(listingOnlyDeliveryMandate(), { publicPrincipalName: "Asha" });
+    const line = "Hello, Asha's assistant Kritva here. What can I help you with?";
+    expect((await say("Hi", { intent: "greeting" }, { composed: line })).reply!.text).toBe(line);
+    const request = llm.seen.find((step) => step.purpose === "compose_reply")!;
+    expect(JSON.parse(request.messages[0]!.content)).toMatchObject({ who_you_represent: "Asha", introduce: true });
+    expect(request.system).not.toMatch(/AI assistant/i);
+  });
+
+  it("supplies listing terms to review and preserves the known availability if wording is blocked", async () => {
+    const { say, llm } = await setup(listingOnlyDeliveryMandate(), { available: true });
+    const availability = { intent: "question", asks_if_open: true };
+    await say("Is the bed still available?", availability, { composed: "Yes, the bed is still available. Pickup is in Koramangala, Bangalore." });
+    const review = llm.seen.findLast((step) => step.purpose === "language_check")!;
+    const facts = JSON.parse(review.messages[0]!.content).permitted_facts;
+    expect(facts).toEqual(expect.arrayContaining([expect.stringMatching(/Koramangala, Bangalore/), expect.stringMatching(/still available/)]));
+    llm.reviews.push([{ type: "invented_fact", quote: "A mattress is included." }]);
+    const checked = await say("Is the listed item still up for grabs?", availability, { composed: "Yes, it's available. A mattress is included." });
+    expect(checked.reply!.text).toBe("Yes, it's still available.");
   });
 
   it("a composed reply never carries an em or en dash", async () => {
@@ -299,10 +320,10 @@ describe("Humane conversation guide", () => {
     expect(blocked.violations.some((v) => v.rule === "internal_term")).toBe(true);
   });
 
-  it("the opening greeting states public terms only, is recorded once, and offers nothing", async () => {
+  it("the opening greeting invites the counterparty to speak and is recorded once", async () => {
     const { engine, sessionId, events } = await setup(listingOnlyDeliveryMandate());
     const g = await engine.greet({ sessionId, channel: "voice" });
-    expect(g.ok && g.reply!.text).toMatch(/^Hi, I'm Kritva, the seller's AI assistant\. The starting price is ₹20,000\./);
+    expect(g.ok && g.reply!.text).toMatch(/^Hi, I'm Kritva, the seller's assistant\. What would you like to discuss\?/);
     const again = await engine.greet({ sessionId, channel: "voice" });
     expect(again.ok && again.reply).toBeNull();
     const all = await events();
@@ -331,7 +352,7 @@ describe("Humane conversation guide", () => {
 
   it("a composed reply that opens like the previous one is replaced by varied checked wording", async () => {
     const { say } = await setup(listingOnlyDeliveryMandate());
-    await say("Hi.", { intent: "greeting" }, { composed: "Hi, I'm Kritva, the seller's AI assistant. Happy to help." });
+    await say("Hi.", { intent: "greeting" }, { composed: "Hi, I'm Kritva, the seller's assistant. Happy to help." });
     const first = await say("Is it in good condition?", { intent: "question", questions: ["Is it in good condition?"] }, { composed: "Happy to help with that. I don't have that detail confirmed." });
     const second = await say("And the size?", { intent: "question", questions: ["And the size?"] }, { composed: "Happy to help with that too. I don't have that detail confirmed." });
     expect(first.reply!.text.split(" ").slice(0, 3)).not.toEqual(second.reply!.text.split(" ").slice(0, 3));
@@ -356,7 +377,7 @@ describe("Current-turn negotiation regressions", () => {
   it("passes the same saved message to interpretation, composition and review", async () => {
     const { say, llm } = await setup(listingOnlyDeliveryMandate());
     const earlier = "Is it still available?";
-    await say(earlier, { intent: "question", questions: [earlier] }, { composed: "Hi, I'm Kritva, the seller's AI assistant. It's a king-size bed." });
+    await say(earlier, { intent: "question", questions: [earlier] }, { composed: "Hi, I'm Kritva, the seller's assistant. It's a king-size bed." });
     const current = "TBH, I want it, but it seems too expensive.";
     const question = "Is it your budget or what you'd get for the price that's holding you back?";
     const reply = await say(current, { intent: "reject" }, { composed: { text: "I hear you on the price.", question } });

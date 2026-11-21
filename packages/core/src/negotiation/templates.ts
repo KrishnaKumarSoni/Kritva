@@ -24,9 +24,9 @@ export function principalLabel(view: MandateView): string {
   return `the ${view.principalRole.trim().toLowerCase() || "person I represent"}`;
 }
 
-/** Kritva's one-time introduction, as the principal's AI assistant. */
-export function introduction(view: MandateView): string {
-  return `Hi, I'm Kritva, ${principalLabel(view)}'s AI assistant.`;
+/** Used only when a composed introduction is unavailable or incomplete. */
+export function introduction(view: MandateView, publicPrincipalName?: string): string {
+  return `Hi, I'm Kritva, ${publicPrincipalName || principalLabel(view)}'s assistant.`;
 }
 
 /**
@@ -51,7 +51,7 @@ function pick(variants: string[], turn: number): string {
  * Checked fallback wording, written to the humane conversation guide: warm, short, specific, one
  * question at a time. Used when composition fails or is blocked.
  */
-export function templateReply(view: MandateView, plan: Plan, locale: string, subject: string | null = null): string {
+export function templateReply(view: MandateView, plan: Plan, locale: string, subject: string | null = null, publicPrincipalName?: string): string {
   const n = view.negotiable;
   const turn = plan.turnIndex ?? 0;
   const principal = principalLabel(view);
@@ -66,10 +66,12 @@ export function templateReply(view: MandateView, plan: Plan, locale: string, sub
   const reference = n && plan.referenceAmount !== undefined ? formatValue(numericValue(n, plan.referenceAmount), locale) : null;
   const budget = n && plan.statedBudget !== undefined ? formatValue(numericValue(n, plan.statedBudget), locale) : null;
   const parts: string[] = [];
-  if (plan.introduce) parts.push(introduction(view));
-  if (plan.opening && n) parts.push(`The starting ${n.name} is ${amountText ?? formatValue(view.defaultPackage.find((term) => term.termId === n.termId)!.value, locale)}.`);
+  if (plan.introduce) parts.push(introduction(view, publicPrincipalName));
   if (plan.opening) return clean([...parts, "What would you like to discuss?"].join(" "));
   if (plan.acknowledge) parts.push(plan.acknowledge);
+  if (plan.listingAvailable === true) parts.push("Yes, it's still available.");
+  else if (plan.listingAvailable === false) parts.push("It's no longer available.");
+  else if (plan.openForDiscussion) parts.push("Yes, the current terms are still open for discussion.");
 
   if (plan.notice === "approval_rejected") parts.push(`${cap(principal)} didn't approve those terms.`);
   if (plan.notice === "terms_changed") parts.push("Since the terms have changed, I'll need a fresh confirmation on the new ones.");
