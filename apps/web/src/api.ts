@@ -214,13 +214,51 @@ export interface LibraryInput {
   privateText: string;
 }
 
+export type MandateState = "draft" | "live" | "paused" | "closed";
+
 export interface LibrarySummary {
   mandateId: string;
   title: string;
   caseId: string;
   activeRevision: number | null;
   hasOpenDraft: boolean;
+  state: MandateState;
   updatedAt: string;
+}
+
+export type LifecycleStep = "pause" | "resume" | "close" | "reopen";
+
+export interface IntakeDraftSummary {
+  id: string;
+  title: string;
+  updatedAt: string;
+  progress: number;
+}
+
+export type IntakeCard =
+  | { kind: "ready"; versionId: string; draftHash: string; notes: string[]; mode: "new" | "update"; actionable: boolean; review: MandateReview | null }
+  | { kind: "live"; revision: number };
+
+export interface IntakeMessageView {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  images: string[];
+  at: string;
+  card: IntakeCard | null;
+}
+
+export interface IntakeView {
+  id: string;
+  mandateId: string | null;
+  title: string;
+  state: MandateState | "new";
+  messages: IntakeMessageView[];
+  checklist: Array<{ id: string; label: string; required: boolean; status: "known" | "assumed" | "missing" }>;
+  progress: number;
+  next: "prepare" | null;
+  mandate: LibraryDetailView | null;
+  appliedToSessions?: string[];
 }
 
 export interface LibraryExample extends LibraryInput {
@@ -251,6 +289,7 @@ export interface LibraryDetailView {
   mandateId: string;
   title: string;
   caseId: string;
+  state: MandateState;
   input: LibraryInput;
   versions: Array<{ versionId: string; seq: number; origin: "text" | "correction"; status: "draft" | "confirmed" | "superseded" | "discarded"; revision: number | null; createdAt: string; draftHash: string }>;
   active: { revision: number; versionId: string; confirmedAt: string; review: MandateReview } | null;
@@ -357,6 +396,18 @@ export const api = {
     correct: (id: string, versionId: string, corrections: LibraryCorrection[]) => call<LibraryDetailView>("POST", `/api/operator/library/${id}/corrections`, { versionId, corrections }),
     confirm: (id: string, versionId: string, draftHash: string, acknowledgedIssueIds: string[]) => call<LibraryDetailView>("POST", `/api/operator/library/${id}/confirm`, { versionId, draftHash, acknowledgedIssueIds }),
     discard: (id: string, versionId: string) => call<LibraryDetailView>("POST", `/api/operator/library/${id}/discard`, { versionId }),
+    lifecycle: (id: string, action: LifecycleStep) => call<LibraryDetailView>("POST", `/api/operator/library/${id}/lifecycle`, { action }),
+    remove: (id: string) => call<{ ok: true }>("DELETE", `/api/operator/library/${id}`),
+  },
+  intake: {
+    drafts: () => call<IntakeDraftSummary[]>("GET", "/api/operator/intake"),
+    start: () => call<IntakeView>("POST", "/api/operator/intake"),
+    get: (id: string) => call<IntakeView>("GET", `/api/operator/intake/${id}`),
+    forMandate: (mandateId: string) => call<IntakeView>("GET", `/api/operator/intake/mandate/${mandateId}`),
+    send: (id: string, text: string, images: string[]) => call<IntakeView>("POST", `/api/operator/intake/${id}/messages`, { text, images }),
+    prepare: (id: string) => call<IntakeView>("POST", `/api/operator/intake/${id}/prepare`),
+    goLive: (id: string, versionId: string, draftHash: string) => call<IntakeView>("POST", `/api/operator/intake/${id}/live`, { versionId, draftHash }),
+    discard: (id: string) => call<{ ok: true }>("DELETE", `/api/operator/intake/${id}`),
   },
   setPaused: (id: string, paused: boolean) => call<unknown>("POST", `/api/operator/sessions/${id}/pause`, { paused }),
   instructions: (id: string) => call<{ instructions: string }>("GET", `/api/operator/sessions/${id}/instructions`),

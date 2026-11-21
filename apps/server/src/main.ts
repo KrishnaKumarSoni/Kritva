@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join, resolve } from "node:path";
 import { serve } from "@hono/node-server";
-import { createAgentFromEnv, createMappingLlmFromEnv, createSpeechFromEnv, createTurnLlmFromEnv, MandateLibrary, MandateRevisions, NegotiationEngine, NegotiationRecord, SqliteLibraryBackend, SqliteRecordBackend } from "@kritva/core";
+import { createAgentFromEnv, createIntakeAgentFromEnv, createMappingLlmFromEnv, createSpeechFromEnv, createTurnLlmFromEnv, IntakeService, SqliteIntakeStore, MandateLibrary, MandateRevisions, NegotiationEngine, NegotiationRecord, SqliteLibraryBackend, SqliteRecordBackend } from "@kritva/core";
 import { createApp } from "./app.ts";
 import { loadCaseRuntime } from "./main-helpers.ts";
 
@@ -20,6 +20,8 @@ const { mandates, examples, listings, guidanceByCase, subjectFacts, listingDetai
 // Kritva runs each turn as an agent (OpenAI Agents SDK); the turn model reviews its wording.
 const engine = new NegotiationEngine({ record, llm: createTurnLlmFromEnv(), ...createAgentFromEnv(), locale, guidanceByCase, subjectFacts, listingDetails });
 const revisions = new MandateRevisions({ record, engine, mappingLlm });
+// The intake agent: a separate chat agent that gathers a new or changed mandate before any negotiation.
+const intake = new IntakeService({ store: new SqliteIntakeStore(join(dataDir, "kritva.sqlite")), agent: createIntakeAgentFromEnv(), library, defaultCurrency: process.env.KRITVA_DEFAULT_CURRENCY ?? "Indian rupees (₹)" });
 const configuredKey = process.env.KRITVA_OPERATOR_KEY?.trim();
 const operatorKey = configuredKey || randomBytes(24).toString("base64url");
 const app = createApp({
@@ -29,6 +31,7 @@ const app = createApp({
   mandates,
   locale,
   library,
+  intake,
   examples,
   speech: createSpeechFromEnv(),
   listings,

@@ -8,6 +8,7 @@
  */
 import { Hono } from "hono";
 import { createHash, timingSafeEqual } from "node:crypto";
+import { registerIntakeRoutes } from "./intake-routes.ts";
 import { registerLibraryRoutes, type LibraryDeps } from "./library-routes.ts";
 import type { ListingConfig } from "./main-helpers.ts";
 import { registerVoiceRoutes } from "./voice-routes.ts";
@@ -26,6 +27,7 @@ import {
   type DraftView,
   type MandateRevisions,
   type MandateLibrary,
+  type IntakeService,
   type SpeechProvider,
   type Value,
   type ConditionRef,
@@ -56,6 +58,8 @@ export interface AppDeps {
   /** Epic 11: the principal's saved, case-level mandates. Optional so tests and scripts can omit it. */
   library?: MandateLibrary;
   examples?: LibraryDeps["examples"];
+  /** The intake agent's conversations for creating and changing saved mandates. */
+  intake?: IntakeService;
   /** Epic 13: speech provider for browser voice (server-side credentials only). */
   speech?: SpeechProvider | null;
   /** Epic 14: demo listings and the library mandates their calls use. */
@@ -90,7 +94,8 @@ export function createApp(deps: AppDeps): Hono {
     });
   }
 
-  if (deps.library) registerLibraryRoutes(app, { library: deps.library, record, engine, locale, examples: deps.examples ?? [] });
+  if (deps.library) registerLibraryRoutes(app, { library: deps.library, record, engine, locale, examples: deps.examples ?? [], protectedIds: (deps.listings ?? []).map((l) => l.libraryId) });
+  if (deps.library && deps.intake) registerIntakeRoutes(app, { intake: deps.intake, library: deps.library, record, engine, locale });
   registerVoiceRoutes(app, {
     record,
     engine,
@@ -116,7 +121,8 @@ export function createApp(deps: AppDeps): Hono {
         confirmedAt: m.mandate.approval.confirmedAt,
       })),
       ...(deps.library?.list() ?? [])
-        .filter((m) => m.activeRevision !== null)
+        // Only live mandates start negotiations; paused, closed and draft ones stay in the library.
+        .filter((m) => m.activeRevision !== null && m.state === "live")
         .map((m) => ({ id: `library:${m.mandateId}`, title: m.title, description: `Saved mandate, revision ${m.activeRevision}`, caseId: m.caseId, confirmedAt: deps.library!.get(m.mandateId)!.active!.confirmedAt })),
     ]),
   );
@@ -130,8 +136,10 @@ export function createApp(deps: AppDeps): Hono {
     let started;
     if (typeof body.mandateId === "string" && body.mandateId.startsWith("library:")) {
       const libraryId = body.mandateId.slice("library:".length);
-      const active = deps.library?.active(libraryId) ?? null;
-      if (!active) return c.json({ error: "not_confirmed", message: "Confirm this mandate before starting a negotiation with it." }, 409);
+      const detail = deps.library?.get(libraryId) ?? null;
+      const active = detail && !detail.deleted ? (deps.library?.active(libraryId) ?? null) : null;
+      if (!active) return c.json({ error: "not_confirmed", message: "Make this mandate live before starting a negotiation with it." }, 409);
+      if (detail!.state !== "live") return c.json({ error: "not_live", message: `This mandate is ${detail!.state}. ${detail!.state === "paused" ? "Resume" : "Reopen"} it to start a negotiation.` }, 409);
       started = await record.startSession({ mandate: active.mandate, previousSessionId: body.previousSessionId ?? null, mandateSource: { mandateId: libraryId, revision: active.revision } });
     } else {
       const entry = body.mandateId === undefined ? mandates[0] : mandates.find((m) => m.id === body.mandateId);

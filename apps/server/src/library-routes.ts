@@ -22,7 +22,16 @@ export interface LibraryDeps {
   engine: NegotiationEngine;
   locale: string;
   examples: Array<{ id: string; title: string; principalRole: string; counterpartyRole: string; publicText: string; privateText: string }>;
+  /** Mandates a demo listing depends on. They can be paused but not deleted. */
+  protectedIds?: string[];
 }
+
+const LIFECYCLE: Record<string, { action: "paused" | "resumed" | "closed" | "reopened"; pauseSessions: boolean }> = {
+  pause: { action: "paused", pauseSessions: true },
+  resume: { action: "resumed", pauseSessions: false },
+  close: { action: "closed", pauseSessions: true },
+  reopen: { action: "reopened", pauseSessions: false },
+};
 
 const MODE_LABEL: Record<string, string> = {
   autonomous: "Kritva may do this",
@@ -69,7 +78,35 @@ export function registerLibraryRoutes(app: Hono, deps: LibraryDeps): void {
 
   app.get("/api/operator/library/:id", (c) => {
     const detail = library.get(c.req.param("id"));
-    return detail ? c.json(libraryView(detail, locale)) : c.json({ error: "not_found" }, 404);
+    return detail && !detail.deleted ? c.json(libraryView(detail, locale)) : c.json({ error: "not_found" }, 404);
+  });
+
+  /**
+   * Pause, resume, close or reopen. Pausing or closing also pauses the open negotiations using this
+   * mandate, so nothing more reaches the other side; resuming or reopening resumes them.
+   */
+  app.post("/api/operator/library/:id/lifecycle", async (c) => {
+    const body = await c.req.json<{ action?: string }>().catch(() => ({}) as { action?: string });
+    const step = LIFECYCLE[body.action ?? ""];
+    if (!step) return c.json({ error: "invalid_action", message: "Choose pause, resume, close or reopen." }, 400);
+    const mandateId = c.req.param("id");
+    const result = library.setLifecycle(mandateId, step.action);
+    if (!result.ok) return c.json({ error: result.code, message: result.message }, result.code === "not_found" ? 404 : 409);
+    const sessions = await setSessionsPaused(deps, mandateId, step.pauseSessions);
+    return c.json({ ...libraryView(result.value, locale), sessionsChanged: sessions });
+  });
+
+  /**
+   * Removes a mandate from the list. It can no longer start negotiations, and open ones using it are
+   * paused. Its versions and the negotiations that used it keep their record.
+   */
+  app.delete("/api/operator/library/:id", async (c) => {
+    const mandateId = c.req.param("id");
+    if (deps.protectedIds?.includes(mandateId)) return c.json({ error: "protected", message: "The demo listing uses this mandate, so it can't be deleted. You can pause it instead." }, 409);
+    const result = library.setLifecycle(mandateId, "deleted");
+    if (!result.ok) return c.json({ error: result.code, message: result.message }, result.code === "not_found" ? 404 : 409);
+    const sessions = await setSessionsPaused(deps, mandateId, true);
+    return c.json({ ok: true, sessionsPaused: sessions });
   });
 
   /** Edited text becomes the next draft version. The active revision does not change. */
@@ -115,6 +152,17 @@ export function registerLibraryRoutes(app: Hono, deps: LibraryDeps): void {
   });
 }
 
+async function setSessionsPaused(deps: LibraryDeps, mandateId: string, paused: boolean): Promise<string[]> {
+  const changed: string[] = [];
+  for (const sessionId of await openSessionsUsing(deps.record, mandateId)) {
+    const state = await deps.engine.state(sessionId).catch(() => null);
+    if (!state || (state.status === "paused") === paused) continue;
+    const result = await deps.engine.setPaused({ sessionId, paused });
+    if (result.ok) changed.push(sessionId);
+  }
+  return changed;
+}
+
 /** Sessions started from this saved mandate that have not finished. */
 export async function openSessionsUsing(record: NegotiationRecord, mandateId: string): Promise<string[]> {
   const out: string[] = [];
@@ -135,6 +183,7 @@ export function libraryView(detail: LibraryDetail, locale: string) {
     mandateId: detail.mandateId,
     title: detail.title,
     caseId: detail.caseId,
+    state: detail.state,
     input: detail.input,
     versions: detail.versions,
     active: detail.active ? { revision: detail.active.revision, versionId: detail.active.versionId, confirmedAt: detail.active.confirmedAt, review: reviewOf(detail.active.mandate, locale) } : null,

@@ -70,7 +70,28 @@ interface LibraryEventRow {
   confirmed: ConfirmedMandate | null;
 }
 
+/** The principal's lifecycle actions on a saved mandate. Append-only, like versions and confirmations. */
+export type LifecycleAction = "paused" | "resumed" | "closed" | "reopened" | "deleted";
+
+interface LifecycleRow {
+  id: string;
+  mandateId: string;
+  kind: LifecycleAction;
+  createdAt: string;
+}
+
+/**
+ * Where a saved mandate stands for the principal:
+ * - draft: no confirmed revision yet, so it cannot be used
+ * - live: confirmed and available for negotiations
+ * - paused: confirmed, but Kritva starts nothing new with it until resumed
+ * - closed: finished; it stays in the list and can be reopened
+ */
+export type MandateState = "draft" | "live" | "paused" | "closed";
+
 export interface LibraryBackend {
+  insertLifecycle(row: LifecycleRow): void;
+  listLifecycle(mandateId: string): LifecycleRow[];
   insertMandate(row: MandateRow): void;
   listMandates(): MandateRow[];
   getMandate(id: string): MandateRow | null;
@@ -100,6 +121,9 @@ export interface LibraryDetail {
   createdAt: string;
   input: LibraryInput;
   versions: LibraryVersion[];
+  /** live, paused, closed, or draft while nothing is confirmed. */
+  state: MandateState;
+  deleted: boolean;
   /** The latest version, whatever its status. */
   latest: { versionId: string; status: VersionStatus; draft: MandateDraft; draftHash: string; readiness: Readiness; blockers: string[] } | null;
   active: { revision: number; versionId: string; confirmedAt: string; mandate: ConfirmedMandate } | null;
@@ -118,12 +142,35 @@ export class MandateLibrary {
     this.#now = options.now ?? (() => new Date());
   }
 
-  list(): Array<{ mandateId: string; title: string; caseId: string; activeRevision: number | null; hasOpenDraft: boolean; updatedAt: string }> {
-    return this.#backend.listMandates().map((m) => {
+  /** Saved mandates, newest activity last. Deleted mandates are left out. */
+  list(): Array<{ mandateId: string; title: string; caseId: string; activeRevision: number | null; hasOpenDraft: boolean; state: MandateState; updatedAt: string }> {
+    return this.#backend.listMandates().flatMap((m) => {
       const d = this.get(m.id)!;
-      const updatedAt = [m.createdAt, ...d.versions.map((v) => v.createdAt)].sort().at(-1)!;
-      return { mandateId: m.id, title: m.title, caseId: m.caseId, activeRevision: d.active?.revision ?? null, hasOpenDraft: d.latest?.status === "draft", updatedAt };
+      if (d.deleted) return [];
+      const lifecycle = this.#backend.listLifecycle(m.id);
+      const updatedAt = [m.createdAt, ...d.versions.map((v) => v.createdAt), ...lifecycle.map((e) => e.createdAt)].sort().at(-1)!;
+      return [{ mandateId: m.id, title: d.title, caseId: m.caseId, activeRevision: d.active?.revision ?? null, hasOpenDraft: d.latest?.status === "draft", state: d.state, updatedAt }];
     });
+  }
+
+  /**
+   * Pause, resume, close, reopen or delete. Only confirmed mandates can be paused or closed; a
+   * deleted mandate leaves the list and cannot start negotiations, but its versions and the
+   * negotiations that used it keep their record.
+   */
+  setLifecycle(mandateId: string, action: LifecycleAction): LibraryResult<LibraryDetail> {
+    const d = this.get(mandateId);
+    if (!d || d.deleted) return { ok: false, code: "not_found", message: "That mandate does not exist." };
+    const allowed: Record<LifecycleAction, MandateState[]> = {
+      paused: ["live"],
+      resumed: ["paused"],
+      closed: ["live", "paused"],
+      reopened: ["closed"],
+      deleted: ["draft", "live", "paused", "closed"],
+    };
+    if (!allowed[action].includes(d.state)) return { ok: false, code: "invalid_state", message: d.state === "draft" ? "Make this mandate live first." : `This mandate is already ${d.state}.` };
+    this.#backend.insertLifecycle({ id: `llc_${randomUUID()}`, mandateId, kind: action, createdAt: this.#now().toISOString() });
+    return { ok: true, value: this.get(mandateId)! };
   }
 
   get(mandateId: string): LibraryDetail | null {
@@ -141,10 +188,17 @@ export class MandateLibrary {
     const lastConfirmed = events.filter((e) => e.kind === "confirmed").sort((a, b) => (a.revision ?? 0) - (b.revision ?? 0)).at(-1);
     const latest = versions.at(-1);
     const latestView = latest ? view.at(-1)! : null;
+    const lifecycle = this.#backend.listLifecycle(mandateId);
+    const deleted = lifecycle.some((e) => e.kind === "deleted");
+    const last = lifecycle.filter((e) => e.kind !== "deleted").at(-1)?.kind;
+    const state: MandateState = !lastConfirmed ? "draft" : last === "paused" ? "paused" : last === "closed" ? "closed" : "live";
     return {
       mandateId: m.id,
       caseId: m.caseId,
-      title: m.title,
+      // The title follows the latest wording, so a renamed mandate shows its new name.
+      title: latest?.input.title || m.title,
+      state,
+      deleted,
       createdAt: m.createdAt,
       input: latest?.input ?? { title: m.title, principalRole: "", counterpartyRole: "", publicText: "", privateText: "" },
       versions: view,
@@ -407,6 +461,11 @@ CREATE TABLE IF NOT EXISTS library_events (
   kind TEXT NOT NULL CHECK (kind IN ('confirmed', 'discarded')), revision INTEGER, created_at TEXT NOT NULL, body TEXT NOT NULL,
   UNIQUE (mandate_id, revision), UNIQUE (version_id, kind)
 );
+CREATE TABLE IF NOT EXISTS library_lifecycle (
+  id TEXT PRIMARY KEY, mandate_id TEXT NOT NULL REFERENCES library_mandates(id),
+  kind TEXT NOT NULL CHECK (kind IN ('paused', 'resumed', 'closed', 'reopened', 'deleted')), created_at TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS library_lifecycle_no_update BEFORE UPDATE ON library_lifecycle BEGIN SELECT RAISE(ABORT, 'lifecycle events are append-only'); END;
 CREATE TRIGGER IF NOT EXISTS library_versions_no_update BEFORE UPDATE ON library_versions BEGIN SELECT RAISE(ABORT, 'versions are append-only'); END;
 CREATE TRIGGER IF NOT EXISTS library_events_no_update BEFORE UPDATE ON library_events BEGIN SELECT RAISE(ABORT, 'library events are append-only'); END;
 `;
@@ -455,6 +514,12 @@ export class SqliteLibraryBackend implements LibraryBackend {
   }
   insertEvent(row: LibraryEventRow): void {
     this.#db.prepare("INSERT INTO library_events (id, mandate_id, version_id, kind, revision, created_at, body) VALUES (?, ?, ?, ?, ?, ?, ?)").run(row.id, row.mandateId, row.versionId, row.kind, row.revision, row.createdAt, JSON.stringify(row));
+  }
+  insertLifecycle(row: LifecycleRow): void {
+    this.#db.prepare("INSERT INTO library_lifecycle (id, mandate_id, kind, created_at) VALUES (?, ?, ?, ?)").run(row.id, row.mandateId, row.kind, row.createdAt);
+  }
+  listLifecycle(mandateId: string): LifecycleRow[] {
+    return (this.#db.prepare("SELECT * FROM library_lifecycle WHERE mandate_id = ? ORDER BY created_at, rowid").all(mandateId) as Array<Record<string, string>>).map((r) => ({ id: r.id!, mandateId: r.mandate_id!, kind: r.kind as LifecycleAction, createdAt: r.created_at! }));
   }
   listEvents(mandateId: string): LibraryEventRow[] {
     return (this.#db.prepare("SELECT body FROM library_events WHERE mandate_id = ? ORDER BY created_at, id").all(mandateId) as Array<{ body: string }>).map((r) => JSON.parse(r.body) as LibraryEventRow);

@@ -21,6 +21,7 @@ Kritva is a reusable AI negotiation capability for apps and assistants. It repre
 | Humane conversation guide | Replies are warm, short and specific. Kritva introduces itself once as the assistant for the person it represents, responds to what was said, asks one useful question, and varies its wording. See `docs/Kritva_Humane_Negotiation_Instructions_P0.md`. |
 | 12. Seller console | One console on the shared record: messages with their channel, offers marked delivered or held back, approvals scoped to the exact offer version and mandate revision, pause and resume, "Change instructions" through the mandate library, and an outcome card with pending payment and pickup. |
 | 13. Browser voice | The buyer talks in the browser. Each utterance is transcribed and sent through the same text negotiation path; only recorded, checked replies are spoken. Talking over Kritva stops it and records what was heard; a cut-off read-back never counts as delivered. No phone calls. |
+| Mandate intake agent | The principal sets up a mandate by chatting with a separate setup agent (OpenAI Agents SDK, text and images). It infers the roles, what the other side may see and what stays private, asks only for what it can't infer (usually the limit, plus the details the other side will ask about), and fills the same mandate input the mapper reads. A progress bar follows what it has gathered; the finished draft appears in the chat with **Make it live**. Mandates are live, paused, closed or deleted from the list. See `packages/core/src/intake/`. |
 | 14. Demo listing | A clearly labelled demo bed listing built from the confirmed mandate's public content, with "Call seller" opening one browser voice session beside the seller console. "New demo session" starts fresh with the same saved mandate. |
 
 Next: deployment on AWS and the final demonstration.
@@ -40,13 +41,15 @@ packages/core/            the reusable core (TypeScript)
   src/commitments/        Epic 7: offer versions and statuses, outcomes, agreement obligations
   src/strategy/           Epic 8: package assessment and the strategy-guidance schema
   src/voice/              Epic 13: speech-to-text and text-to-speech (provider-neutral, OpenAI adapter)
-  src/mandate/library.ts  Epic 11: case-level mandates, versions, corrections and confirmations
+  src/mandate/library.ts  Epic 11: case-level mandates, versions, corrections, confirmations and lifecycle (live, paused, closed, deleted)
+  src/intake/             the mandate intake agent (OpenAI Agents SDK): conversation store, agent, and the service that maps and makes mandates live
   src/agent/              the agentic turn: Kritva as an OpenAI Agents SDK agent (read_message, send_reply)
   src/negotiation/        Epic 2A/8: state projection, the strategy chooser, reply check, turn engine
   src/llm/                provider-neutral model contract and the OpenAI adapter
   scripts/                operator tools (prepare and confirm a mandate)
 apps/server/              HTTP API for the slice (Hono); buyer and operator routes
-  src/library-routes.ts   Epic 11: the mandate library routes and review view
+  src/library-routes.ts   Epic 11: the mandate library routes and review view, plus lifecycle and delete
+  src/intake-routes.ts    the intake chat routes: messages (with images), prepare, make live
   src/eval/               Epic 10: buyer simulator, plain LLM seller, scoring and reports
   src/voice-routes.ts     Epics 13-14: voice turns, reply audio, the demo listing and "Call seller"
   scripts/voice-check.ts  Epic 13 timing check through the real audio pipeline (no microphone needed)
@@ -83,6 +86,10 @@ KRITVA_MAPPING_MODEL=gpt-5.5
 KRITVA_TURN_MODEL=gpt-5.4-mini
 KRITVA_TURN_REASONING_EFFORT=none
 KRITVA_LOCALE=en-IN
+# Mandate intake agent (the setup chat on the Mandates page)
+KRITVA_INTAKE_MODEL=gpt-5.4-mini
+KRITVA_INTAKE_REASONING_EFFORT=low
+KRITVA_DEFAULT_CURRENCY=Indian rupees (₹)
 # Case-specific guidance is selected in cases/<case>/case.json. KRITVA_GUIDANCE=none disables it.
 # Browser voice (Epic 13)
 KRITVA_TRANSCRIBE_MODEL=gpt-4o-mini-transcribe
@@ -110,7 +117,7 @@ The console has two views. **Negotiation** shows the conversation (you write as 
 
 `?view=buyer#session=<id>` opens a session as the counterparty sees it: the conversation only, with the AI disclosure and no private data. **Talk by voice** in the composer starts browser voice on the same session. Use `localhost` for development and HTTPS for the deployed demo.
 
-**Mandates** (top bar) opens the mandate library: describe a negotiation in your own words (or load an example), map it to a draft, check and correct what Kritva understood, and confirm it. "Use for the next negotiation" selects it; "New session" then starts a negotiation from its active revision.
+**Mandates** (top bar) opens the mandate library. Select **New** and tell Kritva's setup agent what to negotiate: one sentence, or a picture or screenshot of a listing (attach, paste or drop it). The agent asks only for what it can't work out, usually your limit and the details the other side will want to know. When everything is in place, it maps the brief into a draft (this takes up to a minute) and shows a card with what Kritva will use; private items carry a lock. **Make it live** is the only step that gives it authority. To change a live mandate, open it and say what to change; **Apply changes** makes the next revision and applies it to open negotiations. Each mandate's menu pauses, resumes, closes, reopens or deletes it. Pausing or closing also pauses its open negotiations; only live mandates can start new ones. Deleting hides it and keeps the history of negotiations that used it. The demo listing's mandate can be paused but not deleted. "Use for the next negotiation" selects a live mandate; **New negotiation** then starts from its active revision.
 
 ## Commands
 

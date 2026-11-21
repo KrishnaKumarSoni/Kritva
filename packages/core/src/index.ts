@@ -54,5 +54,6 @@ export { projectAllowance, type AllowanceLedger, type AllowanceEntry } from "./s
 export { negotiationInsights, type NegotiationInsights } from "./strategy/insights.ts";
 export { projectCommitments, noAgreementSummary, type CommitmentsModel, type OfferRecord, type OfferStatus, type SessionOutcome, type Obligation } from "./commitments/model.ts";
 export { promptVersions } from "./llm/prompt-versions.ts";
-export { MandateLibrary, SqliteLibraryBackend, blockers, type LibraryBackend, type LibraryDetail, type LibraryInput, type LibraryVersion, type Correction, type VersionStatus } from "./mandate/library.ts";
+export { MandateLibrary, SqliteLibraryBackend, blockers, type LibraryBackend, type LibraryDetail, type LibraryInput, type LibraryVersion, type Correction, type VersionStatus, type LifecycleAction, type MandateState } from "./mandate/library.ts";
+export * from "./intake/index.ts";
 export { OpenAISpeech, createSpeechFromEnv, type SpeechProvider } from "./voice/speech.ts";

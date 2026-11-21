@@ -112,6 +112,8 @@ export function registerVoiceRoutes(app: Hono, deps: VoiceDeps): void {
   const resolve = (caseId: string) => {
     const listing = deps.listings.find((l) => l.caseId === caseId);
     if (!listing) return { error: { status: 404 as const, body: { error: "not_found", message: "That listing doesn't exist." } } };
+    const detail = deps.library?.get(listing.libraryId) ?? null;
+    if (detail && !detail.deleted && detail.state !== "live" && detail.state !== "draft") return { error: { status: 409 as const, body: { error: "listing_paused", message: `The seller has ${detail.state === "paused" ? "paused" : "closed"} this listing. No call was started.` } } };
     const active = deps.library?.active(listing.libraryId) ?? null;
     if (!active) return { error: { status: 409 as const, body: { error: "mandate_missing", message: "This listing isn't set up yet: the seller's mandate is missing or not confirmed. No call was started." } } };
     return { listing, active };
