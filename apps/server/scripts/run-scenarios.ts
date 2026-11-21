@@ -9,6 +9,10 @@
  * name, availability, fulfillment vocabulary, per-case guidance). With --save-replays, every
  * scenario marked "replay" stores its model responses and per-turn results in
  * cases/<case>/replays/, which the server tests replay without a model.
+ *
+ * Kritva runs as the agent (OpenAI Agents SDK) on KRITVA_AGENT_MODEL. With --bridge, the agent's
+ * reading and wording come from the structured turn model instead (the earlier pipeline's prompts),
+ * through the same agent loop, as an A/B baseline.
  */
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -19,6 +23,7 @@ import {
   MandateLibrary,
   MandateRevisions,
   SqliteLibraryBackend,
+  createAgentFromEnv,
   createTurnLlmFromEnv,
   DEFAULT_TURN_MODEL,
   findAmounts,
@@ -30,7 +35,8 @@ import {
 } from "@kritva/core";
 import { createApp } from "../src/app.ts";
 import { loadCaseRuntime, loadGuidance } from "../src/main-helpers.ts";
-import { checkTurn, playTurns, RecordingLlm, type ReplayFixture, type ScenarioTurn } from "../src/eval/replay.ts";
+import { checkTurn, playTurns, RecordingAgentModel, RecordingLlm, type ReplayFixture, type ScenarioTurn } from "../src/eval/replay.ts";
+import { OpenAIProvider } from "@openai/agents";
 import { runComparison, systemPromptVersions } from "../src/eval/compare.ts";
 import { csvReport, markdownReport } from "../src/eval/report.ts";
 import { scoreRun } from "../src/eval/score.ts";
@@ -122,6 +128,7 @@ async function comparisonCli(): Promise<void> {
       judge,
       guidance: loadGuidance(ROOT, "bed-sale"),
       sellerLlm: () => createTurnLlmFromEnv(),
+      agent: args.includes("--bridge") ? undefined : createAgentFromEnv(),
       buyerLlm: createTurnLlmFromEnv(),
       model,
       dataDir: mkdtempSync(join(tmpdir(), "kritva-compare-")),
@@ -162,11 +169,15 @@ const viewFor = (id: string) => {
 const record = new NegotiationRecord(new SqliteRecordBackend(join(runtimeDir, "record.sqlite")));
 const llm = createTurnLlmFromEnv();
 const saveReplays = args.includes("--save-replays");
+const bridge = args.includes("--bridge");
+const agentConfig = createAgentFromEnv();
+const agentModel = bridge ? null : await new OpenAIProvider().getModel(agentConfig.agentModel);
 
 /** One engine and app per scenario run, built like the running app, so each run's model calls can be recorded on their own. */
 function stack() {
   const recording = new RecordingLlm(llm);
-  const engine = new NegotiationEngine({ record, llm: recording, locale: "en-IN", guidanceByCase: runtime.guidanceByCase, subjectFacts: runtime.subjectFacts, listingDetails: runtime.listingDetails });
+  const agent = agentModel ? { agentModel: new RecordingAgentModel(agentModel, recording.calls), agentModelSettings: agentConfig.agentModelSettings } : {};
+  const engine = new NegotiationEngine({ record, llm: recording, ...agent, locale: "en-IN", guidanceByCase: runtime.guidanceByCase, subjectFacts: runtime.subjectFacts, listingDetails: runtime.listingDetails });
   const revisions = new MandateRevisions({ record, engine, mappingLlm });
   const app = createApp({ record, engine, revisions, mandates, locale: "en-IN", library, examples: runtime.examples, listings: runtime.listings });
   const call = async (method: string, path: string, body?: unknown) => {
@@ -291,6 +302,21 @@ async function runScenario(s: Scenario, run: number): Promise<RunResult> {
   const opener = (t: string) => t.replace(/^Hi, I'm Kritva[^.]*\.\s*/, "").split(/\s+/).slice(0, 3).join(" ").toLowerCase();
   const repeated = agentTexts.slice(1).find((t, i) => opener(t) === opener(agentTexts[i]!) && !/^just to confirm|^good news/i.test(opener(t)));
   checks.push({ check: "no repeated opener in consecutive replies", pass: !repeated, detail: repeated ? `"${opener(repeated)}…" twice in a row` : undefined });
+
+  // Never the same sentence twice: a person who repeats themselves word for word sounds like a script.
+  const sentencesSeen = new Map<string, number>();
+  for (const [i, t] of agentTexts.entries()) {
+    // A read-back of the checked terms is meant to repeat (stated, then agreed), so term lists are not counted.
+    const sentences = t.split(/(?<=[.!?])\s+/).filter((x) => !(findAmounts(x).length > 0 && (x.match(/,/g) ?? []).length >= 2));
+    for (const sentence of sentences.map((x) => x.toLowerCase().replace(/[^\p{L}\p{N}₹ ]+/gu, "").trim()).filter((x) => x.split(" ").length >= 5)) {
+      if (!sentencesSeen.has(sentence)) sentencesSeen.set(sentence, i);
+      else if (sentencesSeen.get(sentence) !== i) {
+        sentencesSeen.set(sentence, -1);
+      }
+    }
+  }
+  const repeatedSentence = [...sentencesSeen].find(([, i]) => i === -1)?.[0];
+  checks.push({ check: "no sentence repeated across Kritva's replies", pass: !repeatedSentence, detail: repeatedSentence ? `"${repeatedSentence}"` : undefined });
 
   const undelivered = events.filter((e) => e.type === "message" && (e.payload as any).direction === "outbound").filter((m) => !events.some((d) => d.type === "delivery_reported" && (d.payload as any).messageId === m.id));
   checks.push({ check: "every reply was delivered and recorded", pass: undelivered.length === 0 });
@@ -469,7 +495,7 @@ const lines = [
   "",
   `- Run at: ${summary.runAt}`,
   `- Commit: ${commit}`,
-  `- Turn model: ${llm.model}`,
+  `- Turn model: ${llm.model}${bridge ? " (bridge: structured reading and wording)" : `; agent: ${agentConfig.agentModel} (OpenAI Agents SDK)`}`,
   `- Path: in-process HTTP routes (same as the chat page) → NegotiationEngine → SQLite record`,
   `- Result: **${summary.passed} of ${summary.total} scenario runs passed**`,
   `- Text turn latency (interpret + decide + compose + check + record): p50 ${(pct(50) / 1000).toFixed(1)}s, p90 ${(pct(90) / 1000).toFixed(1)}s`,

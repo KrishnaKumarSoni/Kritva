@@ -60,3 +60,13 @@ describe("The planned offer is not a mismatch", () => {
     expect(added.ok && added.concerns).toHaveLength(1);
   });
 });
+
+describe("Reviewer severity", () => {
+  it("a doubt is recorded by the reviewer but does not stop the reply; a violation does", async () => {
+    const reply = "₹20,000 is the current ask, and I hear you want it lower.";
+    const doubt = await languageCheck(reviewer([{ type: "private_disclosure", quote: "I hear you want it lower.", reason: "might hint", severity: "doubt" } as never]), { ...base, reply });
+    expect(doubt).toEqual({ ok: true, concerns: [] });
+    const violation = await languageCheck(reviewer([{ type: "private_disclosure", quote: "I hear you want it lower.", reason: "hints at room", severity: "violation" } as never]), { ...base, reply });
+    expect(violation.ok && violation.concerns).toHaveLength(1);
+  });
+});

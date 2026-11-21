@@ -12,6 +12,7 @@
     "test:live": "vitest run --project live"
   },
   "dependencies": {
+    "@openai/agents": "^0.22.0",
     "openai": "^7.62.0",
     "zod": "^4.6.7"
   },

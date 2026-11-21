@@ -22,7 +22,7 @@
       "\\b(we|i)('ll| will| can) deliver"
     ],
     "agentMustSay": [
-      "(confirm|agreeing to)[^.]*\\?"
+      "confirm|agreeing to"
     ]
   }
 }

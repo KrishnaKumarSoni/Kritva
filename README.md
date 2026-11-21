@@ -41,6 +41,7 @@ packages/core/            the reusable core (TypeScript)
   src/strategy/           Epic 8: package assessment and the strategy-guidance schema
   src/voice/              Epic 13: speech-to-text and text-to-speech (provider-neutral, OpenAI adapter)
   src/mandate/library.ts  Epic 11: case-level mandates, versions, corrections and confirmations
+  src/agent/              the agentic turn: Kritva as an OpenAI Agents SDK agent (read_message, send_reply)
   src/negotiation/        Epic 2A/8: state projection, the strategy chooser, reply check, turn engine
   src/llm/                provider-neutral model contract and the OpenAI adapter
   scripts/                operator tools (prepare and confirm a mandate)
@@ -197,6 +198,7 @@ node --env-file=.env packages/core/scripts/prepare-mandate.ts bed-sale demo --co
 
 **Negotiation turns (Epic 2A)**
 - **One path for every surface.** The chat page, the scenario script and, later, voice all call the same engine.
+- **Each turn is an agent run.** Kritva runs as an OpenAI Agents SDK agent with the whole conversation as history. It reads the message through the `read_message` tool, whose execution grounds the reading and runs the strategy, gates and record in code, and returns the brief. It writes through `send_reply`, whose execution runs the code checks and the reviewer and returns problems for a rewrite. The model never sets an amount, a term or a commitment. See [docs/Kritva_Agentic_Turn_Design.md](docs/Kritva_Agentic_Turn_Design.md). `KRITVA_AGENT_MODEL` picks the agent's model (default: the turn model); `KRITVA_AGENT_TRACING=1` turns SDK tracing on.
 - **Code decides, the model words.** The model only interprets the buyer's message and words the reply, and it never sees private limits. Every offer comes from a deterministic policy that reads the confirmed mandate.
 - **Every reply is checked in code before display.** It catches private amounts, amounts outside the plan, offers past the limit, missing offer amounts, claims of agreement or approval, and copied private text. A failing reply is blocked, recorded, and replaced by checked template wording.
 - **Agreement needs both sides on the same terms.** Kritva states the complete terms, and the buyer confirms them. If the mandate requires it, the seller approves the same terms hash. Missing approval produces "pending approval", not an agreement.

@@ -9,6 +9,7 @@
  * `npm run scenarios -- --save-replays` after an intended change.
  */
 import type { NegotiationRecord, RecordedEvent, StructuredLlm, StructuredRequest, StructuredResponse } from "@kritva/core";
+import type { Model, ModelRequest, ModelResponse } from "@openai/agents";
 
 export type ScenarioTurn = { buyer: string; expect?: TurnExpect } | { seller: "approved" | "rejected" | "pause" | "resume" | "end" };
 
@@ -61,6 +62,42 @@ export class RecordingLlm implements StructuredLlm {
     const response = await this.#inner.generate(request);
     this.calls.push({ purpose: request.purpose, json: response.json });
     return response;
+  }
+}
+
+/**
+ * Wraps the live agent model and records its decisions in the same form the bridge replays: a
+ * read_message call as a reading, a send_reply call as wording. A draft sent before reading (refused
+ * by the tool) is dropped, since a replay never offers it.
+ */
+export class RecordingAgentModel implements Model {
+  readonly #inner: Model;
+  readonly #calls: ModelCall[];
+  constructor(inner: Model, calls: ModelCall[]) {
+    this.#inner = inner;
+    this.#calls = calls;
+  }
+  async getResponse(request: ModelRequest): Promise<ModelResponse> {
+    const last = (Array.isArray(request.input) ? request.input.at(-1) : undefined) as { type?: string; name?: string; output?: unknown } | undefined;
+    if (last?.type === "function_call_result" && last.name === "send_reply" && /"status":"not_ready"/.test(typeof last.output === "string" ? last.output : JSON.stringify(last.output))) {
+      const index = this.#calls.findLastIndex((c) => c.purpose === "compose_reply");
+      if (index >= 0) this.#calls.splice(index, 1);
+    }
+    const response = await this.#inner.getResponse(request);
+    let called = false;
+    for (const item of response.output as Array<{ type: string; name?: string; arguments?: string }>) {
+      if (item.type !== "function_call") continue;
+      called = true;
+      const args = JSON.parse(item.arguments ?? "{}");
+      if (item.name === "read_message") this.#calls.push({ purpose: "interpret_counterparty", json: args });
+      if (item.name === "send_reply") this.#calls.push({ purpose: "compose_reply", json: args });
+    }
+    // A reply without a tool call ends the run without wording; the replay reproduces that with empty wording.
+    if (!called) this.#calls.push({ purpose: "compose_reply", json: { text: "" } });
+    return response;
+  }
+  getStreamedResponse(request: ModelRequest) {
+    return this.#inner.getStreamedResponse(request);
   }
 }
 

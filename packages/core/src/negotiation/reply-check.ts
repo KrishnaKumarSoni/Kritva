@@ -29,7 +29,7 @@ export interface CheckContext {
 }
 
 const DECLINE_CUE = /\b(can'?t|cannot|can not|won'?t|unable|not able|too low|too high|not possible|isn'?t|is not|no\b|decline|don'?t|do not|below|under|above|over|beyond)\b/i;
-const AGREEMENT_CLAIM = /\b(we have (a |an )?(deal|agreement)|we(?:'re| are) agreed|it'?s (a deal|agreed)|deal (is )?(done|confirmed)|agreement (is )?(confirmed|recorded)|(sold|it'?s yours)\b|i accept (your|the) offer|offer accepted)/i;
+const AGREEMENT_CLAIM = /\b(we have (a |an )?(deal|agreement)|we(?:'re| are) agreed|it'?s (a deal|agreed)|deal (is )?(done|confirmed)|agreement (is )?(confirmed|recorded)|(sold|it'?s yours)\b|i accept (your|the) offer|offer accepted|\d[\d,]*(?:\.\d+)?\s+works\b|\bthat works\b|\bworks for (?:me|us)\b)/i;
 const APPROVAL_CLAIM = /\b(has|have) approved\b|\bapproved (it|this|your offer|the (offer|terms))\b|\bapproval (is )?(given|granted|received)\b/i;
 
 const INTERNAL_TERM = /\b(mandate|governance|zopa|batna|parameter|principal|negotiation core|the core|strategy engine|guidance file|policy engine|score)\b/i;

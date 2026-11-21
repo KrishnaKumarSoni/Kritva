@@ -1,3 +1,4 @@
+import type { ModelSettings } from "@openai/agents";
 import type { ReasoningEffort } from "openai/resources/shared";
 import { OpenAIStructuredLlm } from "./openai.ts";
 
@@ -34,4 +35,17 @@ export function createMappingLlmFromEnv(env: NodeJS.ProcessEnv = process.env): O
     timeoutMs: Number(env.KRITVA_MAPPING_TIMEOUT_MS ?? 90_000),
     reasoningEffort: effort && EFFORTS.has(effort) ? (effort as ReasoningEffort) : undefined,
   });
+}
+
+/**
+ * The negotiating agent (OpenAI Agents SDK): the turn model unless KRITVA_AGENT_MODEL is set, with the
+ * turn's reasoning effort. Responses are not stored with the provider (store: false).
+ */
+export function createAgentFromEnv(env: NodeJS.ProcessEnv = process.env): { agentModel: string; agentModelSettings: ModelSettings } {
+  if (!env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not set.");
+  const effort = env.KRITVA_AGENT_REASONING_EFFORT ?? env.KRITVA_TURN_REASONING_EFFORT ?? "none";
+  return {
+    agentModel: env.KRITVA_AGENT_MODEL ?? env.KRITVA_TURN_MODEL ?? DEFAULT_TURN_MODEL,
+    agentModelSettings: { store: false, ...(EFFORTS.has(effort) ? { reasoning: { effort: effort as NonNullable<NonNullable<ModelSettings["reasoning"]>["effort"]> } } : {}) },
+  };
 }

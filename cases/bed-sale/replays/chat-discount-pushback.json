@@ -1,0 +1,511 @@
+{
+  "scenario": "chat-discount-pushback",
+  "mandate": "bed-sale/demo",
+  "recordedAt": "2026-11-21T21:24:56.280Z",
+  "commit": "ebfa6bd + uncommitted changes",
+  "model": "gpt-5.4-mini",
+  "turns": [
+    {
+      "buyer": "Hi",
+      "expect": {
+        "offer": null,
+        "says": [
+          "Kritva"
+        ]
+      }
+    },
+    {
+      "buyer": "What are you selling?",
+      "expect": {
+        "offer": null,
+        "says": [
+          "bed"
+        ],
+        "neverSays": [
+          "don't have that detail",
+          "not confirmed"
+        ]
+      }
+    },
+    {
+      "buyer": "for how much?",
+      "expect": {
+        "offer": null,
+        "says": [
+          "20,000"
+        ]
+      }
+    },
+    {
+      "buyer": "Wow! That's a lot. Can you give a discount? Something lesser?",
+      "expect": {
+        "offer": null,
+        "neverSays": [
+          "collection time",
+          "18,000"
+        ]
+      }
+    },
+    {
+      "buyer": "My budget is only 18000.",
+      "expect": {
+        "decision": "acknowledge_budget",
+        "offer": null,
+        "says": [
+          "18,000"
+        ]
+      }
+    },
+    {
+      "buyer": "What terms?",
+      "expect": {
+        "offer": null,
+        "says": [
+          "20,000",
+          "Koramangala|pickup|pick up|collect"
+        ]
+      }
+    },
+    {
+      "buyer": "No bro. Please come down a little.",
+      "expect": {
+        "offer": null,
+        "neverSays": [
+          "^For now the price stays at ₹20,000\\.$",
+          "collection time"
+        ]
+      }
+    }
+  ],
+  "observed": [
+    {
+      "turn": "Hi",
+      "reply": "Hi, I’m Kritva, Krishna’s assistant. What can I help you with?",
+      "offerAmount": null,
+      "decision": {
+        "kind": "answer",
+        "action": "answer"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "What are you selling?",
+      "reply": "It’s a king-size bed, one year old and in good condition.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "answer",
+        "action": "answer"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "for how much?",
+      "reply": "₹20,000.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "answer",
+        "action": "answer"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "Wow! That's a lot. Can you give a discount? Something lesser?",
+      "reply": "I’m at ₹20,000. What amount are you prepared to offer?",
+      "offerAmount": null,
+      "decision": {
+        "kind": "hold",
+        "action": "ask"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "My budget is only 18000.",
+      "reply": "You said your budget is ₹18,000. Would you like to make a firm offer on the bed at that amount?",
+      "offerAmount": null,
+      "decision": {
+        "kind": "acknowledge_budget",
+        "action": "ask"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "What terms?",
+      "reply": "The terms are ₹20,000, pickup from Koramangala, Bangalore, and delivery is not included.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "answer",
+        "action": "answer"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "No bro. Please come down a little.",
+      "reply": "I’m staying at ₹20,000 for now. If that doesn’t work, we may need to leave it here.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "hold",
+        "action": "answer"
+      },
+      "blocked": 0
+    }
+  ],
+  "calls": [
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "greeting",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Hi, I’m Kritva, Krishna’s assistant. What can I help you with?",
+        "question": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "question",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [],
+        "answers": [],
+        "new_terms": [],
+        "questions": [
+          "What are you selling?"
+        ],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "It’s a king-size bed, one year old and in good condition.",
+        "question": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "invented_fact",
+            "quote": "one year old and in good condition",
+            "reason": "These details are allowed by permitted_facts, but the reply omits the actual item being sold as a direct answer to the question? No, this is not a concern; only if unsupported. However the item itself is supported. No issue.",
+            "severity": "doubt"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "question",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": [
+          {
+            "term_id": "term_t_price",
+            "basis": "current",
+            "quote": "for how much?"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "₹20,000.",
+        "question": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "question",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "enquiry",
+        "price_concern": "objection",
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "lowest_price",
+        "notes": [
+          {
+            "kind": "reason",
+            "quote": "Wow! That's a lot.",
+            "summary": "They think the price is high.",
+            "term_id": null,
+            "value": null,
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": [
+          {
+            "term_id": "term_t_price",
+            "basis": "current",
+            "quote": "Can you give a discount? Something lesser?"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "I’m at ₹20,000. What amount are you prepared to offer?",
+        "question": "What amount are you prepared to offer?"
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "question",
+        "offer_terms": [
+          {
+            "term_id": "term_t_price",
+            "value": {
+              "type": "money",
+              "amount": 18000,
+              "currency": "INR",
+              "unit": null,
+              "text": null,
+              "boolean": null
+            }
+          }
+        ],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "budget_ceiling",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [
+          {
+            "kind": "budget",
+            "quote": "My budget is only 18000.",
+            "summary": "States a budget ceiling of ₹18,000.",
+            "term_id": null,
+            "value": {
+              "type": "money",
+              "amount": 18000,
+              "currency": "INR",
+              "unit": null,
+              "text": null,
+              "boolean": null
+            },
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "You said your budget is ₹18,000. Would you like to make a firm offer on the bed at that amount?",
+        "question": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "question",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [
+          {
+            "kind": "need",
+            "quote": "What terms?",
+            "summary": "Asks for the terms of the deal",
+            "term_id": null,
+            "value": null,
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": [
+          {
+            "term_id": "term_t_price",
+            "basis": "current",
+            "quote": "What terms?"
+          },
+          {
+            "term_id": "term_t_pickup_location",
+            "basis": "current",
+            "quote": "What terms?"
+          },
+          {
+            "term_id": "term_t_delivery_included",
+            "basis": "current",
+            "quote": "What terms?"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "The terms are ₹20,000, pickup from Koramangala, Bangalore, and delivery is not included.",
+        "question": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "request_change",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "enquiry",
+        "price_concern": "objection",
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "lowest_price",
+        "notes": [
+          {
+            "kind": "constraint",
+            "quote": "No bro.",
+            "summary": "They are rejecting the current price.",
+            "term_id": null,
+            "value": null,
+            "condition": null,
+            "basis": "stated"
+          },
+          {
+            "kind": "reason",
+            "quote": "Please come down a little.",
+            "summary": "They are asking for a lower price.",
+            "term_id": null,
+            "value": null,
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "I’m staying at ₹20,000 for now. If that doesn’t work, we may need to leave it here.",
+        "question": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    }
+  ]
+}

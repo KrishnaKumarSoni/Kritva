@@ -12,6 +12,7 @@
   "dependencies": {
     "@hono/node-server": "^2.1.11",
     "@kritva/core": "*",
+    "@openai/agents": "^0.22.0",
     "hono": "^4.13.19"
   },
   "devDependencies": {

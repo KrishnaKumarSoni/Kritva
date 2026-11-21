@@ -1,0 +1,89 @@
+{
+  "name": "chat-discount-pushback",
+  "description": "The reported chat: greeting, what is being sold, price, a discount request, an ₹18,000 budget, \"what terms?\", then pushback without an offer. Kritva answers from the listing, words questions for this case (no collection time here), keeps answers short, never repeats itself, and gives no concession without a firm offer.",
+  "replay": true,
+  "turns": [
+    {
+      "buyer": "Hi",
+      "expect": {
+        "offer": null,
+        "says": [
+          "Kritva"
+        ]
+      }
+    },
+    {
+      "buyer": "What are you selling?",
+      "expect": {
+        "offer": null,
+        "says": [
+          "bed"
+        ],
+        "neverSays": [
+          "don't have that detail",
+          "not confirmed"
+        ]
+      }
+    },
+    {
+      "buyer": "for how much?",
+      "expect": {
+        "offer": null,
+        "says": [
+          "20,000"
+        ]
+      }
+    },
+    {
+      "buyer": "Wow! That's a lot. Can you give a discount? Something lesser?",
+      "expect": {
+        "offer": null,
+        "neverSays": [
+          "collection time",
+          "18,000"
+        ]
+      }
+    },
+    {
+      "buyer": "My budget is only 18000.",
+      "expect": {
+        "decision": "acknowledge_budget",
+        "offer": null,
+        "says": [
+          "18,000"
+        ]
+      }
+    },
+    {
+      "buyer": "What terms?",
+      "expect": {
+        "offer": null,
+        "says": [
+          "20,000",
+          "Koramangala|pickup|pick up|collect"
+        ]
+      }
+    },
+    {
+      "buyer": "No bro. Please come down a little.",
+      "expect": {
+        "offer": null,
+        "neverSays": [
+          "^For now the price stays at ₹20,000\\.$",
+          "collection time"
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "in_progress"
+    ],
+    "agentMustNotSay": [
+      "lowest|minimum|bottom line|floor",
+      "other (buyers|people) (are )?interested",
+      "\\b(deadline|today only)\\b"
+    ],
+    "noOfferBelow": 20000
+  }
+}

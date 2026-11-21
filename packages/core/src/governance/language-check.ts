@@ -18,7 +18,7 @@ The reply may only rely on:
 - "public_amounts": asking amounts already shared with the other party. Stating an authorized asking amount in a direct answer, hold or explanation is not private disclosure. Flag identifying an amount as a private floor, ceiling or refusal point, even if that amount is public. Separately check whether citing an amount fits "action". For "answer_public_terms", use permitted_facts to verify the answer, including whether the value is current or historical. Flag presenting it as a new proposal or commitment.
 - On "price_pressure", holding the public ask and inviting a firm offer addresses the current message. On "answer_enquiry", "compare_terms", "explain_price" and "acknowledge_budget", saying a firm offer on the current terms can be considered keeps the action: it is not a new offer, a counter or an acceptance. On "compare_terms", asking how the packages differ addresses a cheaper comparison. Neither authorizes a discount.
 - "their_message" is the turn the reply must address. Earlier counterparty_words give context only. "stated_budget" is the amount quoted from this turn. Calling it "your budget" or "your ceiling" is attribution to the person who stated it, not verification of a claim or disclosure of a private limit.
-- A greeting followed by an invitation to speak directly addresses a standalone salutation. When "action.opening" is true, there is no counterparty message yet. Neither case is a turn mismatch or redundant question.
+- When "their_message" is null, the reply was started by an event (a greeting, an approval decision, the represented person ending or pausing), not by a message: there is no turn to mismatch, and reflecting that event is the action. For "end_negotiation", saying the person you represent decided to stop and closing politely without agreement is the action. A greeting followed by an invitation to speak directly addresses a standalone salutation. When "action.opening" is true, there is no counterparty message yet. Neither case is a turn mismatch or redundant question.
 - "permitted_facts": confirmed facts, including the current public terms. Refer to them when relevant to the current message. A public term may be stated as a fact without authorizing a new offer, also in everyday words (for example who collects, where, or that a service isn't included).
 - An introduction that names Kritva as the assistant of the person in permitted_facts is an authorized fact, not a counterparty claim. A public asking amount is the represented side's own term, never a counterparty claim.
 - "declined_terms": terms it may say cannot be changed.
@@ -37,7 +37,12 @@ Flag a concern for anything in the reply that:
 - redundant_question: asks for information the other party already supplied, or asks a question unrelated to the selected question objective. A question distinguishing two still-open possibilities is not redundant.
 - action_mismatch: changes the action in "action.move" or "action.notice". An opening before the other party has spoken only welcomes them and invites them to speak. For "state_final_terms", asking the other party to confirm the full package is required, and that question is not a claim of agreement. Flag that move only if the reply says the package is already agreed, asks for something other than full confirmation, or otherwise changes the action. For "counter" and "hold", putting the amount in checked_terms to them as your offer ("I can do <amount>", "How about <amount>?") is the action, not a mismatch. A budget ceiling, enquiry, or price explanation does not authorize a new offer, an acceptance, or a counter. For "request_approval", saying it needs the approval of the person represented, so it cannot be confirmed yet, is the action. An agreement confirmation may announce explicit approval only when "action.approvalGranted" is true. While paused, waiting for approval or ended, reflect that state without making a new commitment.
 
-Saying an amount that is in checked_terms is fine. Saying you don't have a detail is fine. Return no concerns when there are none.`;
+Saying an amount that is in checked_terms is fine. Saying you don't have a detail is fine. Return no concerns when there are none.
+
+For each concern, give a short "reason" naming the rule and what in the quote breaks it, and a "severity":
+- "violation": the quoted words clearly break one of the rules above as defined. Only these stop the reply.
+- "doubt": anything you are unsure about, or that only might be read that way.
+Ordinary acknowledgements ("I hear you", "I understand you'd like it lower", "noted"), restating the current asking amount (also with "for now" or "I can keep it at"), attributing a figure to what they said ("I see your budget is X"), and answering their question from permitted_facts are never violations.`;
 
 const SCHEMA = {
   type: "object",
@@ -49,8 +54,10 @@ const SCHEMA = {
         properties: {
           type: { type: "string", enum: ["private_disclosure", "invented_fact", "counterparty_claim_as_fact", "invented_competition", "invented_deadline", "market_claim", "promise_outside_terms", "action_mismatch", "turn_mismatch", "redundant_question"] },
           quote: { type: "string" },
+          reason: { type: "string" },
+          severity: { type: "string", enum: ["violation", "doubt"] },
         },
-        required: ["type", "quote"],
+        required: ["type", "quote", "reason", "severity"],
         additionalProperties: false,
       },
     },
@@ -65,7 +72,7 @@ export interface LanguageConcern {
 }
 
 const PUBLIC_ASK_MOVES = new Set(["hold", "explain_price", "acknowledge_budget", "answer_enquiry", "answer_public_terms", "explore_objection", "price_pressure", "compare_terms"]);
-const PUBLIC_ASK_PREFIX = /^(?:i(?:'d| would) like to stay at|i(?:'m| am) (?:staying|holding) at|i(?:'ll| will) (?:stay|hold) at|(?:the |the [\p{L} -]+'s )(?:current )?(?:asking )?(?:price|amount|ask) (?:is(?: still)?|remains)|the [\p{L} '-]+ is (?:still )?(?:holding at|asking))\s+/iu;
+const PUBLIC_ASK_PREFIX = /^(?:(?:for now|right now|still),?\s+)?(?:i(?:'d| would) like to stay at|i(?:'m| am) (?:staying|holding|keeping it) at|i(?:'ll| will) (?:stay|hold|keep it) at|i can (?:stay|hold|keep it) at|(?:it|the price) (?:stays|remains|is still) at|(?:the |the [\p{L} -]+'s )(?:current )?(?:asking )?(?:price|amount|ask) (?:is(?: still)?|remains)|the [\p{L} '-]+ is (?:still )?(?:holding at|asking))\s+/iu;
 /** "<amount> is the current price": the amount first. */
 const PUBLIC_ASK_SUFFIX = /\s+(?:is|remains) (?:still )?the (?:current )?(?:asking )?(?:price|amount|ask)(?: for now| at the moment)?$/iu;
 
@@ -207,6 +214,8 @@ export async function languageCheck(
     // Keep only concerns that quote the reply itself; a model cannot block on text that is not there.
     const concerns = raw
       .filter((c): c is LanguageConcern => typeof c?.type === "string" && typeof c?.quote === "string")
+      // Only a clear violation stops a reply; a doubt is the reviewer's hesitation, not a broken rule.
+      .filter((c) => (c as { severity?: unknown }).severity !== "doubt")
       .filter((c) => c.quote.trim().length > 0 && input.reply.toLowerCase().includes(c.quote.trim().toLowerCase().slice(0, 40)))
       .filter((c) => {
         if ((c.type === "private_disclosure" || c.type === "invented_fact") && flagsOnlyAPublicAsk(input.reply, c.quote, input.publicAmounts ?? [], input.action?.move)) return false;

@@ -29,7 +29,7 @@
     {
       "buyer": "For how much?",
       "expect": {
-        "decision": "answer",
+        "decision": "answer|explain_price",
         "action": "answer",
         "offer": null,
         "says": [

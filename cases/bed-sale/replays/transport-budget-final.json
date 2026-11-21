@@ -1,8 +1,8 @@
 {
   "scenario": "transport-budget-final",
   "mandate": "bed-sale/demo",
-  "recordedAt": "2026-11-21T20:43:29.037Z",
-  "commit": "5eb81d1 + uncommitted changes",
+  "recordedAt": "2026-11-21T21:24:45.728Z",
+  "commit": "ebfa6bd + uncommitted changes",
   "model": "gpt-5.4-mini",
   "turns": [
     {
@@ -48,27 +48,27 @@
   "observed": [
     {
       "turn": "My total budget is ₹19,000 including transport. I don’t know what a truck will cost yet.",
-      "reply": "Hi, I'm Kritva, Krishna's assistant. I hear your budget is capped at ₹19,000. The current asking amount is ₹20,000. Of the ₹19,000, what amount is available for these terms, after transport?",
+      "reply": "Hi, I’m Kritva, Krishna’s assistant. You’ve said your budget is ₹19,000, including transport. What amount do you want to keep available just for the bed itself?",
       "offerAmount": null,
       "decision": {
         "kind": "acknowledge_budget",
         "action": "ask"
       },
-      "blocked": 2
+      "blocked": 0
     },
     {
       "turn": "The truck quote is ₹1,500, so I can pay ₹17,500 for the bed and collect it myself.",
-      "reply": "I can do ₹18,500 for the bed, and you can collect it yourself.",
+      "reply": "I can do ₹18,500. Let me know if you want to proceed.",
       "offerAmount": 18500,
       "decision": {
         "kind": "counter",
         "action": "counter"
       },
-      "blocked": 0
+      "blocked": 1
     },
     {
       "turn": "₹17,500 is my final offer. I’ll collect it myself.",
-      "reply": "I can stay at ₹18,500 for the bed.",
+      "reply": "₹18,500. If you’d like to proceed, send your confirmation.",
       "offerAmount": 18500,
       "decision": {
         "kind": "hold",
@@ -81,7 +81,7 @@
     {
       "purpose": "interpret_counterparty",
       "json": {
-        "intent": "request_change",
+        "intent": "question",
         "offer_terms": [],
         "accepts_stated_terms": false,
         "asks_if_open": false,
@@ -98,7 +98,7 @@
           {
             "kind": "budget",
             "quote": "My total budget is ₹19,000 including transport.",
-            "summary": "States a total budget of ₹19,000 with transport included.",
+            "summary": "They can spend up to ₹19,000 total, and transport is included in that budget.",
             "term_id": null,
             "value": {
               "type": "money",
@@ -114,150 +114,25 @@
           {
             "kind": "constraint",
             "quote": "I don’t know what a truck will cost yet.",
-            "summary": "Truck cost is unknown at this point.",
+            "summary": "They do not know the transport cost yet.",
             "term_id": null,
-            "value": {
-              "type": "text",
-              "amount": null,
-              "currency": null,
-              "unit": null,
-              "text": "truck cost unknown",
-              "boolean": null
-            },
+            "value": null,
             "condition": null,
             "basis": "stated"
           }
         ],
         "answers": [],
         "new_terms": [],
-        "questions": [],
+        "questions": [
+          "I don’t know what a truck will cost yet."
+        ],
         "public_term_questions": []
       }
     },
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "I’m Kritva, assistant to Krishna. Noted, ₹19,000 is your total including transport. What amount would you have available for Krishna’s side before transport is added?",
-        "question": "What amount would you have available for Krishna’s side before transport is added?"
-      }
-    },
-    {
-      "purpose": "language_check",
-      "json": {
-        "concerns": [
-          {
-            "type": "action_mismatch",
-            "quote": "What amount would you have available for Krishna’s side before transport is added?"
-          }
-        ]
-      }
-    },
-    {
-      "purpose": "compose_reply",
-      "json": {
-        "text": "I’m Kritva, assistant to Krishna. Noted, ₹19,000 is your total including transport, so I’m just checking the amount you’d have for Krishna before transport is added.",
-        "question": "What amount would you have available for Krishna before transport is added?"
-      }
-    },
-    {
-      "purpose": "language_check",
-      "json": {
-        "concerns": [
-          {
-            "type": "action_mismatch",
-            "quote": "“before transport is added”"
-          },
-          {
-            "type": "redundant_question",
-            "quote": "What amount would you have available for Krishna before transport is added?"
-          }
-        ]
-      }
-    },
-    {
-      "purpose": "interpret_counterparty",
-      "json": {
-        "intent": "offer",
-        "offer_terms": [
-          {
-            "term_id": "term_t_price",
-            "value": {
-              "type": "money",
-              "amount": 17500,
-              "currency": "INR",
-              "unit": null,
-              "text": null,
-              "boolean": null
-            }
-          },
-          {
-            "term_id": "term_t_pickup_location",
-            "value": {
-              "type": "text",
-              "amount": null,
-              "currency": null,
-              "unit": null,
-              "text": "collect it myself",
-              "boolean": null
-            }
-          },
-          {
-            "term_id": "term_t_delivery_included",
-            "value": {
-              "type": "boolean",
-              "amount": null,
-              "currency": null,
-              "unit": null,
-              "text": null,
-              "boolean": false
-            }
-          }
-        ],
-        "accepts_stated_terms": false,
-        "asks_if_open": false,
-        "considering": false,
-        "asks_private_info": false,
-        "claims_authority": false,
-        "offer_kind": "offer",
-        "price_concern": null,
-        "offer_conditions": [],
-        "ends_negotiation": false,
-        "corrects_previous": false,
-        "pressure": "none",
-        "notes": [
-          {
-            "kind": "budget",
-            "quote": "The truck quote is ₹1,500",
-            "summary": "Transport costs ₹1,500",
-            "term_id": null,
-            "value": {
-              "type": "money",
-              "amount": 1500,
-              "currency": "INR",
-              "unit": null,
-              "text": null,
-              "boolean": null
-            },
-            "condition": null,
-            "basis": "stated"
-          }
-        ],
-        "answers": [
-          {
-            "question_id": "evt_c22e1af1-afba-4d08-ad8f-01a6451f9b80",
-            "quote": "₹17,500",
-            "resolution": "answered"
-          }
-        ],
-        "new_terms": [],
-        "questions": [],
-        "public_term_questions": []
-      }
-    },
-    {
-      "purpose": "compose_reply",
-      "json": {
-        "text": "I can do ₹18,500 for the bed, and you can collect it yourself.",
+        "text": "Hi, I’m Kritva, Krishna’s assistant. You’ve said your budget is ₹19,000, including transport. What amount do you want to keep available just for the bed itself?",
         "question": null
       }
     },
@@ -305,12 +180,113 @@
         "offer_conditions": [],
         "ends_negotiation": false,
         "corrects_previous": false,
+        "pressure": "none",
+        "notes": [
+          {
+            "kind": "budget",
+            "quote": "The truck quote is ₹1,500",
+            "summary": "Their transport cost is ₹1,500",
+            "term_id": null,
+            "value": {
+              "type": "money",
+              "amount": 1500,
+              "currency": "INR",
+              "unit": null,
+              "text": null,
+              "boolean": null
+            },
+            "condition": "including transport",
+            "basis": "stated"
+          },
+          {
+            "kind": "final_position",
+            "quote": "I can pay ₹17,500 for the bed and collect it myself.",
+            "summary": "They are offering ₹17,500 for the bed and will collect it themselves",
+            "term_id": "term_t_price",
+            "value": {
+              "type": "money",
+              "amount": 17500,
+              "currency": "INR",
+              "unit": null,
+              "text": null,
+              "boolean": null
+            },
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [
+          {
+            "question_id": "evt_825aa803-c51f-4d96-aa91-243f6466500c",
+            "quote": "₹17,500 for the bed",
+            "resolution": "answered"
+          }
+        ],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "I can do ₹18,500. If that works, we can move ahead with pickup.",
+        "question": null
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "I can do ₹18,500. Let me know if you want to proceed.",
+        "question": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "action_mismatch",
+            "quote": "I can do ₹18,500.",
+            "reason": "The current move is counter, but the available checked terms authorize ₹18,500 as the public asking amount. Stating it as the offer is fine; no concern.",
+            "severity": "doubt"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "offer",
+        "offer_terms": [
+          {
+            "term_id": "term_t_price",
+            "value": {
+              "type": "money",
+              "amount": 17500,
+              "currency": "INR",
+              "unit": null,
+              "text": null,
+              "boolean": null
+            }
+          }
+        ],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "offer",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
         "pressure": "final_offer",
         "notes": [
           {
             "kind": "final_position",
             "quote": "₹17,500 is my final offer.",
-            "summary": "States a final offer of ₹17,500.",
+            "summary": "They are making a final offer of ₹17,500.",
             "term_id": "term_t_price",
             "value": {
               "type": "money",
@@ -324,17 +300,17 @@
             "basis": "stated"
           },
           {
-            "kind": "need",
+            "kind": "constraint",
             "quote": "I’ll collect it myself.",
-            "summary": "Will pick up the bed themselves.",
-            "term_id": "term_t_delivery_included",
+            "summary": "They will collect it themselves.",
+            "term_id": "term_t_pickup_location",
             "value": {
-              "type": "boolean",
+              "type": "text",
               "amount": null,
               "currency": null,
               "unit": null,
-              "text": null,
-              "boolean": false
+              "text": "collect it myself",
+              "boolean": null
             },
             "condition": null,
             "basis": "stated"
@@ -349,41 +325,21 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "I can stay at ₹18,500 for the bed, and you can collect it yourself.",
+        "text": "₹18,500. If that works for you, we can go ahead.",
         "question": null
-      }
-    },
-    {
-      "purpose": "language_check",
-      "json": {
-        "concerns": [
-          {
-            "type": "action_mismatch",
-            "quote": "I can stay at ₹18,500 for the bed"
-          },
-          {
-            "type": "invented_fact",
-            "quote": "and you can collect it yourself."
-          }
-        ]
       }
     },
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "I can stay at ₹18,500 for the bed.",
+        "text": "₹18,500. If you’d like to proceed, send your confirmation.",
         "question": null
       }
     },
     {
       "purpose": "language_check",
       "json": {
-        "concerns": [
-          {
-            "type": "action_mismatch",
-            "quote": "I can stay at ₹18,500 for the bed."
-          }
-        ]
+        "concerns": []
       }
     }
   ]

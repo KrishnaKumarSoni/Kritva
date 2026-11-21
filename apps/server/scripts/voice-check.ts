@@ -12,6 +12,7 @@ import { join, resolve } from "node:path";
 import {
   createMappingLlmFromEnv,
   createSpeechFromEnv,
+  createAgentFromEnv,
   createTurnLlmFromEnv,
   MandateLibrary,
   MandateRevisions,
@@ -34,7 +35,7 @@ const mandates = loadConfirmedMandates(join(ROOT, "cases"));
 const examples = loadExamples(join(ROOT, "cases"));
 const listings = loadListings(join(ROOT, "cases"), mandates, examples, library);
 const subjectFacts = new Map(listings.flatMap((listing) => listing.subjectFactId ? [[listing.caseId, listing.subjectFactId] as const] : []));
-const engine = new NegotiationEngine({ record, llm: createTurnLlmFromEnv(), locale: "en-IN", guidance: loadGuidance(ROOT, "bed-sale"), subjectFacts });
+const engine = new NegotiationEngine({ record, llm: createTurnLlmFromEnv(), ...createAgentFromEnv(), locale: "en-IN", guidance: loadGuidance(ROOT, "bed-sale"), subjectFacts });
 const app = createApp({ record, engine, revisions: new MandateRevisions({ record, engine, mappingLlm }), mandates, locale: "en-IN", library, examples, speech, listings });
 
 async function audioOf(text: string): Promise<Uint8Array> {

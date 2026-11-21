@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join, resolve } from "node:path";
 import { serve } from "@hono/node-server";
-import { createMappingLlmFromEnv, createSpeechFromEnv, createTurnLlmFromEnv, MandateLibrary, MandateRevisions, NegotiationEngine, NegotiationRecord, SqliteLibraryBackend, SqliteRecordBackend } from "@kritva/core";
+import { createAgentFromEnv, createMappingLlmFromEnv, createSpeechFromEnv, createTurnLlmFromEnv, MandateLibrary, MandateRevisions, NegotiationEngine, NegotiationRecord, SqliteLibraryBackend, SqliteRecordBackend } from "@kritva/core";
 import { createApp } from "./app.ts";
 import { loadCaseRuntime } from "./main-helpers.ts";
 
@@ -17,7 +17,8 @@ const mappingLlm = createMappingLlmFromEnv();
 // Case-level mandates live in their own tables, so they exist before any session starts.
 const library = new MandateLibrary({ backend: new SqliteLibraryBackend(join(dataDir, "kritva.sqlite")), mappingLlm });
 const { mandates, examples, listings, guidanceByCase, subjectFacts, listingDetails } = loadCaseRuntime(ROOT, library);
-const engine = new NegotiationEngine({ record, llm: createTurnLlmFromEnv(), locale, guidanceByCase, subjectFacts, listingDetails });
+// Kritva runs each turn as an agent (OpenAI Agents SDK); the turn model reviews its wording.
+const engine = new NegotiationEngine({ record, llm: createTurnLlmFromEnv(), ...createAgentFromEnv(), locale, guidanceByCase, subjectFacts, listingDetails });
 const revisions = new MandateRevisions({ record, engine, mappingLlm });
 const configuredKey = process.env.KRITVA_OPERATOR_KEY?.trim();
 const operatorKey = configuredKey || randomBytes(24).toString("base64url");

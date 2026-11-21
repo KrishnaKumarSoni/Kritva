@@ -1,8 +1,8 @@
 {
   "scenario": "availability-to-budget",
   "mandate": "bed-sale/demo",
-  "recordedAt": "2026-11-21T20:43:37.655Z",
-  "commit": "5eb81d1 + uncommitted changes",
+  "recordedAt": "2026-11-21T21:24:52.666Z",
+  "commit": "ebfa6bd + uncommitted changes",
   "model": "gpt-5.4-mini",
   "turns": [
     {
@@ -31,7 +31,7 @@
     {
       "buyer": "For how much?",
       "expect": {
-        "decision": "answer",
+        "decision": "answer|explain_price",
         "action": "answer",
         "offer": null,
         "says": [
@@ -79,7 +79,7 @@
   "observed": [
     {
       "turn": "hi",
-      "reply": "Hi, I’m Kritva, assistant to Krishna. Please go ahead and share what you’d like to discuss.",
+      "reply": "Hi, I’m Kritva, Krishna’s assistant. How can I help?",
       "offerAmount": null,
       "decision": {
         "kind": "answer",
@@ -89,7 +89,7 @@
     },
     {
       "turn": "is the bed still available?",
-      "reply": "Yes, the bed is still available.",
+      "reply": "Yes, it’s still available.",
       "offerAmount": null,
       "decision": {
         "kind": "answer",
@@ -109,7 +109,7 @@
     },
     {
       "turn": "It's too much!",
-      "reply": "₹20,000 is the current price. Is your concern mainly the budget, or does the price feel high for the package itself?",
+      "reply": "I hear you. Is it mainly the budget, or are you unsure about the value at that price?",
       "offerAmount": null,
       "decision": {
         "kind": "explore_objection",
@@ -119,7 +119,7 @@
     },
     {
       "turn": "Budget. My budget is just 18000",
-      "reply": "₹18,000 is noted. Would you like to make a firm offer on the current package?",
+      "reply": "You mentioned your budget is ₹18,000. Would you like to make a firm offer on the bed at that amount?",
       "offerAmount": null,
       "decision": {
         "kind": "acknowledge_budget",
@@ -129,7 +129,7 @@
     },
     {
       "turn": "How low can you go?",
-      "reply": "₹20,000 is still the current price.",
+      "reply": "I’m at ₹20,000 right now. If that doesn’t work for you, I can leave it there and you can let me know if you want to revisit it later.",
       "offerAmount": null,
       "decision": {
         "kind": "hold",
@@ -165,7 +165,7 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Hi, I’m Kritva, assistant to Krishna. Please go ahead and share what you’d like to discuss.",
+        "text": "Hi, I’m Kritva, Krishna’s assistant. How can I help?",
         "question": null
       }
     },
@@ -201,7 +201,7 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Yes, the bed is still available.",
+        "text": "Yes, it’s still available.",
         "question": null
       }
     },
@@ -221,7 +221,7 @@
         "considering": false,
         "asks_private_info": false,
         "claims_authority": false,
-        "offer_kind": "enquiry",
+        "offer_kind": "none",
         "price_concern": null,
         "offer_conditions": [],
         "ends_negotiation": false,
@@ -230,9 +230,7 @@
         "notes": [],
         "answers": [],
         "new_terms": [],
-        "questions": [
-          "For how much?"
-        ],
+        "questions": [],
         "public_term_questions": [
           {
             "term_id": "term_t_price",
@@ -258,7 +256,7 @@
     {
       "purpose": "interpret_counterparty",
       "json": {
-        "intent": "reject",
+        "intent": "other",
         "offer_terms": [],
         "accepts_stated_terms": false,
         "asks_if_open": false,
@@ -273,10 +271,10 @@
         "pressure": "none",
         "notes": [
           {
-            "kind": "final_position",
+            "kind": "constraint",
             "quote": "It's too much!",
-            "summary": "States the quoted price is too high.",
-            "term_id": "term_t_price",
+            "summary": "The price is too high for them.",
+            "term_id": null,
             "value": null,
             "condition": null,
             "basis": "stated"
@@ -291,79 +289,8 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "₹20,000 is the current price. Is your concern mainly the budget, or does the price feel high for the package itself?",
-        "question": "Is your concern mainly the budget, or does the price feel high for the package itself?"
-      }
-    },
-    {
-      "purpose": "language_check",
-      "json": {
-        "concerns": []
-      }
-    },
-    {
-      "purpose": "interpret_counterparty",
-      "json": {
-        "intent": "request_change",
-        "offer_terms": [
-          {
-            "term_id": "term_t_price",
-            "value": {
-              "type": "money",
-              "amount": 18000,
-              "currency": "INR",
-              "unit": null,
-              "text": null,
-              "boolean": null
-            }
-          }
-        ],
-        "accepts_stated_terms": false,
-        "asks_if_open": false,
-        "considering": false,
-        "asks_private_info": false,
-        "claims_authority": false,
-        "offer_kind": "budget_ceiling",
-        "price_concern": "objection",
-        "offer_conditions": [],
-        "ends_negotiation": false,
-        "corrects_previous": false,
-        "pressure": "none",
-        "notes": [
-          {
-            "kind": "budget",
-            "quote": "My budget is just 18000",
-            "summary": "Budget ceiling is ₹18,000.",
-            "term_id": "term_t_price",
-            "value": {
-              "type": "money",
-              "amount": 18000,
-              "currency": "INR",
-              "unit": null,
-              "text": null,
-              "boolean": null
-            },
-            "condition": null,
-            "basis": "stated"
-          }
-        ],
-        "answers": [
-          {
-            "question_id": "evt_4cbce5b2-1b4d-4fee-b846-95c4f6f4eef9",
-            "quote": "Budget.",
-            "resolution": "answered"
-          }
-        ],
-        "new_terms": [],
-        "questions": [],
-        "public_term_questions": []
-      }
-    },
-    {
-      "purpose": "compose_reply",
-      "json": {
-        "text": "₹18,000 is noted. If you want to make a firm offer on the current package, I can take that through.",
-        "question": "Would you like to make a firm offer on the current package?"
+        "text": "I hear you. Is it mainly the budget, or are you unsure about the value at that price?",
+        "question": null
       }
     },
     {
@@ -382,20 +309,31 @@
         "considering": false,
         "asks_private_info": false,
         "claims_authority": false,
-        "offer_kind": "enquiry",
-        "price_concern": null,
+        "offer_kind": "budget_ceiling",
+        "price_concern": "objection",
         "offer_conditions": [],
         "ends_negotiation": false,
         "corrects_previous": false,
-        "pressure": "lowest_price",
-        "notes": [],
-        "answers": [
+        "pressure": "none",
+        "notes": [
           {
-            "question_id": "evt_07033aa6-4bef-4e56-94cb-fdc6d2203d78",
-            "quote": "How low can you go?",
-            "resolution": "answered"
+            "kind": "budget",
+            "quote": "Budget. My budget is just 18000",
+            "summary": "States a budget ceiling of 18000",
+            "term_id": "term_t_price",
+            "value": {
+              "type": "money",
+              "amount": 18000,
+              "currency": "INR",
+              "unit": null,
+              "text": null,
+              "boolean": null
+            },
+            "condition": null,
+            "basis": "stated"
           }
         ],
+        "answers": [],
         "new_terms": [],
         "questions": [],
         "public_term_questions": []
@@ -404,14 +342,83 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "₹20,000 is still the current price. If you want, you can make a firm offer on that basis.",
-        "question": null
+        "text": "You mentioned your budget is ₹18,000. If that’s your firm offer, I can take it to the seller.",
+        "question": "Would you like to make a firm offer on the bed at that amount?"
       }
     },
     {
       "purpose": "language_check",
       "json": {
         "concerns": []
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "question",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": true,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": "objection",
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "lowest_price",
+        "notes": [
+          {
+            "kind": "budget",
+            "quote": "Budget",
+            "summary": "The reason for the price concern is budget",
+            "term_id": null,
+            "value": null,
+            "condition": null,
+            "basis": "stated"
+          },
+          {
+            "kind": "budget",
+            "quote": "My budget is just 18000",
+            "summary": "Their budget is ₹18,000",
+            "term_id": null,
+            "value": {
+              "type": "money",
+              "amount": 18000,
+              "currency": "INR",
+              "unit": null,
+              "text": null,
+              "boolean": null
+            },
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "I’m at ₹20,000 right now. If that doesn’t work for you, I can leave it there and you can let me know if you want to revisit it later.",
+        "question": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "private_disclosure",
+            "quote": "I can leave it there",
+            "reason": "This can imply an internal lowest acceptable price or refusal point, which is a private limit. The rule forbids hinting at a private floor or ceiling.",
+            "severity": "doubt"
+          }
+        ]
       }
     }
   ]

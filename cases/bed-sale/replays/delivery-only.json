@@ -1,8 +1,8 @@
 {
   "scenario": "delivery-only",
   "mandate": "bed-sale/demo",
-  "recordedAt": "2026-11-21T20:43:21.986Z",
-  "commit": "5eb81d1 + uncommitted changes",
+  "recordedAt": "2026-11-21T21:24:42.337Z",
+  "commit": "ebfa6bd + uncommitted changes",
   "model": "gpt-5.4-mini",
   "turns": [
     {
@@ -39,7 +39,7 @@
   "observed": [
     {
       "turn": "I’ll pay the full ₹20,000 if you deliver to Indiranagar.",
-      "reply": "I’m Kritva, assistant for Krishna. Delivery to Indiranagar isn’t included, so that part stays separate.",
+      "reply": "Hi, I’m Kritva, Krishna’s assistant. Delivery isn’t included, so it stays as it is.",
       "offerAmount": null,
       "decision": {
         "kind": "decline_request",
@@ -49,7 +49,7 @@
     },
     {
       "turn": "I can’t collect it myself. I can only buy it if delivery is included.",
-      "reply": "Delivery isn’t included, so that part stays separate.",
+      "reply": "Delivery isn’t included with the bed, so that stays unchanged.",
       "offerAmount": null,
       "decision": {
         "kind": "decline_request",
@@ -59,7 +59,7 @@
     },
     {
       "turn": "I’ll pass then. Thanks anyway.",
-      "reply": "No problem, we’ll leave it there. Thanks for your time.",
+      "reply": "No problem, thanks for getting back to me.",
       "offerAmount": null,
       "decision": {
         "kind": "end",
@@ -81,7 +81,18 @@
               "amount": 20000,
               "currency": "INR",
               "unit": null,
-              "text": "₹20,000",
+              "text": null,
+              "boolean": null
+            }
+          },
+          {
+            "term_id": "term_t_pickup_location",
+            "value": {
+              "type": "text",
+              "amount": null,
+              "currency": null,
+              "unit": null,
+              "text": "Indiranagar",
               "boolean": null
             }
           },
@@ -95,17 +106,6 @@
               "text": null,
               "boolean": true
             }
-          },
-          {
-            "term_id": "term_t_pickup_location",
-            "value": {
-              "type": "text",
-              "amount": null,
-              "currency": null,
-              "unit": null,
-              "text": "Indiranagar",
-              "boolean": null
-            }
           }
         ],
         "accepts_stated_terms": false,
@@ -115,13 +115,28 @@
         "claims_authority": false,
         "offer_kind": "offer",
         "price_concern": null,
-        "offer_conditions": [
-          "if you deliver to Indiranagar"
-        ],
+        "offer_conditions": [],
         "ends_negotiation": false,
         "corrects_previous": false,
         "pressure": "none",
-        "notes": [],
+        "notes": [
+          {
+            "kind": "final_position",
+            "quote": "I’ll pay the full ₹20,000 if you deliver to Indiranagar.",
+            "summary": "Makes an offer contingent on delivery to Indiranagar.",
+            "term_id": "term_t_price",
+            "value": {
+              "type": "money",
+              "amount": 20000,
+              "currency": "INR",
+              "unit": null,
+              "text": null,
+              "boolean": null
+            },
+            "condition": "if you deliver to Indiranagar",
+            "basis": "stated"
+          }
+        ],
         "answers": [],
         "new_terms": [],
         "questions": [],
@@ -131,19 +146,14 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "I’m Kritva, assistant for Krishna. Delivery to Indiranagar isn’t included, so that part stays separate.",
+        "text": "Hi, I’m Kritva, Krishna’s assistant. Delivery isn’t included, so it stays as it is.",
         "question": null
       }
     },
     {
       "purpose": "language_check",
       "json": {
-        "concerns": [
-          {
-            "type": "invented_fact",
-            "quote": "Delivery to Indiranagar isn’t included"
-          }
-        ]
+        "concerns": []
       }
     },
     {
@@ -179,7 +189,7 @@
             "kind": "constraint",
             "quote": "I can’t collect it myself.",
             "summary": "They cannot pick it up themselves.",
-            "term_id": "term_t_pickup_location",
+            "term_id": null,
             "value": null,
             "condition": null,
             "basis": "stated"
@@ -197,20 +207,26 @@
               "text": null,
               "boolean": true
             },
-            "condition": "if delivery is included",
+            "condition": null,
             "basis": "stated"
           }
         ],
         "answers": [],
         "new_terms": [],
         "questions": [],
-        "public_term_questions": []
+        "public_term_questions": [
+          {
+            "term_id": "term_t_delivery_included",
+            "basis": "current",
+            "quote": "delivery is included"
+          }
+        ]
       }
     },
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Delivery isn’t included, so that part stays separate.",
+        "text": "Delivery isn’t included with the bed, so that stays unchanged.",
         "question": null
       }
     },
@@ -239,10 +255,26 @@
         "notes": [
           {
             "kind": "final_position",
-            "quote": "I’ll pass then. Thanks anyway.",
-            "summary": "Declines to continue and withdraws from the negotiation.",
+            "quote": "I’ll pass then.",
+            "summary": "They are declining to continue.",
             "term_id": null,
             "value": null,
+            "condition": null,
+            "basis": "stated"
+          },
+          {
+            "kind": "reason",
+            "quote": "I can only buy it if delivery is included.",
+            "summary": "Delivery is essential for them to buy.",
+            "term_id": "term_t_delivery_included",
+            "value": {
+              "type": "boolean",
+              "amount": null,
+              "currency": null,
+              "unit": null,
+              "text": null,
+              "boolean": true
+            },
             "condition": null,
             "basis": "stated"
           }
@@ -256,7 +288,7 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "No problem, we’ll leave it there. Thanks for your time.",
+        "text": "No problem, thanks for getting back to me.",
         "question": null
       }
     },

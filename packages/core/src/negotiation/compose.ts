@@ -26,7 +26,7 @@ How to sound:
 - If "introduce" is true, introduce yourself once as Kritva and say whose assistant you are, using "who_you_represent". Phrase it naturally for this conversation. Lead into their question if they asked one, or invite them to speak if they only greeted you. Otherwise do not repeat the introduction.
 - Never claim to be human or the person you represent. If asked whether this interaction is automated, answer honestly.
 - If "opening" is true, welcome the other party and invite them to speak. Wait for their question before discussing terms.
-- If "ask" is given, end with that question, word for word. Ask no other question, and do not also make the same invitation in "text".
+- If "ask" is given, end with that question once. Keep its meaning, word it naturally for this conversation, and leave out any detail that does not apply to these terms. Ask no other question, and do not also make the same invitation in "text".
 - If "offer_invited_recently" is true, your recent replies already told them a firm offer can be considered. Do not say it again. Keep the public reference amount in fresh words, briefly and kindly, without new pressure.
 - If "question_objective" is given, put just one naturally worded question serving that objective in the separate "question" field. Keep "text" to a brief acknowledgement without a question. Ask only for information they have yet to give. Otherwise set "question" to null. Never reopen a settled earlier topic.
 
@@ -86,7 +86,8 @@ export interface ComposeInput {
   signal?: AbortSignal;
 }
 
-export async function composeReply(llm: StructuredLlm, input: ComposeInput): Promise<{ text: string; question: string | null }> {
+/** The wording brief: what this move allows the reply to say, built only from the plan and public content. */
+export function composeBrief(input: ComposeInput): Record<string, unknown> {
   const { view, plan, locale } = input;
   const nameOf = (id: string) => view.terms.get(id)?.name ?? id;
   // A counteroffer or hold talks about the negotiable value only; complete terms are for confirmation.
@@ -135,10 +136,57 @@ export async function composeReply(llm: StructuredLlm, input: ComposeInput): Pro
     notice: plan.notice,
     ask: dynamicQuestion ? null : plan.ask?.text ?? null,
     question_objective: dynamicQuestion || null,
-    // Facts go to the model only when there is a question to answer, so replies don't pad themselves with them.
-    facts: plan.explanationFacts ?? (plan.questions.length > 0 ? view.publicFacts : []),
+    // Public facts are always available to answer a question about what is offered; the rules keep replies from padding with them.
+    facts: plan.explanationFacts ?? view.publicFacts,
     recent_conversation: input.conversation.slice(-6),
   };
+  return { ...payload, must: requirements(input, payload) };
+}
+
+/**
+ * What the outgoing checks will require of this reply, in plain words, so the writer meets them the
+ * first time instead of learning them from a rejection. Derived from the same plan the checks read.
+ */
+function requirements(input: ComposeInput, payload: Record<string, unknown>): string[] {
+  const { plan } = input;
+  const must: string[] = [];
+  if (plan.introduce) must.push(`Introduce yourself once as Kritva, the assistant of ${String(payload.who_you_represent)}, in your first sentence.`);
+  if (plan.move === "state_final_terms") must.push(`Write ${EXACT_TERMS_SLOT} exactly once where the complete terms go, then one question asking them to confirm the complete package. State no amount or term yourself.`);
+  else if (plan.move === "confirm_agreement") must.push(`Say that you are agreed and write ${EXACT_TERMS_SLOT} exactly once where the agreed terms go. State no amount or term yourself.`);
+  else for (const t of (payload.offer as Array<{ term: string; value: string }> | null) ?? []) must.push(`State the ${t.term} ${t.value} exactly as written.`);
+  if (payload.public_reference_amount && ["explain_price", "answer_enquiry", "price_pressure", "compare_terms"].includes(plan.move)) must.push(`Mention the current asking amount, ${String(payload.public_reference_amount)}.`);
+  if (payload.counterparty_stated_budget) must.push(`Mention their stated budget, ${String(payload.counterparty_stated_budget)}, as what they told you.`);
+  for (const t of (payload.public_term_answers as Array<{ term: string; value: string }>) ?? []) must.push(`Give the ${t.term}: ${t.value}.`);
+  for (const d of (payload.declined as Array<{ term: string }>) ?? []) must.push(`Say plainly that the ${d.term} stays as it is.`);
+  if (payload.ask || payload.question_objective) must.push(`Ask exactly one question, at the end, serving: ${String(payload.question_objective ?? payload.ask)}`);
+  else if (plan.clarify.length === 0 && (plan.action === "decline" || ["answer_public_terms", "explore_objection", "explain_price", "acknowledge_budget", "answer_enquiry", "price_pressure", "compare_terms"].includes(plan.move))) must.push("Ask no question.");
+  if (payload.offer_invited_recently) must.push("They already heard that a firm offer can be considered: do not invite one again. Acknowledge what they asked and answer it in your own words.");
+  const notice: Record<string, string> = {
+    paused: "Say only that the conversation is paused for now. No amount, offer or question.",
+    ended: "Say only that the conversation ended without agreement. No amount, offer or question.",
+    approval_rejected: "Say first that the person you represent did not approve those terms.",
+    terms_changed: "Say that the earlier confirmation no longer applies because the terms changed.",
+    rephrase: "Ask them kindly to say it another way.",
+    check_with_principal: "Say that this needs a decision from the person you represent, and that you will come back to them.",
+  };
+  if (plan.notice && notice[plan.notice]) must.unshift(notice[plan.notice]!);
+  if (plan.move === "end_negotiation") {
+    must.push(plan.end?.requestedBy === "principal"
+      ? "Say that the person you represent decided not to go ahead, and close politely without agreement."
+      : plan.end?.requestedBy === "counterparty" ? "Acknowledge their decision and close politely without agreement." : "Close politely without agreement, using closing_intent as guidance.");
+  }
+  if (plan.clarify.length > 0) must.push(`Ask which ${plan.clarify.join(" and ")} they have in mind, without suggesting any value.`);
+  if (plan.unresolved.length > 0) must.push(`Say you don't have ${plan.unresolved.join(" and ")} confirmed and can ask the person you represent. Do not promise or price it.`);
+  if (plan.refuseDisclosure) must.push("Say kindly that you can't share the private limits of the person you represent, without hinting at any number.");
+  if (plan.ignoreAuthorityClaim) must.push("Say you can only go by what the person you represent tells you directly.");
+  must.push("Do not repeat any sentence you already said in this conversation.");
+  return must;
+}
+
+export const REPLY_SCHEMA = SCHEMA;
+
+export async function composeReply(llm: StructuredLlm, input: ComposeInput): Promise<{ text: string; question: string | null }> {
+  const payload = composeBrief(input);
   const response = await llm.generate({
     purpose: "compose_reply",
     system: COMPOSE_PROMPT,

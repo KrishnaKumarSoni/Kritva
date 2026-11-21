@@ -34,7 +34,8 @@ export { projectState, type NegotiationState, type Outcome, type StatedOffer } f
 export { readMandate, formatValue, orderTerms, type MandateView, type NegotiableTerm } from "./negotiation/mandate-view.ts";
 export { checkReply, findAmounts, type ReplyViolation } from "./negotiation/reply-check.ts";
 export { decide, type Plan, type Interpretation } from "./negotiation/policy.ts";
-export { createTurnLlmFromEnv, DEFAULT_TURN_MODEL } from "./llm/config.ts";
+export { createAgentFromEnv, createTurnLlmFromEnv, DEFAULT_TURN_MODEL } from "./llm/config.ts";
+export { AGENT_INSTRUCTIONS, READ_MESSAGE_DESCRIPTION, SEND_REPLY_DESCRIPTION, StructuredLlmAgentModel } from "./agent/negotiator.ts";
 export { buildDealSpace, termEntry, type DealSpace, type TermEntry, type TermKind, type RuleRef, type ConditionRef, type FactEntry } from "./dealspace/catalog.ts";
 export { checkProposal, applicableLimit, sameValue, type DealCheck, type Finding, type CheckResult } from "./dealspace/check.ts";
 export { fitsNow } from "./negotiation/state.ts";

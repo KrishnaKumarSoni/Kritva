@@ -48,6 +48,8 @@ export interface ComparisonOptions {
   guidance: StrategyGuidance;
   /** A fresh client for each run's seller (metered separately). */
   sellerLlm: () => StructuredLlm;
+  /** Kritva's agent model (OpenAI Agents SDK). Without it, Kritva's decisions go through the structured model. */
+  agent?: { agentModel: string; agentModelSettings?: import("@kritva/core").EngineOptions["agentModelSettings"] };
   buyerLlm: StructuredLlm;
   model: string;
   dataDir: string;
@@ -184,7 +186,7 @@ async function converse(record: RunRecord, driver: Driver, spec: SimulatorSpec, 
 async function kritvaDriver(options: ComparisonOptions, entry: MandateEntry, llm: StructuredLlm, id: string, record: RunRecord, spec: SimulatorSpec): Promise<Driver> {
   const safe = id.replace(/[^\w-]+/g, "_");
   const store = new NegotiationRecord(new SqliteRecordBackend(join(options.dataDir, `${safe}.sqlite`)));
-  const engine = new NegotiationEngine({ record: store, llm, locale: options.locale, guidance: options.guidance });
+  const engine = new NegotiationEngine({ record: store, llm, ...options.agent, locale: options.locale, guidance: options.guidance });
   const refusing: StructuredLlm = { generate: () => Promise.reject(new Error("Mapping is not used in comparison runs.")) };
   const revisions = new MandateRevisions({ record: store, engine, mappingLlm: refusing });
   // Only this run's mandate is available, so nothing from another case or run can be selected.

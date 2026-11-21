@@ -639,15 +639,18 @@ describe("Final positions, repeated invitations and clarifying questions", () =>
     expect(turn.events.findLast((e) => e.type === "decision")?.payload).toMatchObject({ kind: "acknowledge_budget" });
   });
 
-  it("a composed reply drops a firm-offer invitation the buyer heard in the last two replies", async () => {
-    const { say } = await setup(listingOnlyDeliveryMandate());
+  it("after a recent invitation, the brief tells the writer not to repeat it, and an exactly repeated sentence goes back for a rewrite", async () => {
+    const { say, llm } = await setup(listingOnlyDeliveryMandate());
     await say("It’s too much for me.", { price_concern: "objection" });
-    await say("Budget is the problem. I can’t spend more than ₹18,000.", {});
+    const first = await say("Budget is the problem. I can’t spend more than ₹18,000.", {});
     const quote = "Can you go any lower than that?";
-    const turn = await say(quote, { intent: "question", price_concern: "objection", public_term_questions: [{ term_id: "term_price", basis: "current", quote }] }, {
-      composed: "For now, it stays at ₹20,000. If you want to put a firm offer on the current package, I can pass it along.",
-    });
-    expect(turn.reply?.text).toBe("For now, it stays at ₹20,000.");
+    const repeat = first.reply!.text.split(/(?<=[.!?])\s+/).find((x) => x.split(" ").length >= 4)!;
+    const fresh = "I hear you. ₹20,000 is where it stands for now, and I'm glad to look at any number you put forward.";
+    const turn = await say(quote, { intent: "question", price_concern: "objection", public_term_questions: [{ term_id: "term_price", basis: "current", quote }] }, { composed: [`Got it, thanks. ${repeat}`, fresh] });
+    const briefs = llm.seen.filter((c) => c.purpose === "compose_reply").map((c) => JSON.parse(c.messages[0]!.content));
+    expect(briefs.at(-2)).toMatchObject({ offer_invited_recently: true, must: expect.arrayContaining([expect.stringMatching(/do not invite one again/)]) });
+    expect(briefs.at(-1).revise.problems.join(" ")).toMatch(/You already said/);
+    expect(turn.reply?.text).toBe(fresh);
   });
 
   it("a reply may ask for a detail the offer depends on, even on an enquiry", async () => {
@@ -750,6 +753,45 @@ describe("Reviewer accepts the planned offer", () => {
     const { say } = await setup(listingOnlyDeliveryMandate());
     const turn = await say("Any chance you’d take ₹18,500 if I collect it myself?", { intent: "offer", offer_kind: "offer", offer_terms: [price(18_500)] });
     expect(turn.events.findLast((e) => e.type === "decision")?.payload).toMatchObject({ kind: "answer_enquiry" });
+    expect(turn.reply!.offerIds).toEqual([]);
+  });
+});
+
+describe("Reading grounding for acceptances and own fulfillment", () => {
+  it("an acceptance mislabelled as a value question stays an acceptance", async () => {
+    const { say } = await setup(listingOnlyDeliveryMandate());
+    await say("₹19,000.", offer(19_000));
+    const turn = await say("Okay, I'll go with the price you just quoted.", { intent: "accept_stated_terms", accepts_stated_terms: true, price_concern: "value_question" });
+    expect(turn.events.findLast((e) => e.type === "decision")?.payload).not.toMatchObject({ kind: "explain_price" });
+    expect(turn.events.findLast((e) => e.type === "decision")?.payload).toMatchObject({ interpretation: { priceConcern: null } });
+  });
+
+  it('"I\'ll pay ₹19,500 and collect it myself" is an offer, not a need about the pickup location', async () => {
+    const { say } = await setup(listingOnlyDeliveryMandate(), { fulfillment: FULFILLMENT });
+    const turn = await say("I’ll pay ₹19,500 and collect it myself.", { ...offer(19_500), notes: [{ kind: "need", quote: "collect it myself", summary: "They will pick it up.", term_id: "term_pickup", value: null, condition: null, basis: "stated" }] });
+    expect(turn.events.some((e) => e.type === "question_prepared")).toBe(false);
+    // Without an invented obstacle, the strategy evaluates the offer instead of asking about pickup.
+    expect(turn.events.findLast((e) => e.type === "decision")?.payload).not.toMatchObject({ action: "ask" });
+  });
+
+  it('"₹19,500 works." is never said outside an agreement confirmation', async () => {
+    const { say, events } = await setup(listingOnlyDeliveryMandate());
+    const turn = await say("Is it still available?", { intent: "question", asks_if_open: true }, { composed: ["Yes, and ₹20,000 works for the bed.", null] });
+    expect(turn.reply!.text).not.toMatch(/20,000 works/);
+    expect((await events()).some((e) => e.type === "reply_blocked" && JSON.stringify(e.payload).includes("false_commitment"))).toBe(true);
+  });
+});
+
+describe("An alternative's price is not their offer", () => {
+  it('"I found a similar one for ₹16,000. Can you do better?" compares packages instead of answering an enquiry about ₹16,000', async () => {
+    const { say } = await setup(listingOnlyDeliveryMandate());
+    const text = "I found a similar one for ₹16,000. Can you do better?";
+    const turn = await say(text, {
+      intent: "question", offer_kind: "enquiry", offer_terms: [price(16_000)], pressure: "cheaper_elsewhere",
+      notes: [{ kind: "alternative", quote: "I found a similar one for ₹16,000", summary: "Cites a cheaper similar item.", term_id: "term_price", value: v("money", { amount: 16_000 }), condition: null, basis: "stated" }],
+    });
+    expect(turn.events.some((e) => e.type === "offer_extracted")).toBe(false);
+    expect(turn.events.findLast((e) => e.type === "decision")?.payload).not.toMatchObject({ kind: "answer_enquiry" });
     expect(turn.reply!.offerIds).toEqual([]);
   });
 });
