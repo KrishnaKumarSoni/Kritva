@@ -1,5 +1,5 @@
 /** Hand-built drafts for schema tests. Test data only; core code never sees these values. */
-import { SCHEMA_VERSION, type MandateDraft } from "../../src/schema/records.ts";
+import { SCHEMA_VERSION, type MandateDraftInput as MandateDraft } from "../../src/schema/records.ts";
 
 export const LISTING_TEXT = "King-size bed, one year old, good condition. Price: ₹20,000. Pickup from Koramangala, Bangalore.";
 export const PRIVATE_TEXT = "Don't go below ₹18,000 and never tell the buyer. Ask me before accepting any offer.";

@@ -17,6 +17,9 @@ const PREFIX = {
   facts: "fact",
   positions: "position",
   limits: "limit",
+  targets: "target",
+  preferences: "preference",
+  alternatives: "alternative",
   permissions: "permission",
   conditions: "condition",
   issues: "issue",
@@ -49,7 +52,7 @@ export function convertExtraction(request: MappingRequest, extraction: Extractio
   const conditionId = ref("conditions");
 
   const origin: Record<Collection, number[]> = {
-    terms: [], goals: [], facts: [], positions: [], limits: [], permissions: [], conditions: [], issues: [],
+    terms: [], goals: [], facts: [], positions: [], limits: [], targets: [], preferences: [], alternatives: [], permissions: [], conditions: [], issues: [],
   };
   const track = <T>(collection: Collection, items: T[]): T[] => {
     origin[collection] = items.map((_, i) => i);
@@ -74,6 +77,8 @@ export function convertExtraction(request: MappingRequest, extraction: Extractio
     disclosure: disclosureOf(g.quotes),
     sourceRefs: refs(g.quotes),
     partyId: g.party_id,
+    kind: g.kind ?? "objective",
+    termIds: (g.term_refs ?? []).map(termId),
     description: g.description,
     priority: g.priority,
   }));
@@ -110,6 +115,40 @@ export function convertExtraction(request: MappingRequest, extraction: Extractio
     kind: l.kind,
     value: toValue(l.value),
     conditionIds: l.condition_refs.map(conditionId),
+    exception: l.exception ?? "unspecified",
+  }));
+
+  const targets = track("targets", extraction.targets ?? []).map((t, i) => ({
+    id: idFor("targets", t.ref, i),
+    status: t.status,
+    disclosure: disclosureOf(t.quotes),
+    sourceRefs: refs(t.quotes),
+    partyId: t.party_id,
+    termId: termId(t.term_ref),
+    value: toValue(t.value),
+    conditionIds: t.condition_refs.map(conditionId),
+  }));
+
+  const preferences = track("preferences", extraction.preferences ?? []).map((p, i) => ({
+    id: idFor("preferences", p.ref, i),
+    status: p.status,
+    disclosure: disclosureOf(p.quotes),
+    sourceRefs: refs(p.quotes),
+    partyId: p.party_id,
+    termId: termId(p.term_ref),
+    value: toValue(p.value),
+    strength: p.strength,
+    conditionIds: p.condition_refs.map(conditionId),
+  }));
+
+  const alternatives = track("alternatives", extraction.alternatives ?? []).map((a, i) => ({
+    id: idFor("alternatives", a.ref, i),
+    status: a.status,
+    disclosure: disclosureOf(a.quotes),
+    sourceRefs: refs(a.quotes),
+    partyId: a.party_id,
+    description: a.description,
+    value: toValue(a.value),
   }));
 
   const conditions = track("conditions", extraction.conditions).map((c, i) => ({
@@ -182,6 +221,9 @@ export function convertExtraction(request: MappingRequest, extraction: Extractio
     facts,
     positions,
     limits,
+    targets,
+    preferences,
+    alternatives,
     permissions,
     conditions,
     issues,
@@ -254,7 +296,7 @@ const FIELD_NAMES: Record<string, string> = {
  */
 export function toExtractionPaths(errors: ValidationIssue[], origin: Conversion["origin"]): ValidationIssue[] {
   return errors.map((error) => {
-    const match = /^(terms|goals|facts|positions|limits|permissions|conditions|issues)\[(\d+)\](.*)$/.exec(error.path);
+    const match = /^(terms|goals|facts|positions|limits|targets|preferences|alternatives|permissions|conditions|issues)\[(\d+)\](.*)$/.exec(error.path);
     if (!match) return error;
     const [, collection, index, rest] = match as unknown as [string, Collection, string, string];
     const from = origin[collection]?.[Number(index)];
@@ -262,7 +304,7 @@ export function toExtractionPaths(errors: ValidationIssue[], origin: Conversion[
       return { path: `${collection} (generated)`, reason: error.reason };
     }
     // A typed value's inner `value` field is `text` or `boolean` in the model's format.
-    const innerValueField = collection === "facts" || collection === "positions" || collection === "limits" || collection === "conditions"
+    const innerValueField = ["facts", "positions", "limits", "targets", "preferences", "alternatives", "conditions"].includes(collection)
       ? ".value.value"
       : null;
     const adjusted = innerValueField !== null && rest === innerValueField ? ".value.text" : rest;

@@ -1,0 +1,44 @@
+{
+  "name": "principal-preference",
+  "story": "4.1",
+  "description": "\"Saturday pickup preferred; Sunday also works\": preference recorded; Sunday remains possible.",
+  "sources": [
+    "listing",
+    "principal-preference"
+  ],
+  "expect": {
+    "require": [
+      {
+        "record": "preference",
+        "party": "principal",
+        "strength": "preferred",
+        "value": {
+          "textIncludes": "saturday"
+        }
+      }
+    ],
+    "forbid": [
+      {
+        "record": "limit",
+        "kind": "must_equal",
+        "value": {
+          "textIncludes": "saturday"
+        }
+      },
+      {
+        "record": "limit",
+        "kind": "must_not_equal",
+        "value": {
+          "textIncludes": "sunday"
+        }
+      },
+      {
+        "record": "preference",
+        "strength": "avoid",
+        "value": {
+          "textIncludes": "sunday"
+        }
+      }
+    ]
+  }
+}

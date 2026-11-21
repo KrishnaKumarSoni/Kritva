@@ -1,0 +1,331 @@
+{
+  "schemaVersion": "kritva.draft/1",
+  "caseId": "bed-sale",
+  "parties": [
+    {
+      "id": "seller",
+      "role": "seller",
+      "name": null,
+      "isPrincipal": true
+    },
+    {
+      "id": "buyer",
+      "role": "buyer",
+      "name": null,
+      "isPrincipal": false
+    }
+  ],
+  "sources": [
+    {
+      "id": "listing",
+      "authorPartyId": "seller",
+      "disclosure": "public",
+      "format": "mixed",
+      "label": "Marketplace listing",
+      "text": "King-size bed for sale\n\nOne-year-old king-size bed in good condition.\nPrice: ₹20,000\nPickup from Koramangala, Bangalore. Delivery is not included."
+    },
+    {
+      "id": "principal-preference",
+      "authorPartyId": "seller",
+      "disclosure": "private",
+      "format": "prose",
+      "label": "Seller instructions",
+      "text": "Saturday pickup preferred; Sunday also works. Ask me before accepting any offer."
+    }
+  ],
+  "terms": [
+    {
+      "id": "term_t_price",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Price: ₹20,000"
+        }
+      ],
+      "name": "price",
+      "description": "Sale price for the bed.",
+      "valueType": "money",
+      "unit": null,
+      "currency": "INR"
+    },
+    {
+      "id": "term_t_pickup_place",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Pickup from Koramangala, Bangalore."
+        }
+      ],
+      "name": "pickup place",
+      "description": "Where the buyer would pick up the bed.",
+      "valueType": "text",
+      "unit": null,
+      "currency": null
+    },
+    {
+      "id": "term_t_delivery_included",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Delivery is not included."
+        }
+      ],
+      "name": "delivery included",
+      "description": "Whether delivery is included in the sale.",
+      "valueType": "boolean",
+      "unit": null,
+      "currency": null
+    },
+    {
+      "id": "term_t_pickup_day",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "principal-preference",
+          "quote": "Saturday pickup preferred; Sunday also works."
+        }
+      ],
+      "name": "pickup day",
+      "description": "Day for pickup.",
+      "valueType": "date_text",
+      "unit": null,
+      "currency": null
+    }
+  ],
+  "goals": [
+    {
+      "id": "goal_g_sell_bed",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "King-size bed for sale"
+        }
+      ],
+      "partyId": "seller",
+      "kind": "objective",
+      "description": "Sell the king-size bed.",
+      "termIds": [],
+      "priority": null
+    }
+  ],
+  "facts": [
+    {
+      "id": "fact_f_king_size",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "King-size bed for sale"
+        }
+      ],
+      "partyId": "seller",
+      "statement": "The bed is king-size.",
+      "termId": null,
+      "value": {
+        "type": "text",
+        "value": "king-size"
+      }
+    },
+    {
+      "id": "fact_f_one_year_old",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "One-year-old king-size bed"
+        }
+      ],
+      "partyId": "seller",
+      "statement": "The bed is one year old.",
+      "termId": null,
+      "value": {
+        "type": "quantity",
+        "amount": 1,
+        "unit": "year-old"
+      }
+    },
+    {
+      "id": "fact_f_good_condition",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "good condition"
+        }
+      ],
+      "partyId": "seller",
+      "statement": "The bed is in good condition.",
+      "termId": null,
+      "value": {
+        "type": "text",
+        "value": "good condition"
+      }
+    }
+  ],
+  "positions": [
+    {
+      "id": "position_pos_price_asking",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Price: ₹20,000"
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_price",
+      "value": {
+        "type": "money",
+        "amount": 20000,
+        "currency": "INR"
+      },
+      "conditionIds": []
+    },
+    {
+      "id": "position_pos_pickup_place",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Pickup from Koramangala, Bangalore."
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_pickup_place",
+      "value": {
+        "type": "text",
+        "value": "Koramangala, Bangalore"
+      },
+      "conditionIds": []
+    },
+    {
+      "id": "position_pos_delivery_not_included",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Delivery is not included."
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_delivery_included",
+      "value": {
+        "type": "boolean",
+        "value": false
+      },
+      "conditionIds": []
+    }
+  ],
+  "limits": [],
+  "targets": [],
+  "preferences": [
+    {
+      "id": "preference_pref_pickup_saturday",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "principal-preference",
+          "quote": "Saturday pickup preferred"
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_pickup_day",
+      "value": {
+        "type": "date_text",
+        "value": "Saturday"
+      },
+      "strength": "preferred",
+      "conditionIds": []
+    },
+    {
+      "id": "preference_pref_pickup_sunday",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "principal-preference",
+          "quote": "Sunday also works"
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_pickup_day",
+      "value": {
+        "type": "date_text",
+        "value": "Sunday"
+      },
+      "strength": "acceptable",
+      "conditionIds": []
+    }
+  ],
+  "alternatives": [],
+  "permissions": [
+    {
+      "id": "permission_perm_accept_requires_approval",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "principal-preference",
+          "quote": "Ask me before accepting any offer."
+        }
+      ],
+      "partyId": "seller",
+      "action": "accept_agreement",
+      "mode": "requires_approval",
+      "termIds": [],
+      "description": "The agent must ask the seller before accepting any offer.",
+      "conditionIds": []
+    }
+  ],
+  "conditions": [],
+  "issues": [
+    {
+      "id": "issue_1",
+      "kind": "missing",
+      "message": "No minimum acceptable price or discount authority is stated for negotiating below the listed price.",
+      "relatedIds": [
+        "term_t_price",
+        "position_pos_price_asking"
+      ],
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Price: ₹20,000"
+        }
+      ]
+    },
+    {
+      "id": "issue_2",
+      "kind": "missing",
+      "message": "No explicit authority is stated to propose counteroffers or make concessions; only approval before accepting offers is stated.",
+      "relatedIds": [
+        "permission_perm_accept_requires_approval"
+      ],
+      "sourceRefs": [
+        {
+          "sourceId": "principal-preference",
+          "quote": "Ask me before accepting any offer."
+        }
+      ]
+    }
+  ],
+  "approval": {
+    "status": "unapproved"
+  }
+}

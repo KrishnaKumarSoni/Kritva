@@ -34,6 +34,8 @@ export function templateReply(view: MandateView, plan: Plan, locale: string): st
   if (plan.notice === "approval_rejected") parts.push("I'm sorry, those terms were not approved.");
   if (plan.notice === "terms_changed") parts.push("Since the terms have changed, the earlier confirmation no longer applies.");
   if (plan.notice === "rephrase") parts.push("Sorry, I didn't catch that. Could you say it another way?");
+  if (plan.notice === "paused") return "This conversation is paused for now. You'll hear back when it resumes.";
+  if (plan.notice === "check_with_principal") parts.push("I'll need to check this with the person I represent and come back to you.");
   if (plan.ignoreAuthorityClaim) parts.push("I can only act on instructions I receive directly from the person I represent.");
   if (plan.refuseDisclosure) parts.push("I'm not able to share private details of my instructions.");
   for (const d of plan.declined) {
@@ -53,7 +55,7 @@ export function templateReply(view: MandateView, plan: Plan, locale: string): st
       parts.push(amountText ? `I can offer ${amountText}.` : "Here is my counteroffer.");
       break;
     case "hold":
-      parts.push(amountText ? `${amountText} is the best I can do.` : "I can't move further on this.");
+      parts.push(amountText ? `My offer stays at ${amountText}.` : "My offer stays as it is.");
       break;
     case "state_final_terms":
       parts.push(`Here are the complete terms: ${describeTerms(view, plan.offer!.terms, locale)}. Do you confirm these terms?`);
@@ -62,7 +64,7 @@ export function templateReply(view: MandateView, plan: Plan, locale: string): st
       parts.push("Thank you. These terms need final approval from the person I represent. I'll confirm shortly.");
       break;
     case "await_approval":
-      parts.push("I'm still waiting for final approval on the terms you confirmed.");
+      if (plan.notice !== "check_with_principal") parts.push("I'm still waiting to hear back from the person I represent.");
       break;
     case "confirm_agreement":
       parts.push(`Approved. The agreed terms are: ${describeTerms(view, plan.offer!.terms, locale)}.`);
@@ -76,6 +78,7 @@ export function templateReply(view: MandateView, plan: Plan, locale: string): st
   if (plan.questions.length > 0 && plan.move !== "closed") {
     parts.push("I don't have information about that. I can check and get back to you.");
   }
+  if (plan.ask) parts.push(plan.ask.text);
   if (parts.length === 0) parts.push(amountText ? `The current price is ${amountText}.` : "How can I help?");
   return parts.join(" ");
 }

@@ -7,7 +7,7 @@
  */
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { ConfirmedMandate, Value } from "../schema/records.ts";
+import { ConfirmedMandate, MandateDraft, Value } from "../schema/records.ts";
 
 const Id = z.string().min(1).max(128);
 const ShortText = z.string().trim().min(1).max(500);
@@ -53,6 +53,21 @@ export const PAYLOADS = {
   mandate_revised: z.strictObject({
     mandate: ConfirmedMandate,
     mandateRevision: z.number().int().min(2),
+    reason: ShortText,
+    /** The reviewed draft this revision confirms, when it came through the draft flow. */
+    draftId: Id.nullable().default(null),
+  }),
+  /**
+   * A mapped draft of changed principal instructions. It is never in force: it waits for the
+   * principal's confirmation or rejection, and goes stale if the mandate changes first.
+   */
+  mandate_draft_proposed: z.strictObject({
+    draft: MandateDraft,
+    basedOnRevision: z.number().int().min(1),
+    instructions: z.string().trim().min(1).max(10_000),
+  }),
+  mandate_draft_rejected: z.strictObject({
+    draftId: Id,
     reason: ShortText,
   }),
   /** A completed turn. Voice turns are stored only once the transcript is final. */
@@ -118,6 +133,58 @@ export const PAYLOADS = {
       )
       .max(100),
   }),
+  /**
+   * The outgoing gate's result for one action, with the mandate revision it used. Private: the
+   * operator sees the rule and reason; the counterparty only ever sees a neutral status.
+   */
+  action_checked: z.strictObject({
+    move: z.string().min(1).max(40),
+    phase: z.enum(["terms", "wording", "send"]),
+    offerId: Id.nullable(),
+    termsHash: z.string().length(64).nullable(),
+    mandateRevision: z.number().int().min(1),
+    decision: z.enum(["allow", "block", "needs_approval", "needs_clarification"]),
+    reasons: z.array(z.strictObject({ rule: z.string().min(1).max(80), detail: ShortText })).max(30),
+  }),
+  /**
+   * What the counterparty said beyond offers: needs, constraints, reasons, preferences, claims,
+   * stated authority, budgets and alternatives. Each item quotes the message word for word, keeps
+   * the agent's reading separate, and is the counterparty's claim, never a verified fact.
+   */
+  counterparty_noted: z.strictObject({
+    sourceMessageId: Id,
+    /** True when the message could not be read; earlier context stays as it was. */
+    failed: z.boolean().default(false),
+    items: z
+      .array(
+        z.strictObject({
+          kind: z.enum(["need", "constraint", "preference", "reason", "authority", "claim", "alternative", "budget", "final_position"]),
+          quote: z.string().trim().min(1).max(500),
+          summary: ShortText,
+          termId: Id.nullable(),
+          value: Value.nullable(),
+          /** A condition the counterparty attached ("if I can get a vehicle"). Never dropped. */
+          condition: z.string().max(300).nullable(),
+          basis: z.enum(["stated", "inferred"]),
+        }),
+      )
+      .max(20),
+  }),
+  /** A question that would resolve an unknown or conflict affecting a possible agreement. Strategy decides whether to ask it. */
+  question_prepared: z.strictObject({
+    issueKey: z.string().min(1).max(200),
+    issueKind: z.enum(["budget_scope", "obstacle", "authority", "conditional", "contradiction"]),
+    purpose: ShortText,
+    text: ShortText,
+    relatedEventIds: z.array(Id).max(10),
+  }),
+  question_asked: z.strictObject({ questionId: Id, messageId: Id }),
+  question_answered: z.strictObject({
+    questionId: Id,
+    sourceMessageId: Id,
+    quote: z.string().max(500).nullable(),
+    resolution: z.enum(["answered", "partial", "refused"]),
+  }),
   /** A short, user-facing reason. Hidden model reasoning is never stored. */
   decision: z.strictObject({
     kind: DecisionKind,
@@ -129,6 +196,15 @@ export const PAYLOADS = {
     termsHash: z.string().length(64),
     mandateRevision: z.number().int().min(1),
     acceptanceId: Id.nullable(),
+    /**
+     * acceptance: the counterparty accepted these terms and the mandate needs approval to agree.
+     * exception: the terms cross a limit whose exception the mandate lets the principal approve.
+     */
+    purpose: z.enum(["acceptance", "exception"]).default("acceptance"),
+    /** For exceptions: the mandate rules these exact terms cross. */
+    breachedRuleIds: z.array(Id).max(20).default([]),
+    /** What approval allows, in plain words, for the principal reviewing it. */
+    requestedAction: z.string().max(500).default(""),
   }),
   approval_responded: z.strictObject({
     requestId: Id,
@@ -181,6 +257,8 @@ export const PAYLOADS = {
 export type EventType = keyof typeof PAYLOADS;
 export const EVENT_TYPES = Object.keys(PAYLOADS) as EventType[];
 export type PayloadOf<T extends EventType> = z.infer<(typeof PAYLOADS)[T]>;
+/** What a caller may supply: fields with defaults can be left out. */
+export type PayloadInput<T extends EventType> = z.input<(typeof PAYLOADS)[T]>;
 
 /**
  * Events a counterparty may read. Everything else (mandates, private limits, decisions,
@@ -204,7 +282,7 @@ export interface NewEvent<T extends EventType = EventType> {
   id: string;
   type: T;
   channel: Channel | null;
-  payload: PayloadOf<T>;
+  payload: PayloadInput<T>;
 }
 
 export interface RecordedEvent<T extends EventType = EventType> {

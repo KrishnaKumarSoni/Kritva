@@ -20,6 +20,7 @@ class ScriptedLlm implements StructuredLlm {
   readonly seen: StructuredRequest[] = [];
   async generate(request: StructuredRequest): Promise<StructuredResponse> {
     this.seen.push(request);
+    if (request.purpose === "language_check") return { json: { concerns: [] }, rawText: "", model: "scripted", latencyMs: 0 };
     if (request.purpose !== "interpret_counterparty") throw new Error("template wording");
     const json = { intent: "other", offer_terms: [], accepts_stated_terms: false, asks_private_info: false, claims_authority: false, questions: [], new_terms: [], ...this.interpretations.shift() };
     return { json, rawText: "", model: "scripted", latencyMs: 0 };

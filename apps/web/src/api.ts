@@ -40,7 +40,8 @@ export interface OperatorState {
   status: string;
   mandateRevision: number;
   outcome: { kind: OutcomeKind; terms: TermView[] | null };
-  pendingApproval: { requestId: string; terms: TermView[] | null } | null;
+  pendingApproval: { requestId: string; purpose: "acceptance" | "exception"; requestedAction: string; breachedRules: string[]; terms: TermView[] | null } | null;
+  paused: boolean;
   negotiable: {
     name: string;
     opening: string | null;
@@ -70,11 +71,45 @@ export interface DealSpaceView {
   lastBuyerCheck: { result: "fits" | "conflicts" | "needs_clarification"; terms: string[]; findings: Array<{ term: string; status: string; detail: string }> } | null;
 }
 
+export interface PrincipalView {
+  revision: number;
+  goals: Array<{ id: string; kind: string; text: string; priority: number | null; terms: string[]; private: boolean }>;
+  targets: Array<{ id: string; text: string; private: boolean }>;
+  preferences: Array<{ id: string; text: string; private: boolean }>;
+  alternatives: Array<{ id: string; text: string; value: string | null; private: boolean }>;
+  limits: Array<{ id: string; text: string; conditional: boolean; exception: string }>;
+  permissions: Array<{ action: string; mode: string }>;
+  unresolved: Array<{ term: string; reason: string }>;
+  issues: Array<{ id: string; kind: string; message: string }>;
+}
+
+export interface DraftSummary {
+  draftId: string;
+  status: "open" | "confirmed" | "rejected" | "stale";
+  basedOnRevision: number;
+  instructions: string;
+  createdAt: string;
+  rules: string[];
+  readiness: { accept: string; unresolved: Array<{ termId: string; name: string; reason: string }> };
+  issues: Array<{ id: string; kind: string; message: string }>;
+}
+
+export interface CounterpartyView {
+  items: Array<{ id: string; kind: string; quote: string; summary: string; term: string | null; value: string | null; condition: string | null; basis: "stated" | "inferred" }>;
+  estimates: Array<{ package: string; highestOffer: string | null; statedBudget: string | null; finalStatements: string[]; maximum: { status: string; text: string } }>;
+  contradictions: string[];
+  questions: Array<{ id: string; kind: string; text: string; purpose: string; status: string }>;
+  failedMessages: number;
+}
+
 export interface OperatorView {
   session: { id: string; caseId: string; createdAt: string; previousSessionId: string | null };
   mandateId: string | null;
   state: OperatorState;
   dealSpace: DealSpaceView;
+  principal: PrincipalView;
+  counterparty: CounterpartyView;
+  drafts: DraftSummary[];
   events: RecordEvent[];
 }
 
@@ -131,4 +166,9 @@ export const api = {
       clientMessageId,
     }),
   reportDelivered: (id: string, messageId: string) => call<unknown>("POST", `/api/buyer/sessions/${id}/deliveries`, { messageId }),
+  setPaused: (id: string, paused: boolean) => call<unknown>("POST", `/api/operator/sessions/${id}/pause`, { paused }),
+  instructions: (id: string) => call<{ instructions: string }>("GET", `/api/operator/sessions/${id}/instructions`),
+  proposeDraft: (id: string, instructions: string) => call<{ draft: DraftSummary }>("POST", `/api/operator/sessions/${id}/drafts`, { instructions }),
+  confirmDraft: (id: string, draftId: string, acknowledgedIssueIds: string[]) => call<unknown>("POST", `/api/operator/sessions/${id}/drafts/${draftId}/confirm`, { acknowledgedIssueIds }),
+  rejectDraft: (id: string, draftId: string) => call<unknown>("POST", `/api/operator/sessions/${id}/drafts/${draftId}/reject`),
 };

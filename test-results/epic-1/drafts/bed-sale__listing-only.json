@@ -87,13 +87,15 @@
         }
       ],
       "partyId": "seller",
-      "description": "Sell the king-size bed.",
+      "kind": "objective",
+      "description": "Seller wants to sell the bed.",
+      "termIds": [],
       "priority": null
     }
   ],
   "facts": [
     {
-      "id": "fact_f_bed_size",
+      "id": "fact_f_bed_type",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -124,8 +126,9 @@
       "statement": "The bed is one year old.",
       "termId": null,
       "value": {
-        "type": "text",
-        "value": "One-year-old"
+        "type": "quantity",
+        "amount": 1,
+        "unit": "year-old"
       }
     },
     {
@@ -135,7 +138,7 @@
       "sourceRefs": [
         {
           "sourceId": "listing",
-          "quote": "good condition"
+          "quote": "in good condition"
         }
       ],
       "partyId": "seller",
@@ -149,7 +152,7 @@
   ],
   "positions": [
     {
-      "id": "position_p_asking_price",
+      "id": "position_p_price",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -205,30 +208,28 @@
     }
   ],
   "limits": [],
+  "targets": [],
+  "preferences": [],
+  "alternatives": [],
   "permissions": [],
   "conditions": [],
   "issues": [
     {
       "id": "issue_1",
       "kind": "missing",
-      "message": "No explicit authority is stated for the agent to accept an agreement on the seller's behalf.",
+      "message": "No stated authority for the agent to accept an agreement on the seller's behalf.",
       "relatedIds": [],
       "sourceRefs": []
     },
     {
       "id": "issue_2",
       "kind": "missing",
-      "message": "No minimum acceptable price or negotiation boundary is stated for the listed price.",
+      "message": "No stated minimum acceptable price for negotiation below the listed price.",
       "relatedIds": [
         "term_t_price",
-        "position_p_asking_price"
+        "position_p_price"
       ],
-      "sourceRefs": [
-        {
-          "sourceId": "listing",
-          "quote": "Price: ₹20,000"
-        }
-      ]
+      "sourceRefs": []
     }
   ],
   "approval": {

@@ -99,6 +99,41 @@
       "disclosure": "private",
       "format": "prose",
       "label": "Seller instructions (conditional test data)"
+    },
+    "principal-target-limit": {
+      "file": "sources/principal-target-limit.md",
+      "authorPartyId": "seller",
+      "disclosure": "private",
+      "format": "prose",
+      "label": "Seller instructions"
+    },
+    "principal-preference": {
+      "file": "sources/principal-preference.md",
+      "authorPartyId": "seller",
+      "disclosure": "private",
+      "format": "prose",
+      "label": "Seller instructions"
+    },
+    "principal-need": {
+      "file": "sources/principal-need.md",
+      "authorPartyId": "seller",
+      "disclosure": "private",
+      "format": "prose",
+      "label": "Seller instructions"
+    },
+    "principal-alternative": {
+      "file": "sources/principal-alternative.md",
+      "authorPartyId": "seller",
+      "disclosure": "private",
+      "format": "prose",
+      "label": "Seller instructions"
+    },
+    "exception-test-instructions": {
+      "file": "sources/exception-test-instructions.md",
+      "authorPartyId": "seller",
+      "disclosure": "private",
+      "format": "prose",
+      "label": "Seller instructions (exception test data)"
     }
   },
   "mandates": {
@@ -119,6 +154,15 @@
       "file": "mandates/conditional-test.confirmed.json",
       "description": "Test data only: a minimum of ₹19,000, with ₹18,000 allowed only for Saturday collection.",
       "label": "Conditional test mandate"
+    },
+    "exception-test": {
+      "sources": [
+        "listing",
+        "exception-test-instructions"
+      ],
+      "file": "mandates/exception-test.confirmed.json",
+      "label": "Exception test mandate",
+      "description": "Test data only: a ₹18,000 minimum where lower prices need the seller's approval."
     }
   }
 }

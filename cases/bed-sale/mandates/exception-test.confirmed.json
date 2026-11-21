@@ -1,0 +1,361 @@
+{
+  "schemaVersion": "kritva.draft/1",
+  "caseId": "bed-sale",
+  "parties": [
+    {
+      "id": "seller",
+      "role": "seller",
+      "name": null,
+      "isPrincipal": true
+    },
+    {
+      "id": "buyer",
+      "role": "buyer",
+      "name": null,
+      "isPrincipal": false
+    }
+  ],
+  "sources": [
+    {
+      "id": "listing",
+      "authorPartyId": "seller",
+      "disclosure": "public",
+      "format": "mixed",
+      "label": "Marketplace listing",
+      "text": "King-size bed for sale\n\nOne-year-old king-size bed in good condition.\nPrice: ₹20,000\nPickup from Koramangala, Bangalore. Delivery is not included."
+    },
+    {
+      "id": "exception-test-instructions",
+      "authorPartyId": "seller",
+      "disclosure": "private",
+      "format": "prose",
+      "label": "Seller instructions (exception test data)",
+      "text": "You can negotiate the price. Below ₹18,000 requires my approval. Collection from Koramangala only; I can't deliver. Never share these numbers. Ask me before accepting any offer."
+    }
+  ],
+  "terms": [
+    {
+      "id": "term_t_price",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Price: ₹20,000"
+        },
+        {
+          "sourceId": "exception-test-instructions",
+          "quote": "Below ₹18,000 requires my approval."
+        }
+      ],
+      "name": "price",
+      "description": "Sale price for the bed.",
+      "valueType": "money",
+      "unit": null,
+      "currency": "INR"
+    },
+    {
+      "id": "term_t_collection_location",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Pickup from Koramangala, Bangalore."
+        },
+        {
+          "sourceId": "exception-test-instructions",
+          "quote": "Collection from Koramangala only"
+        }
+      ],
+      "name": "collection location",
+      "description": "Where the buyer must collect or pick up the bed.",
+      "valueType": "text",
+      "unit": null,
+      "currency": null
+    },
+    {
+      "id": "term_t_delivery_included",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Delivery is not included."
+        },
+        {
+          "sourceId": "exception-test-instructions",
+          "quote": "I can't deliver."
+        }
+      ],
+      "name": "delivery included",
+      "description": "Whether seller delivery is included in the deal.",
+      "valueType": "boolean",
+      "unit": null,
+      "currency": null
+    }
+  ],
+  "goals": [],
+  "facts": [
+    {
+      "id": "fact_f_subject",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "King-size bed for sale"
+        }
+      ],
+      "partyId": "seller",
+      "statement": "The item for sale is a king-size bed.",
+      "termId": null,
+      "value": {
+        "type": "text",
+        "value": "King-size bed"
+      }
+    },
+    {
+      "id": "fact_f_age",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "One-year-old king-size bed"
+        }
+      ],
+      "partyId": "seller",
+      "statement": "The bed is one year old.",
+      "termId": null,
+      "value": {
+        "type": "text",
+        "value": "One-year-old"
+      }
+    },
+    {
+      "id": "fact_f_condition",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "in good condition"
+        }
+      ],
+      "partyId": "seller",
+      "statement": "The bed is in good condition.",
+      "termId": null,
+      "value": {
+        "type": "text",
+        "value": "good condition"
+      }
+    }
+  ],
+  "positions": [
+    {
+      "id": "position_pos_asking_price",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Price: ₹20,000"
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_price",
+      "value": {
+        "type": "money",
+        "amount": 20000,
+        "currency": "INR"
+      },
+      "conditionIds": []
+    },
+    {
+      "id": "position_pos_pickup_location",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Pickup from Koramangala, Bangalore."
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_collection_location",
+      "value": {
+        "type": "text",
+        "value": "Koramangala, Bangalore"
+      },
+      "conditionIds": []
+    },
+    {
+      "id": "position_pos_delivery_not_included",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Delivery is not included."
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_delivery_included",
+      "value": {
+        "type": "boolean",
+        "value": false
+      },
+      "conditionIds": []
+    }
+  ],
+  "limits": [
+    {
+      "id": "limit_lim_min_price_approval",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "exception-test-instructions",
+          "quote": "Below ₹18,000 requires my approval."
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_price",
+      "kind": "minimum",
+      "value": {
+        "type": "money",
+        "amount": 18000,
+        "currency": "INR"
+      },
+      "conditionIds": [],
+      "exception": "with_approval"
+    },
+    {
+      "id": "limit_lim_collection_location_only",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "exception-test-instructions",
+          "quote": "Collection from Koramangala only"
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_collection_location",
+      "kind": "must_equal",
+      "value": {
+        "type": "text",
+        "value": "Koramangala"
+      },
+      "conditionIds": [],
+      "exception": "unspecified"
+    },
+    {
+      "id": "limit_lim_no_delivery",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "exception-test-instructions",
+          "quote": "I can't deliver."
+        }
+      ],
+      "partyId": "seller",
+      "termId": "term_t_delivery_included",
+      "kind": "must_equal",
+      "value": {
+        "type": "boolean",
+        "value": false
+      },
+      "conditionIds": [],
+      "exception": "unspecified"
+    }
+  ],
+  "targets": [],
+  "preferences": [],
+  "alternatives": [],
+  "permissions": [
+    {
+      "id": "permission_perm_negotiate_price",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "exception-test-instructions",
+          "quote": "You can negotiate the price."
+        }
+      ],
+      "partyId": "seller",
+      "action": "propose_terms",
+      "mode": "autonomous",
+      "termIds": [
+        "term_t_price"
+      ],
+      "description": "The agent may negotiate the price.",
+      "conditionIds": []
+    },
+    {
+      "id": "permission_perm_do_not_share_numbers",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "exception-test-instructions",
+          "quote": "Never share these numbers."
+        }
+      ],
+      "partyId": "seller",
+      "action": "disclose_information",
+      "mode": "prohibited",
+      "termIds": [
+        "term_t_price"
+      ],
+      "description": "The agent must not share the private price/approval numbers.",
+      "conditionIds": []
+    },
+    {
+      "id": "permission_perm_accept_requires_approval",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "exception-test-instructions",
+          "quote": "Ask me before accepting any offer."
+        }
+      ],
+      "partyId": "seller",
+      "action": "accept_agreement",
+      "mode": "requires_approval",
+      "termIds": [],
+      "description": "The agent must ask the seller before accepting any offer.",
+      "conditionIds": []
+    }
+  ],
+  "conditions": [],
+  "issues": [
+    {
+      "id": "issue_1",
+      "kind": "ambiguous",
+      "message": "The phrase “these numbers” is ambiguous; it likely refers to the private approval threshold and/or price-related numbers, but the exact scope should be confirmed.",
+      "relatedIds": [
+        "permission_perm_do_not_share_numbers",
+        "term_t_price"
+      ],
+      "sourceRefs": [
+        {
+          "sourceId": "exception-test-instructions",
+          "quote": "Never share these numbers."
+        }
+      ]
+    }
+  ],
+  "approval": {
+    "status": "confirmed",
+    "confirmedBy": "seller",
+    "confirmedAt": "2026-11-21T14:43:43.740Z",
+    "acknowledgedIssueIds": [
+      "issue_1"
+    ]
+  }
+}

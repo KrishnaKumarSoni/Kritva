@@ -10,6 +10,12 @@ import { Hono } from "hono";
 import {
   formatValue,
   orderTerms,
+  numericValue,
+  projectCounterparty,
+  type CounterpartyModel,
+  type DraftView,
+  type MandateRevisions,
+  type Value,
   type ConditionRef,
   type MandateView,
   type RuleRef,
@@ -32,12 +38,13 @@ export interface MandateEntry {
 export interface AppDeps {
   record: NegotiationRecord;
   engine: NegotiationEngine;
+  revisions: MandateRevisions;
   mandates: MandateEntry[];
   locale: string;
 }
 
 export function createApp(deps: AppDeps): Hono {
-  const { record, engine, mandates, locale } = deps;
+  const { record, engine, mandates, locale, revisions } = deps;
   const app = new Hono();
 
   app.onError((error, c) => {
@@ -79,11 +86,15 @@ export function createApp(deps: AppDeps): Hono {
     if (!session) return c.json({ error: "session_not_found" }, 404);
     const [state, events] = await Promise.all([engine.state(id), record.read(id, { viewer: "operator" })]);
     const mandateId = mandates.find((m) => JSON.stringify(m.mandate) === JSON.stringify(state.view.mandate))?.id ?? null;
+    const ctx = await record.context(id);
     return c.json({
       session,
       mandateId,
       state: operatorState(state, locale),
       dealSpace: dealSpaceView(state, locale),
+      principal: principalView(state, locale),
+      counterparty: counterpartyView(projectCounterparty(ctx, state.view.negotiable?.termId ?? null), state, locale),
+      drafts: (await revisions.drafts(id)).map((d) => draftView(d, locale)),
       events: events.map((e) => describeEvent(e, state.view, locale)),
     });
   });
@@ -94,6 +105,40 @@ export function createApp(deps: AppDeps): Hono {
     const result = await engine.respondToApproval({ sessionId: c.req.param("id"), requestId: c.req.param("requestId"), decision: body.decision, note: body.note ?? null });
     if (!result.ok) return c.json({ error: result.code, message: result.message }, result.code === "not_pending" ? 409 : 400);
     return c.json({ reply: result.reply, state: operatorState(result.state, locale) });
+  });
+
+  /** Pause or resume. While paused, no negotiation content reaches the counterparty. */
+  app.post("/api/operator/sessions/:id/pause", async (c) => {
+    const body = await c.req.json<{ paused?: boolean }>().catch(() => ({}) as Record<string, never>);
+    const result = await engine.setPaused({ sessionId: c.req.param("id"), paused: body.paused === true });
+    if (!result.ok) return c.json({ error: result.code, message: result.message }, 409);
+    return c.json({ state: operatorState(result.state, locale) });
+  });
+
+  app.get("/api/operator/sessions/:id/instructions", async (c) => c.json({ instructions: await revisions.currentInstructions(c.req.param("id")) }));
+
+  /** Maps changed instructions into a draft. The draft has no authority until confirmed. */
+  app.post("/api/operator/sessions/:id/drafts", async (c) => {
+    const body = await c.req.json<{ instructions?: string }>().catch(() => ({}) as Record<string, never>);
+    const instructions = typeof body.instructions === "string" ? body.instructions.trim() : "";
+    if (instructions.length === 0 || instructions.length > 5_000) return c.json({ error: "invalid_instructions", message: "Write your instructions (up to 5,000 characters)." }, 400);
+    const result = await revisions.propose({ sessionId: c.req.param("id"), instructions });
+    if (!result.ok) return c.json({ error: result.error.code, message: "The instructions could not be turned into a draft. Your current mandate is unchanged." }, 422);
+    return c.json({ draft: draftView(result.draft, locale) }, 201);
+  });
+
+  /** Only this principal control confirms a draft. */
+  app.post("/api/operator/sessions/:id/drafts/:draftId/confirm", async (c) => {
+    const body = await c.req.json<{ acknowledgedIssueIds?: string[] }>().catch(() => ({}) as Record<string, never>);
+    const result = await revisions.confirm({ sessionId: c.req.param("id"), draftId: c.req.param("draftId"), acknowledgedIssueIds: Array.isArray(body.acknowledgedIssueIds) ? body.acknowledgedIssueIds : [] });
+    if (!result.ok) return c.json({ error: result.code, message: result.message }, 409);
+    return c.json({ state: operatorState(result.state, locale) });
+  });
+
+  app.post("/api/operator/sessions/:id/drafts/:draftId/reject", async (c) => {
+    const result = await revisions.reject({ sessionId: c.req.param("id"), draftId: c.req.param("draftId") });
+    if (!result.ok) return c.json({ error: result.code, message: result.message }, 409);
+    return c.json({ ok: true });
   });
 
   // ---------- Buyer (counterparty) ----------
@@ -195,6 +240,104 @@ function dealSpaceView(state: NegotiationState, locale: string) {
   };
 }
 
+/** One mandate rule in words, for the operator. */
+function ruleText(state: NegotiationState, ruleId: string, locale: string): string {
+  for (const t of state.space.terms) {
+    const r = t.rules.find((x) => x.id === ruleId);
+    if (!r) continue;
+    const value = formatValue(r.value, locale);
+    const label = r.kind === "minimum" ? `Minimum ${value}` : r.kind === "maximum" ? `Maximum ${value}` : r.kind === "must_equal" ? `Only ${value}` : r.kind === "must_not_equal" ? `Not ${value}` : `${value}`;
+    return `${t.name}: ${label}`;
+  }
+  return ruleId;
+}
+
+const MODE_LABEL: Record<string, string> = {
+  autonomous: "Kritva may do this",
+  requires_approval: "Needs your approval",
+  prohibited: "Not allowed",
+  unresolved: "Unresolved: clarify first",
+};
+
+/** The active mandate as the principal set it: goals, targets, preferences, alternatives, limits, permissions. */
+function principalView(state: NegotiationState, locale: string) {
+  const m = state.view.mandate;
+  const principalId = state.view.principalId;
+  const nameOf = (id: string) => m.terms.find((t) => t.id === id)?.name ?? id;
+  const val = (v: Value | null) => (v ? formatValue(v, locale) : "unknown");
+  const mine = <T extends { partyId: string }>(xs: T[]) => xs.filter((x) => x.partyId === principalId);
+  const authority = state.view.authority;
+  return {
+    revision: state.mandateRevision,
+    goals: mine(m.goals).map((g) => ({ id: g.id, kind: g.kind, text: g.description, priority: g.priority, terms: g.termIds.map(nameOf), private: g.disclosure === "private" })),
+    targets: mine(m.targets).map((t) => ({ id: t.id, text: `${nameOf(t.termId)}: ${val(t.value)}`, private: t.disclosure === "private" })),
+    preferences: mine(m.preferences).map((p) => ({ id: p.id, text: `${nameOf(p.termId)}: ${val(p.value)} (${p.strength})`, private: p.disclosure === "private" })),
+    alternatives: mine(m.alternatives).map((a) => ({ id: a.id, text: a.description, value: a.value ? val(a.value) : null, private: a.disclosure === "private" })),
+    limits: mine(m.limits).map((l) => ({
+      id: l.id,
+      text: ruleText(state, l.id, locale),
+      conditional: l.conditionIds.length > 0,
+      exception: authority.exceptionFor(l.id) === "with_approval" ? "Exception possible with your approval" : l.exception === "not_allowed" ? "No exceptions" : "No exception path given",
+    })),
+    permissions: [
+      ...[...new Set(m.positions.filter((p) => p.partyId === principalId).map((p) => p.termId))].map((termId) => ({ action: `Change ${nameOf(termId)}`, mode: MODE_LABEL[authority.propose(termId)] })),
+      { action: "Accept an agreement", mode: MODE_LABEL[authority.accept()] },
+      { action: "Disclose private details", mode: MODE_LABEL[authority.disclose(null)] },
+    ],
+    unresolved: [...authority.unresolvedTerms].map(([termId, reason]) => ({ term: nameOf(termId), reason })),
+    issues: m.issues.map((i) => ({ id: i.id, kind: i.kind, message: i.message })),
+  };
+}
+
+function draftView(d: DraftView, locale: string) {
+  const m = d.draft;
+  const nameOf = (id: string) => m.terms.find((t) => t.id === id)?.name ?? id;
+  const val = (v: Value | null) => (v ? formatValue(v, locale) : "unknown");
+  const principalId = m.parties.find((p) => p.isPrincipal)?.id;
+  return {
+    draftId: d.draftId,
+    status: d.status,
+    basedOnRevision: d.basedOnRevision,
+    instructions: d.instructions,
+    createdAt: d.createdAt,
+    rules: [
+      ...m.limits.filter((l) => l.partyId === principalId).map((l) => `${nameOf(l.termId)}: ${l.kind.replace("_", " ")} ${val(l.value)}${l.conditionIds.length ? " (conditional)" : ""}${l.exception === "with_approval" ? ", exception with your approval" : l.exception === "not_allowed" ? ", no exceptions" : ""}`),
+      ...m.targets.filter((t) => t.partyId === principalId).map((t) => `Target ${nameOf(t.termId)}: ${val(t.value)}`),
+      ...m.preferences.filter((p) => p.partyId === principalId).map((p) => `${p.strength === "avoid" ? "Avoid" : p.strength === "preferred" ? "Prefer" : "Acceptable"} ${nameOf(p.termId)}: ${val(p.value)}`),
+      ...m.alternatives.filter((a) => a.partyId === principalId).map((a) => `If no deal: ${a.description}`),
+      ...m.goals.filter((g) => g.partyId === principalId).map((g) => `${g.kind === "need" ? "Need" : g.kind === "reason" ? "Reason" : "Goal"}: ${g.description}`),
+      ...m.permissions.map((p) => `${p.action.replace(/_/g, " ")}: ${p.mode.replace("_", " ")}${p.conditionIds.length ? " (conditional)" : ""}`),
+    ],
+    readiness: d.readiness,
+    issues: m.issues.map((i) => ({ id: i.id, kind: i.kind, message: i.message })),
+  };
+}
+
+/** What the counterparty said, the estimate of their limit with its basis, and open questions. */
+function counterpartyView(model: CounterpartyModel, state: NegotiationState, locale: string) {
+  const n = state.view.negotiable;
+  const money = (amount: number | null) => (amount === null || !n ? null : formatValue(numericValue(n, amount), locale));
+  const nameOf = (id: string) => state.space.terms.find((t) => t.termId === id)?.name ?? id;
+  return {
+    items: model.items.map((i) => ({ id: i.id, kind: i.kind, quote: i.quote, summary: i.summary, term: i.termId ? nameOf(i.termId) : null, value: i.value ? formatValue(i.value, locale) : null, condition: i.condition, basis: i.basis })),
+    estimates: model.estimates.map((e) => ({
+      package: e.packageTerms.map((t) => `${nameOf(t.termId)}: ${formatValue(t.value, locale)}`).join(" · ") || "Seller's listed terms",
+      highestOffer: e.highestOffer ? money(e.highestOffer.amount) : null,
+      statedBudget: e.statedMaximum?.value ? formatValue(e.statedMaximum.value, locale) : null,
+      finalStatements: e.finalStatements.map((f) => f.quote),
+      maximum:
+        e.maximum.status === "unknown"
+          ? { status: "unknown", text: `Maximum unknown. ${e.maximum.reason}` }
+          : e.maximum.status === "contradicted"
+            ? { status: "contradicted", text: e.maximum.reason }
+            : { status: "working_estimate", text: `Working estimate (low confidence): ${e.maximum.atLeast !== null ? `at least ${money(e.maximum.atLeast)}, ` : ""}at most ${money(e.maximum.atMost)}. Assumes: ${e.maximum.assumptions.join(" ")}` },
+    })),
+    contradictions: model.contradictions.map((c) => c.detail),
+    questions: model.questions.map((q) => ({ id: q.id, kind: q.issueKind, text: q.text, purpose: q.purpose, status: q.status })),
+    failedMessages: model.failedMessages.length,
+  };
+}
+
 const OPERATOR_TEXT: Record<NonNullable<ConditionRef["operator"]>, string> = {
   equals: "is",
   not_equals: "is not",
@@ -233,8 +376,16 @@ function operatorState(state: NegotiationState, locale: string) {
     mandateRevision: state.mandateRevision,
     outcome: { ...state.outcome, terms: termsView(state.view, state.outcome.terms, locale) },
     pendingApproval: state.pendingApproval
-      ? { requestId: state.pendingApproval.requestId, terms: termsView(state.view, state.outcome.terms, locale) }
+      ? {
+          requestId: state.pendingApproval.requestId,
+          purpose: state.pendingApproval.purpose,
+          requestedAction: state.pendingApproval.requestedAction,
+          breachedRules: state.pendingApproval.breachedRuleIds.map((id) => ruleText(state, id, locale)),
+          // The exact terms under review: the pending offer itself, not the buyer-facing outcome.
+          terms: termsView(state.view, state.lastProposed?.offerId === state.pendingApproval.offerId ? state.lastProposed.terms : state.outcome.terms, locale),
+        }
       : null,
+    paused: state.status === "paused",
     negotiable: n
       ? { name: n.name, opening: money(n.opening), limit: money(n.limit), limitKind: n.direction === "up" ? "minimum" : "maximum", currentAsk: money(state.currentAsk), canConcede: n.canConcede }
       : null,
@@ -312,6 +463,37 @@ function describeEvent(e: RecordedEvent, view: MandateView, locale: string) {
     case "mandate_revised":
       title = "Mandate revised";
       summary = `Revision ${p.mandateRevision}: ${p.reason}`;
+      break;
+    case "mandate_draft_proposed":
+      title = "Mandate draft prepared";
+      summary = `Based on revision ${p.basedOnRevision}. Not in force until you confirm it.`;
+      break;
+    case "mandate_draft_rejected":
+      title = "Mandate draft rejected";
+      summary = String(p.reason);
+      break;
+    case "action_checked": {
+      const reasons = p.reasons as Array<{ rule: string; detail: string }>;
+      title = `Gate (${p.phase}): ${String(p.decision).replace("_", " ")}`;
+      summary = reasons.length > 0 ? reasons.map((r) => `${r.rule}: ${r.detail}`).join(" ") : `Move ${p.move}, mandate revision ${p.mandateRevision}.`;
+      break;
+    }
+    case "counterparty_noted": {
+      const items = p.items as Array<{ kind: string; quote: string }>;
+      title = p.failed ? "Could not read buyer message" : "Buyer context noted";
+      summary = p.failed ? "Earlier context is unchanged." : items.map((i) => `${i.kind.replace("_", " ")}: “${i.quote}”`).join(" · ");
+      break;
+    }
+    case "question_prepared":
+      title = "Question prepared";
+      summary = `${p.text} (${p.purpose})`;
+      break;
+    case "question_asked":
+      title = "Question asked";
+      break;
+    case "question_answered":
+      title = `Question ${p.resolution}`;
+      summary = p.quote ? `“${p.quote}”` : "";
       break;
   }
   return {

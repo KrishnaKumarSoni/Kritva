@@ -7,7 +7,8 @@
  * and mandate revision.
  */
 import type { ConfirmedMandate } from "../schema/records.ts";
-import { formatPath, type ValidationIssue } from "../schema/validate.ts";
+import { quoteAppearsIn } from "../schema/quotes.ts";
+import { formatPath, validateDraft, type ValidationIssue } from "../schema/validate.ts";
 import {
   Actor,
   CHANNEL_EVENT_TYPES,
@@ -33,6 +34,8 @@ export class SessionContext {
   mandate: ConfirmedMandate | null = null;
   mandateRevision = 0;
   status: SessionStatus = "active";
+  /** Drafts that were confirmed or rejected; neither can be used again. */
+  readonly closedDrafts = new Set<string>();
 
   constructor(events: RecordedEvent[]) {
     this.events = events;
@@ -48,6 +51,11 @@ export class SessionContext {
       this.mandateRevision = p.mandateRevision;
     }
     if (e.type === "status_changed") this.status = (e.payload as PayloadOf<"status_changed">).to;
+    if (e.type === "mandate_draft_rejected") this.closedDrafts.add((e.payload as PayloadOf<"mandate_draft_rejected">).draftId);
+    if (e.type === "mandate_revised") {
+      const draftId = (e.payload as PayloadOf<"mandate_revised">).draftId;
+      if (draftId) this.closedDrafts.add(draftId);
+    }
     if (e.type === "correction") {
       const p = e.payload as PayloadOf<"correction">;
       this.effective.set(p.correctsEventId, p.replacement);
@@ -155,6 +163,34 @@ export function validateNewEvent(event: NewEvent, actorInput: unknown, ctx: Sess
       if (actor.partyId !== principalId) add("actor.partyId", "only the principal can revise the mandate");
       if (p.mandateRevision !== ctx.mandateRevision + 1) add("payload.mandateRevision", "must be the next revision number");
       if (p.mandate.caseId !== ctx.mandate.caseId) add("payload.mandate.caseId", "a revision cannot switch cases");
+      if (p.draftId !== null) {
+        const draft = ctx.payloadOf(p.draftId, "mandate_draft_proposed");
+        if (!draft) add("payload.draftId", "references a draft that is not in this session");
+        else {
+          if (ctx.closedDrafts.has(p.draftId)) add("payload.draftId", "this draft was already confirmed or rejected");
+          if (draft.basedOnRevision !== ctx.mandateRevision) add("payload.draftId", "the draft was prepared for an earlier mandate revision");
+          const { approval: _a, ...confirmedBody } = p.mandate;
+          const { approval: _b, ...draftBody } = draft.draft;
+          if (JSON.stringify(confirmedBody) !== JSON.stringify(draftBody)) add("payload.mandate", "must be exactly the reviewed draft");
+        }
+      }
+      break;
+    }
+    case "mandate_draft_proposed": {
+      const p = parsed.data as PayloadOf<"mandate_draft_proposed">;
+      requireActor(["principal"]);
+      if (actor.partyId !== principalId) add("actor.partyId", "only the principal can propose a mandate change");
+      if (p.basedOnRevision !== ctx.mandateRevision) add("payload.basedOnRevision", "does not match the current mandate revision");
+      if (p.draft.caseId !== ctx.mandate.caseId) add("payload.draft.caseId", "a draft cannot switch cases");
+      const checked = validateDraft(p.draft);
+      if (!checked.ok) add("payload.draft", `the draft is not valid (${checked.errors[0]?.path}: ${checked.errors[0]?.reason})`);
+      break;
+    }
+    case "mandate_draft_rejected": {
+      const p = parsed.data as PayloadOf<"mandate_draft_rejected">;
+      requireActor(["principal"]);
+      if (!ctx.payloadOf(p.draftId, "mandate_draft_proposed")) add("payload.draftId", "references a draft that is not in this session");
+      else if (ctx.closedDrafts.has(p.draftId)) add("payload.draftId", "this draft was already confirmed or rejected");
       break;
     }
     case "message": {
@@ -223,6 +259,60 @@ export function validateNewEvent(event: NewEvent, actorInput: unknown, ctx: Sess
       requireActor(["agent"]);
       if (p.byPartyId !== principalId) add("payload.byPartyId", "the agent proposes on the principal's behalf");
       checkTerms(p.terms, p.termsHash, "payload");
+      break;
+    }
+    case "counterparty_noted": {
+      const p = parsed.data as PayloadOf<"counterparty_noted">;
+      if (!isAgentSide) add("actor.kind", "only the agent or system records this");
+      const source = refOf("payload.sourceMessageId", p.sourceMessageId, ["message"]);
+      if (source) {
+        const m = ctx.payloadOf(source.id, "message")!;
+        if (m.direction !== "inbound") add("payload.sourceMessageId", "notes come from the counterparty's own messages");
+        p.items.forEach((item, i) => {
+          // The counterparty's words are kept exactly; the agent's reading goes in summary.
+          if (!quoteAppearsIn(m.text, item.quote)) add(`payload.items[${i}].quote`, "quote does not appear in the message");
+          if (item.termId !== null && !termTypes.has(item.termId)) add(`payload.items[${i}].termId`, "references a term that is not in the current mandate");
+        });
+      }
+      break;
+    }
+    case "question_prepared": {
+      if (!isAgentSide) add("actor.kind", "only the agent or system records this");
+      const p = parsed.data as PayloadOf<"question_prepared">;
+      p.relatedEventIds.forEach((id, i) => {
+        if (!ctx.byId.has(id)) add(`payload.relatedEventIds[${i}]`, "references an event that is not in this session");
+      });
+      break;
+    }
+    case "question_asked": {
+      if (!isAgentSide) add("actor.kind", "only the agent or system records this");
+      const p = parsed.data as PayloadOf<"question_asked">;
+      refOf("payload.questionId", p.questionId, ["question_prepared"]);
+      const m = refOf("payload.messageId", p.messageId, ["message"]);
+      if (m && ctx.payloadOf(m.id, "message")!.direction !== "outbound") add("payload.messageId", "questions are asked in outbound messages");
+      break;
+    }
+    case "question_answered": {
+      if (!isAgentSide) add("actor.kind", "only the agent or system records this");
+      const p = parsed.data as PayloadOf<"question_answered">;
+      refOf("payload.questionId", p.questionId, ["question_prepared"]);
+      const m = refOf("payload.sourceMessageId", p.sourceMessageId, ["message"]);
+      if (m) {
+        const msg = ctx.payloadOf(m.id, "message")!;
+        if (msg.direction !== "inbound") add("payload.sourceMessageId", "answers come from the counterparty");
+        if (p.quote !== null && !quoteAppearsIn(msg.text, p.quote)) add("payload.quote", "quote does not appear in the message");
+      }
+      if (!ctx.events.some((e) => e.type === "question_asked" && (e.payload as PayloadOf<"question_asked">).questionId === p.questionId)) {
+        add("payload.questionId", "the question was never asked");
+      }
+      break;
+    }
+    case "action_checked": {
+      const p = parsed.data as PayloadOf<"action_checked">;
+      if (!isAgentSide) add("actor.kind", "only the agent or system records this");
+      if (p.offerId !== null && !ctx.offerTerms(p.offerId)) add("payload.offerId", "references an offer that is not in this session");
+      // A check may record that authority changed under it, so it may name the revision it was prepared for.
+      if (p.mandateRevision > ctx.mandateRevision) add("payload.mandateRevision", "names a revision that does not exist yet");
       break;
     }
     case "decision":

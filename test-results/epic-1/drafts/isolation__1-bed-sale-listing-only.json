@@ -43,7 +43,7 @@
       "currency": "INR"
     },
     {
-      "id": "term_t_pickup_location",
+      "id": "term_t_pickup_place",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -52,8 +52,8 @@
           "quote": "Pickup from Koramangala, Bangalore."
         }
       ],
-      "name": "pickup location",
-      "description": "Location where the buyer would pick up the bed.",
+      "name": "pickup place",
+      "description": "Place where the bed is to be picked up.",
       "valueType": "text",
       "unit": null,
       "currency": null
@@ -77,7 +77,7 @@
   ],
   "goals": [
     {
-      "id": "goal_g_sell_bed",
+      "id": "goal_g_sell",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -87,7 +87,9 @@
         }
       ],
       "partyId": "seller",
+      "kind": "objective",
       "description": "Sell the king-size bed.",
+      "termIds": [],
       "priority": null
     }
   ],
@@ -103,7 +105,7 @@
         }
       ],
       "partyId": "seller",
-      "statement": "The item for sale is a king-size bed.",
+      "statement": "The item is a king-size bed.",
       "termId": null,
       "value": {
         "type": "text",
@@ -124,8 +126,9 @@
       "statement": "The bed is one year old.",
       "termId": null,
       "value": {
-        "type": "text",
-        "value": "One-year-old"
+        "type": "quantity",
+        "amount": 1,
+        "unit": "year-old"
       }
     },
     {
@@ -149,7 +152,7 @@
   ],
   "positions": [
     {
-      "id": "position_p_asking_price",
+      "id": "position_p_price",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -168,7 +171,7 @@
       "conditionIds": []
     },
     {
-      "id": "position_p_pickup_location",
+      "id": "position_p_pickup_place",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -178,7 +181,7 @@
         }
       ],
       "partyId": "seller",
-      "termId": "term_t_pickup_location",
+      "termId": "term_t_pickup_place",
       "value": {
         "type": "text",
         "value": "Koramangala, Bangalore"
@@ -205,6 +208,9 @@
     }
   ],
   "limits": [],
+  "targets": [],
+  "preferences": [],
+  "alternatives": [],
   "permissions": [],
   "conditions": [],
   "issues": [
@@ -218,9 +224,10 @@
     {
       "id": "issue_2",
       "kind": "missing",
-      "message": "No minimum acceptable sale price is stated; the listed price is an asking position, not a lower limit.",
+      "message": "No minimum acceptable price is stated; the listing gives an asking price only.",
       "relatedIds": [
-        "position_p_asking_price"
+        "term_t_price",
+        "position_p_price"
       ],
       "sourceRefs": [
         {

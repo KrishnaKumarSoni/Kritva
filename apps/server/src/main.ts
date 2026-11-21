@@ -2,7 +2,7 @@
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { serve } from "@hono/node-server";
-import { createTurnLlmFromEnv, NegotiationEngine, NegotiationRecord, SqliteRecordBackend } from "@kritva/core";
+import { createMappingLlmFromEnv, createTurnLlmFromEnv, MandateRevisions, NegotiationEngine, NegotiationRecord, SqliteRecordBackend } from "@kritva/core";
 import { createApp } from "./app.ts";
 import { loadConfirmedMandates } from "./main-helpers.ts";
 
@@ -13,7 +13,8 @@ mkdirSync(dataDir, { recursive: true });
 const record = new NegotiationRecord(new SqliteRecordBackend(join(dataDir, "kritva.sqlite")));
 const locale = process.env.KRITVA_LOCALE ?? "en-IN";
 const engine = new NegotiationEngine({ record, llm: createTurnLlmFromEnv(), locale });
-const app = createApp({ record, engine, mandates: loadConfirmedMandates(join(ROOT, "cases")), locale });
+const revisions = new MandateRevisions({ record, engine, mappingLlm: createMappingLlmFromEnv() });
+const app = createApp({ record, engine, revisions, mandates: loadConfirmedMandates(join(ROOT, "cases")), locale });
 const port = Number(process.env.PORT ?? 8787);
 
 serve({ fetch: app.fetch, port }, (info) => {

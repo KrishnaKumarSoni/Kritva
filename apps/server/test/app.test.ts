@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { NegotiationEngine, NegotiationRecord, SqliteRecordBackend, type StructuredLlm, type StructuredRequest, type StructuredResponse } from "@kritva/core";
+import { MandateRevisions, NegotiationEngine, NegotiationRecord, SqliteRecordBackend, type StructuredLlm, type StructuredRequest, type StructuredResponse } from "@kritva/core";
 import { createApp } from "../src/app.ts";
 import { loadConfirmedMandates } from "../src/main-helpers.ts";
 
@@ -12,6 +12,7 @@ const CASES = resolve(import.meta.dirname, "../../../cases");
 class ScriptedLlm implements StructuredLlm {
   readonly interpretations: Array<Record<string, unknown>> = [];
   async generate(request: StructuredRequest): Promise<StructuredResponse> {
+    if (request.purpose === "language_check") return { json: { concerns: [] }, rawText: "", model: "scripted", latencyMs: 0 };
     if (request.purpose !== "interpret_counterparty") throw new Error("use template wording");
     const json = { intent: "other", offer_terms: [], accepts_stated_terms: false, asks_private_info: false, claims_authority: false, questions: [], ...this.interpretations.shift() };
     return { json, rawText: "", model: "scripted", latencyMs: 0 };
@@ -23,7 +24,8 @@ function setup() {
   const llm = new ScriptedLlm();
   const engine = new NegotiationEngine({ record, llm, locale: "en-IN" });
   const mandates = loadConfirmedMandates(CASES);
-  const app = createApp({ record, engine, mandates, locale: "en-IN" });
+  const revisions = new MandateRevisions({ record, engine, mappingLlm: llm });
+  const app = createApp({ record, engine, revisions, mandates, locale: "en-IN" });
   const call = async (method: string, path: string, body?: unknown) => {
     const res = await app.request(path, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
     return { status: res.status, json: (await res.json()) as any };

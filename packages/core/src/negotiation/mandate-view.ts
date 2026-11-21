@@ -8,6 +8,7 @@
 import type { ConfirmedMandate, Term, Value } from "../schema/records.ts";
 import type { OfferTerm } from "../record/events.ts";
 import { sameValue } from "../dealspace/check.ts";
+import { readAuthority, type Authority } from "../governance/authority.ts";
 
 export interface NegotiableTerm {
   termId: string;
@@ -36,6 +37,8 @@ export interface MandateView {
   /** Unconditional must_equal / must_not_equal rules per term. */
   fixedRules: Map<string, { kind: "must_equal" | "must_not_equal"; value: Value }[]>;
   acceptRequiresApproval: boolean;
+  /** Permissions, exception paths and unresolved terms, read from the mandate in code. */
+  authority: Authority;
   /** Facts the agent may state. Only public, stated facts. */
   publicFacts: string[];
   /** Numeric values that must never be revealed unless the agent is offering exactly that value. */
@@ -67,10 +70,7 @@ export function readMandate(mandate: ConfirmedMandate): MandateView {
     }
   }
 
-  const permits = (action: string, termId: string) =>
-    mandate.permissions.some(
-      (p) => p.action === action && p.mode === "autonomous" && p.conditionIds.length === 0 && (p.termIds.length === 0 || p.termIds.includes(termId)),
-    );
+  const authority = readAuthority(mandate);
 
   let negotiable: NegotiableTerm | null = null;
   for (const pkg of defaultPackage) {
@@ -82,7 +82,9 @@ export function readMandate(mandate: ConfirmedMandate): MandateView {
     const limit = bounds[0];
     const opening = pkg.value.amount;
     const direction = limit?.kind === "maximum" ? "down" : "up";
-    const limitValue = limit?.value && "amount" in limit.value ? (limit.value.amount as number) : opening;
+    // With competing bounds (a conflict), use the strictest one; authority stays unresolved anyway.
+    const amounts = bounds.map((b) => (b.value as { amount: number }).amount);
+    const limitValue = amounts.length === 0 ? opening : direction === "up" ? Math.max(...amounts) : Math.min(...amounts);
     negotiable = {
       termId: term.id,
       name: term.name,
@@ -92,12 +94,11 @@ export function readMandate(mandate: ConfirmedMandate): MandateView {
       direction,
       opening,
       limit: limitValue,
-      canConcede: Boolean(limit) && bounds.length === 1 && (permits("propose_terms", term.id) || permits("make_concession", term.id)),
+      canConcede: Boolean(limit) && bounds.length === 1 && authority.propose(term.id) === "autonomous",
     };
     break;
   }
 
-  const accept = mandate.permissions.find((p) => p.action === "accept_agreement" && p.conditionIds.length === 0);
 
   const privateAmounts = new Set<number>();
   for (const record of [...mandate.limits, ...mandate.positions, ...mandate.conditions, ...mandate.facts]) {
@@ -115,7 +116,8 @@ export function readMandate(mandate: ConfirmedMandate): MandateView {
     defaultPackage,
     negotiable,
     fixedRules,
-    acceptRequiresApproval: accept?.mode !== "autonomous",
+    acceptRequiresApproval: authority.accept() !== "autonomous",
+    authority,
     publicFacts: mandate.facts.filter((f) => f.disclosure === "public" && f.status === "stated").map((f) => f.statement),
     privateAmounts: [...privateAmounts],
     privateTexts: mandate.sources.filter((s) => s.disclosure === "private").map((s) => s.text),

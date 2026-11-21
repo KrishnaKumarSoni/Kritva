@@ -1,27 +1,31 @@
 # Epic 1 live mapping results
 
-- Run at: 2026-11-21T13:58:18.571Z
-- Commit: 56b98e0 + uncommitted changes
+- Run at: 2026-11-21T14:49:12.710Z
+- Commit: 6e1205a + uncommitted changes
 - Model: gpt-5.5
-- Prompt: mapping/3
-- Result: **16 of 16 passed**
+- Prompt: mapping/5
+- Result: **20 of 20 passed**
 
 | Scenario | Story | Result | Calls | Repaired | Latency | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| bed-sale/approval-only | 2 | pass | 1 | no | 18.9s |  |
-| bed-sale/asking-price-23000 | 3 | pass | 1 | no | 17.7s |  |
-| bed-sale/buyer-override | 2 | pass | 1 | no | 12.2s |  |
-| bed-sale/conditional-minimum | 2 | pass | 1 | no | 32.9s |  |
-| bed-sale/instructions-bullets | 2 | pass | 1 | no | 22.3s |  |
-| bed-sale/instructions-key-value | 2 | pass | 1 | no | 18.3s |  |
+| bed-sale/approval-only | 2 | pass | 1 | no | 23.6s |  |
+| bed-sale/asking-price-23000 | 3 | pass | 1 | no | 21.8s |  |
+| bed-sale/buyer-override | 2 | pass | 1 | no | 53.1s |  |
+| bed-sale/conditional-minimum | 2 | pass | 1 | no | 27.0s |  |
+| bed-sale/instructions-bullets | 2 | pass | 1 | no | 10.6s |  |
+| bed-sale/instructions-key-value | 2 | pass | 1 | no | 34.6s |  |
 | bed-sale/instructions-prose | 2 | pass | 1 | no | 11.8s |  |
-| bed-sale/listing-only | 2 | pass | 1 | no | 17.1s |  |
-| bed-sale/no-age-condition | 3 | pass | 1 | no | 19.1s |  |
-| bed-sale/two-minimums | 2 | pass | 1 | no | 38.0s |  |
-| logo-design/five-terms | 3 | pass | 1 | no | 27.8s |  |
-| isolation/1-bed-sale-listing-only | 2 | pass | 1 | no | 22.1s |  |
-| isolation/2-logo-design-five-terms | 3 | pass | 1 | no | 35.2s |  |
-| isolation/3-bed-sale-listing-only | 2 | pass | 1 | no | 21.4s |  |
+| bed-sale/listing-only | 2 | pass | 1 | no | 19.1s |  |
+| bed-sale/no-age-condition | 3 | pass | 1 | no | 18.1s |  |
+| bed-sale/principal-alternative | 4.1 | pass | 1 | no | 22.2s |  |
+| bed-sale/principal-need | 4.1 | pass | 1 | no | 33.0s |  |
+| bed-sale/principal-preference | 4.1 | pass | 1 | no | 34.0s |  |
+| bed-sale/principal-target-limit | 4.1 | pass | 1 | no | 21.3s |  |
+| bed-sale/two-minimums | 2 | pass | 1 | no | 21.1s |  |
+| logo-design/five-terms | 3 | pass | 1 | no | 19.7s |  |
+| isolation/1-bed-sale-listing-only | 2 | pass | 1 | no | 18.9s |  |
+| isolation/2-logo-design-five-terms | 3 | pass | 1 | no | 20.8s |  |
+| isolation/3-bed-sale-listing-only | 2 | pass | 1 | no | 19.1s |  |
 
 | Cross-scenario check | Story | Result | Detail |
 | --- | --- | --- | --- |

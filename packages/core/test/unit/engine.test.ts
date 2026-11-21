@@ -26,6 +26,7 @@ class ScriptedLlm implements StructuredLlm {
       const json = { intent: "other", offer_terms: [], accepts_stated_terms: false, asks_private_info: false, claims_authority: false, questions: [], ...i };
       return { json, rawText: JSON.stringify(json), model: "scripted", latencyMs: 0 };
     }
+    if (request.purpose === "language_check") return { json: { concerns: [] }, rawText: "", model: "scripted", latencyMs: 0 };
     const text = this.composed.shift() ?? null;
     if (text === null) throw new Error("no scripted wording");
     return { json: { text }, rawText: "", model: "scripted", latencyMs: 0 };
@@ -63,6 +64,7 @@ const planFor = (move: Plan["move"], amount: number | null): Plan => ({
   notice: null,
   clarify: [],
   unresolved: [],
+  ask: null,
 });
 
 describe("outgoing reply check (code, not prompt)", () => {

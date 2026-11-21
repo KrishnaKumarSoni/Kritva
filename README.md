@@ -10,8 +10,11 @@ Kritva is a reusable AI negotiation capability for apps and assistants. It repre
 | 2. Shared negotiation record | One validated, append-only, durable event record per session. Text, voice, the console, strategy and evaluations all read it. |
 | 2A. Thin end-to-end slice | A buyer chat page, checked replies, an operator event panel, an agreement card, and a seven-scenario script on the same negotiation path. |
 | 3. Deal space | Terms classified from the confirmed mandate. Every proposal is checked deterministically, linked conditions included, and the running chat uses the checks. |
+| 4. Principal | Goals, needs, targets, preferences and alternatives kept distinct; permissions and limit exceptions read in code; changed instructions become drafts that only the principal can confirm. |
+| 5. Counterparty | Buyer needs, constraints, claims and stated authority kept as quoted claims; limit estimates only with a stated basis; questions prepared from session context. |
+| 6. Governance | Every outgoing action passes a two-phase gate (terms, then wording) against the active mandate; privacy and unsupported-claim checks; scoped exception approvals; pause. |
 
-Next: deepen the core (Epics 4–8) inside the running slice, then evaluation, the Kritva interface, browser voice and the demo interface. Strategy belongs to Epics 4, 5, 6 and 8, so the slice's policy stays minimal until then.
+Next: deepen the core (Epics 7–8) inside the running slice, then evaluation, the Kritva interface, browser voice and the demo interface. Strategy belongs to Epics 4, 5, 6 and 8, so the slice's policy stays minimal until then.
 
 ## Repository layout
 
@@ -22,6 +25,9 @@ packages/core/            the reusable core (TypeScript)
   src/mandate/            mandate confirmation (only confirmed mandates start sessions)
   src/record/             Epic 2: event types, append rules, SQLite storage
   src/dealspace/          Epic 3: term catalog and the deterministic proposal checker
+  src/governance/         Epic 4/6: authority, the outgoing gate, claim checks, model language check
+  src/counterparty/       Epic 5: buyer context projection and question preparation
+  src/mandate/            confirmation and mid-session revisions (drafts)
   src/negotiation/        Epic 2A: state projection, policy, reply check, turn engine
   src/llm/                provider-neutral model contract and the OpenAI adapter
   scripts/                operator tools (prepare and confirm a mandate)
@@ -29,7 +35,7 @@ apps/server/              HTTP API for the slice (Hono); buyer and operator rout
   scripts/run-scenarios.ts  the seven buyer scenarios, through the same routes as the chat page
 apps/web/                 buyer chat, seller console and outcome card (React + Vite)
 cases/                    case content, kept outside the core
-  bed-sale/mandates/      confirmed mandates: the demo one, and a conditional test one (test data)
+  bed-sale/mandates/      confirmed mandates: the demo one, plus conditional and exception test ones (test data)
   bed-sale/buyer-scenarios/  the buyer scenarios (seven core, plus four conditional-concession ones)
 test-results/             recorded evidence per epic
 ```
@@ -124,6 +130,34 @@ node --env-file=.env packages/core/scripts/prepare-mandate.ts bed-sale demo --co
 - **Checks bind to exact terms and the mandate revision.** A changed proposal or a revised mandate is checked again, and an earlier pass is never reused.
 - **Buyer requests stay the buyer's.** New terms (for example assembly) are recorded as requests, never promised or priced, and never written into the mandate.
 - **A pass is not permission.** Authority and agreement still follow the mandate's permissions and the seller's approval.
+
+**Principal (Epic 4)**
+- **Separate records for separate meanings.** Asking price, target and walk-away limit are separate records. A preference never becomes a fixed condition. Needs never imply deadlines. Alternatives are only what the principal states, and an absent one stays unknown.
+- **Authority is read in code.** Negotiating never implies accepting, and a missing permission is no permission.
+- **Each limit says whether an exception may be requested.** Unspecified means no.
+- **Conflicts block the affected actions.** Conflicting rules leave those actions unresolved until the principal clarifies them.
+- **Changed instructions are mapped into a draft by the same Epic 1 mapper.**
+  - A draft has no authority. Only the principal's control confirms it, and a stale draft cannot be confirmed.
+  - Confirming creates the next revision and re-checks pending proposals.
+  - Pending approvals are re-requested under the new revision.
+  - Agreements stay in history.
+
+**Counterparty (Epic 5)**
+- **Buyer statements stay claims.** Needs, constraints, reasons, preferences, authority, claims, budgets and "final" statements each quote the buyer's exact words, keep the agent's reading separate, and stay in this session only.
+- **Offers keep their package.** Amounts with different terms are never compared.
+- **Estimates need a basis.** A limit estimate exists only with a stated basis and assumptions. An offer is willingness, not a maximum, and contradictions stay visible.
+- **Questions come from context.** They are generated from the session in code: one clear thing each, never repeated once answered or refused. Strategy (Epic 8) decides whether to ask; the slice only asks at most one, while holding.
+
+**Governance (Epic 6)**
+- **Every outgoing action passes two gate phases.**
+  - Terms: deal space, authority, exception paths and approvals, under the active revision.
+  - Wording: amount checks, plus code rules against naming a limit, invented competition, deadlines, market claims and promises outside the terms. A model language check runs on composed text.
+- **Results and fallbacks.** The gate returns allow, block, needs approval or needs clarification, recorded with rule and reason. A failing reply falls back to checked template wording.
+- **Read-backs come from the checked fields.** Complete-terms and agreement read-backs are built from the checked terms, never written by the model.
+- **Authority is re-read just before sending.** If the mandate changed mid-turn, the action is planned again. Pause stops negotiation replies.
+- **Exceptions are scoped.** An exception is requested only where the limit allows it, offered only after approval, and covers those exact terms, that revision and that session once. The standing limit is unchanged.
+  - A rejected exception is not asked again for the same terms.
+  - The buyer can never create an approval.
 
 **Negotiation turns (Epic 2A)**
 - **One path for every surface.** The chat page, the scenario script and, later, voice all call the same engine.

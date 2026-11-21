@@ -177,7 +177,21 @@ export function App() {
               {consoleError}
             </p>
           )}
-          <RecordPanel view={operator} responding={responding} onRespond={respond} />
+          <RecordPanel
+            view={operator}
+            responding={responding}
+            onRespond={respond}
+            onPause={async (paused) => {
+              if (!sessionId) return;
+              try {
+                await api.setPaused(sessionId, paused);
+              } catch (e) {
+                setConsoleError(e instanceof ApiError ? e.message : "Unable to change the pause state.");
+              }
+              await refresh(sessionId);
+            }}
+            onChanged={() => sessionId && refresh(sessionId)}
+          />
         </div>
       </main>
     </div>

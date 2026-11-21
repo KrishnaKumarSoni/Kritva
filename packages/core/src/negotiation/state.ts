@@ -39,7 +39,11 @@ export interface NegotiationState {
   lastProposed: StatedOffer | null;
   /** The latest complete terms the agent stated for confirmation. */
   pendingFinal: StatedOffer | null;
-  pendingApproval: { requestId: string; offerId: string; termsHash: string; acceptanceId: string | null } | null;
+  pendingApproval: { requestId: string; offerId: string; termsHash: string; acceptanceId: string | null; purpose: "acceptance" | "exception"; breachedRuleIds: string[]; requestedAction: string } | null;
+  /** Every principal decision on an approval request, with the exact terms and revision it covers. */
+  approvals: Array<{ requestId: string; responseId: string; offerId: string; termsHash: string; mandateRevision: number; purpose: "acceptance" | "exception"; breachedRuleIds: string[]; decision: "approved" | "rejected" }>;
+  /** The status to return to when a pause ends. */
+  statusBeforePause: SessionStatus | null;
   acceptances: Array<{ id: string; offerId: string; termsHash: string }>;
   outcome: Outcome;
   /** Deal space of the mandate revision in force. */
@@ -50,8 +54,27 @@ export interface NegotiationState {
   requestedTerms: Array<{ id: string; name: string; value: Value | null }>;
   /** Latest deal-space check per offer, with the revision it was made against. */
   checks: Map<string, { eventId: string; result: "fits" | "conflicts" | "needs_clarification"; mandateRevision: number; termsHash: string; checkedTerms: OfferTerm[] }>;
+  checkFindings: Map<string, PayloadOf<"proposal_checked">["findings"]>;
   /** The most recent check of a counterparty proposal. */
   lastCounterpartyCheck: { offerId: string; checkedTerms: OfferTerm[]; result: "fits" | "conflicts" | "needs_clarification"; findings: PayloadOf<"proposal_checked">["findings"] } | null;
+}
+
+/** The principal's approval of these exact terms under the mandate revision in force, if any. */
+export function approvedFor(state: NegotiationState, termsHash: string): NegotiationState["approvals"][number] | null {
+  return state.approvals.findLast((a) => a.decision === "approved" && a.termsHash === termsHash && a.mandateRevision === state.mandateRevision) ?? null;
+}
+
+/**
+ * True when these terms may be used now: they pass the deal-space check, or the only conflicts
+ * are rules the principal approved an exception to for exactly these terms and this revision.
+ */
+export function clearedNow(state: NegotiationState, offerId: string, termsHash: string): boolean {
+  if (fitsNow(state, offerId, termsHash)) return true;
+  const check = state.checks.get(offerId);
+  const approval = approvedFor(state, termsHash);
+  if (!check || !approval || approval.purpose !== "exception" || check.mandateRevision !== state.mandateRevision || check.termsHash !== termsHash) return false;
+  const findings = state.checkFindings.get(offerId) ?? [];
+  return findings.every((f) => f.status === "fits" || (f.status === "conflict" && f.ruleId !== null && approval.breachedRuleIds.includes(f.ruleId)));
 }
 
 /** True only for a passing check made against the mandate revision now in force. */
@@ -79,6 +102,10 @@ export function projectState(ctx: SessionContext): NegotiationState {
   const counterpartyTerms = new Map<string, Value>();
   const requestedTerms: NegotiationState["requestedTerms"] = [];
   const checks: NegotiationState["checks"] = new Map();
+  const checkFindings: NegotiationState["checkFindings"] = new Map();
+  const approvals: NegotiationState["approvals"] = [];
+  const requests = new Map<string, PayloadOf<"approval_requested">>();
+  let statusBeforePause: SessionStatus | null = null;
   let lastCounterpartyCheck: NegotiationState["lastCounterpartyCheck"] = null;
 
   const amountOf = (terms: OfferTerm[]) => {
@@ -96,6 +123,7 @@ export function projectState(ctx: SessionContext): NegotiationState {
       case "proposal_checked": {
         const p = e.payload as PayloadOf<"proposal_checked">;
         checks.set(p.offerId, { eventId: e.id, result: p.result, mandateRevision: p.mandateRevision, termsHash: p.termsHash, checkedTerms: p.checkedTerms });
+        checkFindings.set(p.offerId, p.findings);
         if (ctx.byId.get(p.offerId)?.type === "offer_extracted") lastCounterpartyCheck = { offerId: p.offerId, checkedTerms: p.checkedTerms, result: p.result, findings: p.findings };
         break;
       }
@@ -110,7 +138,9 @@ export function projectState(ctx: SessionContext): NegotiationState {
         const p = ctx.effective.get(e.id) as PayloadOf<"offer_proposed">;
         lastProposed = { offerId: e.id, basis: p.basis, terms: p.terms, termsHash: p.termsHash, communicated: false };
         const amount = amountOf(p.terms);
-        if (amount !== null && amount !== currentAsk) {
+        // Only what the counterparty actually received counts as the agent's ask; an exception
+        // package waiting for the principal, or a blocked offer, never moved the ask.
+        if (amount !== null && amount !== currentAsk && ctx.isCommunicated(e.id)) {
           currentAsk = amount;
           askHistory.push(amount);
           if (p.basis === "counter") countersMade += 1;
@@ -125,11 +155,31 @@ export function projectState(ctx: SessionContext): NegotiationState {
       }
       case "approval_requested": {
         const p = e.payload as PayloadOf<"approval_requested">;
-        pendingApproval = { requestId: e.id, offerId: p.offerId, termsHash: p.termsHash, acceptanceId: p.acceptanceId };
+        requests.set(e.id, p);
+        pendingApproval = {
+          requestId: e.id,
+          offerId: p.offerId,
+          termsHash: p.termsHash,
+          acceptanceId: p.acceptanceId,
+          purpose: p.purpose ?? "acceptance",
+          breachedRuleIds: p.breachedRuleIds ?? [],
+          requestedAction: p.requestedAction ?? "",
+        };
         break;
       }
       case "approval_responded": {
         const p = e.payload as PayloadOf<"approval_responded">;
+        const request = requests.get(p.requestId);
+        approvals.push({
+          requestId: p.requestId,
+          responseId: e.id,
+          offerId: p.offerId,
+          termsHash: p.termsHash,
+          mandateRevision: p.mandateRevision,
+          purpose: request?.purpose ?? "acceptance",
+          breachedRuleIds: request?.breachedRuleIds ?? [],
+          decision: p.decision,
+        });
         answered.add(p.requestId);
         if (pendingApproval?.requestId === p.requestId) pendingApproval = null;
         break;
@@ -137,10 +187,14 @@ export function projectState(ctx: SessionContext): NegotiationState {
       case "agreement_recorded":
         agreement = { id: e.id, payload: e.payload as PayloadOf<"agreement_recorded"> };
         break;
-      case "status_changed":
-        // Leaving the approval wait (terms changed, or rejected) supersedes the pending request.
-        if ((e.payload as PayloadOf<"status_changed">).to !== "awaiting_approval") pendingApproval = null;
+      case "status_changed": {
+        const s = e.payload as PayloadOf<"status_changed">;
+        if (s.to === "paused") statusBeforePause = s.from;
+        else if (s.from === "paused") statusBeforePause = null;
+        // Leaving the approval wait for any reason but a pause supersedes the pending request.
+        if (s.to !== "awaiting_approval" && s.to !== "paused") pendingApproval = null;
         break;
+      }
     }
   }
   if (lastProposed) lastProposed.communicated = ctx.isCommunicated(lastProposed.offerId);
@@ -151,7 +205,8 @@ export function projectState(ctx: SessionContext): NegotiationState {
   let outcome: Outcome = { kind: "in_progress", terms: null, termsHash: null, agreementId: null, approvalRequestId: null };
   if (agreement) {
     outcome = { kind: "agreement", terms: agreement.payload.terms, termsHash: agreement.payload.termsHash, agreementId: agreement.id, approvalRequestId: null };
-  } else if (pendingApproval) {
+  } else if (pendingApproval && pendingApproval.purpose === "acceptance") {
+    // An exception request is internal to the principal; to everyone else the negotiation is still open.
     const terms = ctx.offerTerms(pendingApproval.offerId)?.terms ?? null;
     outcome = { kind: "pending_approval", terms, termsHash: pendingApproval.termsHash, agreementId: null, approvalRequestId: pendingApproval.requestId };
   } else if (ctx.status === "no_agreement" || ctx.status === "ended") {
@@ -173,6 +228,9 @@ export function projectState(ctx: SessionContext): NegotiationState {
     acceptances,
     outcome,
     space: buildDealSpace(ctx.mandate),
+    approvals,
+    statusBeforePause,
+    checkFindings,
     counterpartyTerms,
     requestedTerms,
     checks,

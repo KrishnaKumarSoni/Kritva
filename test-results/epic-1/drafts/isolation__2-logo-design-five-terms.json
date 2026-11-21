@@ -37,7 +37,7 @@
         }
       ],
       "name": "price",
-      "description": "Amount payable for the logo design work.",
+      "description": "Amount to pay for the logo design work.",
       "valueType": "money",
       "unit": null,
       "currency": "INR"
@@ -75,7 +75,7 @@
       "currency": null
     },
     {
-      "id": "term_t_delivery",
+      "id": "term_t_delivery_time",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -84,7 +84,7 @@
           "quote": "Delivery five days after kickoff"
         }
       ],
-      "name": "delivery timing",
+      "name": "delivery time",
       "description": "When delivery is to occur relative to kickoff.",
       "valueType": "date_text",
       "unit": null,
@@ -101,7 +101,7 @@
         }
       ],
       "name": "final file format",
-      "description": "Format for the final logo files.",
+      "description": "Format of final deliverable files.",
       "valueType": "text",
       "unit": null,
       "currency": null
@@ -119,14 +119,16 @@
         }
       ],
       "partyId": "client",
-      "description": "Find a logo designer.",
+      "kind": "objective",
+      "description": "Find or hire a logo designer.",
+      "termIds": [],
       "priority": null
     }
   ],
   "facts": [],
   "positions": [
     {
-      "id": "position_p_price",
+      "id": "position_pos_price_budget",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -145,7 +147,7 @@
       "conditionIds": []
     },
     {
-      "id": "position_p_concepts",
+      "id": "position_pos_concepts_two",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -164,7 +166,7 @@
       "conditionIds": []
     },
     {
-      "id": "position_p_revisions",
+      "id": "position_pos_revisions_two",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -183,7 +185,7 @@
       "conditionIds": []
     },
     {
-      "id": "position_p_delivery",
+      "id": "position_pos_delivery_five_days",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -193,7 +195,7 @@
         }
       ],
       "partyId": "client",
-      "termId": "term_t_delivery",
+      "termId": "term_t_delivery_time",
       "value": {
         "type": "date_text",
         "value": "five days after kickoff"
@@ -201,7 +203,7 @@
       "conditionIds": []
     },
     {
-      "id": "position_p_file_format",
+      "id": "position_pos_svg_format",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -221,8 +223,8 @@
   ],
   "limits": [
     {
-      "id": "limit_l_price_max",
-      "status": "stated",
+      "id": "limit_lim_price_budget",
+      "status": "inferred",
       "disclosure": "public",
       "sourceRefs": [
         {
@@ -238,9 +240,13 @@
         "amount": 5000,
         "currency": "INR"
       },
-      "conditionIds": []
+      "conditionIds": [],
+      "exception": "unspecified"
     }
   ],
+  "targets": [],
+  "preferences": [],
+  "alternatives": [],
   "permissions": [],
   "conditions": [],
   "issues": [
@@ -249,29 +255,7 @@
       "kind": "missing",
       "message": "No explicit authority is stated for the agent to accept an agreement on the client's behalf.",
       "relatedIds": [],
-      "sourceRefs": [
-        {
-          "sourceId": "brief",
-          "quote": "Looking for a logo designer."
-        }
-      ]
-    },
-    {
-      "id": "issue_2",
-      "kind": "missing",
-      "message": "The brief does not state whether the requested concept count, revision rounds, delivery timing, or SVG final file format are flexible or hard requirements.",
-      "relatedIds": [
-        "position_p_concepts",
-        "position_p_revisions",
-        "position_p_delivery",
-        "position_p_file_format"
-      ],
-      "sourceRefs": [
-        {
-          "sourceId": "brief",
-          "quote": "Two logo concepts\nTwo revision rounds\nDelivery five days after kickoff\nFinal files in SVG format"
-        }
-      ]
+      "sourceRefs": []
     }
   ],
   "approval": {

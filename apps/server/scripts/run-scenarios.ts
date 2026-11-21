@@ -10,6 +10,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execSync } from "node:child_process";
 import {
+  createMappingLlmFromEnv,
+  MandateRevisions,
   createTurnLlmFromEnv,
   findAmounts,
   NegotiationEngine,
@@ -31,7 +33,7 @@ interface Scenario {
   /** Confirmed mandate to run against; defaults to the demo mandate. */
   mandate?: string;
   description: string;
-  turns: Array<{ buyer: string } | { seller: "approved" | "rejected" }>;
+  turns: Array<{ buyer: string } | { seller: "approved" | "rejected" | "pause" | "resume" }>;
   expect: {
     outcome: string[];
     agreedAmountAtLeast?: number;
@@ -46,6 +48,12 @@ interface Scenario {
     buyerCheckResults?: Array<"fits" | "conflicts" | "needs_clarification">;
     /** No accepted terms below this amount, unless the named term has the named value. */
     noAcceptedOfferBelow?: { amount: number; unlessTerm: Record<string, string> };
+    /** The principal's standing minimum after the run (an exception must not change it). */
+    standingMinimum?: number;
+    /** An exception approval was requested during the run. */
+    exceptionRequested?: boolean;
+    /** Replies sent while paused carry no offer. */
+    pausedTurnsHaveNoOffers?: boolean;
   };
 }
 
@@ -66,7 +74,8 @@ const viewFor = (id: string) => {
 const record = new NegotiationRecord(new SqliteRecordBackend(join(mkdtempSync(join(tmpdir(), "kritva-scenarios-")), "record.sqlite")));
 const llm = createTurnLlmFromEnv();
 const engine = new NegotiationEngine({ record, llm, locale: "en-IN" });
-const app = createApp({ record, engine, mandates, locale: "en-IN" });
+const revisions = new MandateRevisions({ record, engine, mappingLlm: createMappingLlmFromEnv() });
+const app = createApp({ record, engine, revisions, mandates, locale: "en-IN" });
 
 async function call(method: string, path: string, body?: unknown) {
   const res = await app.request(path, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -86,6 +95,7 @@ interface RunResult {
   checks: Check[];
   transcript: Array<{ who: string; text: string; ms?: number }>;
   blockedReplies: number;
+  blockedRules: string[];
   turnMs: number[];
 }
 
@@ -114,6 +124,9 @@ async function runScenario(s: Scenario, run: number): Promise<RunResult> {
         // Same as the chat page: report delivery once the reply is shown.
         await call("POST", `/api/buyer/sessions/${id}/deliveries`, { messageId: res.json.reply.messageId });
       }
+    } else if (turn.seller === "pause" || turn.seller === "resume") {
+      await call("POST", `/api/operator/sessions/${id}/pause`, { paused: turn.seller === "pause" });
+      transcript.push({ who: "seller", text: `(${turn.seller})` });
     } else {
       const state = (await call("GET", `/api/operator/sessions/${id}`)).json.state;
       if (!state.pendingApproval) {
@@ -141,8 +154,11 @@ async function runScenario(s: Scenario, run: number): Promise<RunResult> {
   const proposed = events.filter((e) => e.type === "offer_proposed");
   const proposals = proposed.map((e) => amountOf((e.payload as any).terms) ?? Infinity);
   const checkEvents = events.filter((e) => e.type === "proposal_checked").map((e) => e.payload as any);
-  const unchecked = proposed.filter((o) => !checkEvents.some((c) => c.offerId === o.id && c.result === "fits"));
-  checks.push({ check: "every Kritva offer fits the deal space (checked in code)", pass: unchecked.length === 0, detail: `proposed ${proposals.join(", ") || "nothing"}` });
+  // Every offer actually sent must fit the deal space, or be covered by the principal's approved exception for those exact terms.
+  const sentIds = new Set(events.filter((e) => e.type === "message" && (e.payload as any).direction === "outbound").flatMap((e) => (e.payload as any).offerIds as string[]));
+  const approvedHashes = new Set(events.filter((e) => e.type === "approval_responded" && (e.payload as any).decision === "approved").map((e) => (e.payload as any).termsHash));
+  const unchecked = proposed.filter((o) => sentIds.has(o.id) && !checkEvents.some((c) => c.offerId === o.id && c.result === "fits") && !approvedHashes.has((o.payload as any).termsHash));
+  checks.push({ check: "every sent offer fits the deal space or an approved exception", pass: unchecked.length === 0, detail: `proposed ${proposals.join(", ") || "nothing"}` });
 
   const offered = new Set(proposals);
   const leaked = agentTexts.some((t) => findAmounts(t).some((a) => view.privateAmounts.includes(a) && !offered.has(a)));
@@ -168,7 +184,32 @@ async function runScenario(s: Scenario, run: number): Promise<RunResult> {
     return t ? String(t.value.value ?? t.value.amount ?? "") : undefined;
   };
 
+  const sentOffers = events.filter((e) => e.type === "message" && (e.payload as any).direction === "outbound" && (e.payload as any).offerIds.length > 0);
+  const gates = events.filter((e) => e.type === "action_checked").map((e) => e.payload as any);
+  const ungated = sentOffers.filter((m) => !gates.some((g) => g.phase === "send" && g.decision === "allow" && (m.payload as any).offerIds.includes(g.offerId)));
+  checks.push({ check: "every sent offer passed the outgoing gate", pass: ungated.length === 0, detail: `${sentOffers.length} offer message(s)` });
+
   // ---- Scenario expectations ----
+  if (s.expect.standingMinimum !== undefined) {
+    checks.push({ check: `standing minimum stays ${s.expect.standingMinimum}`, pass: state.view.negotiable?.limit === s.expect.standingMinimum, detail: `limit ${state.view.negotiable?.limit}` });
+  }
+  if (s.expect.exceptionRequested) {
+    const requested = events.some((e) => e.type === "approval_requested" && (e.payload as any).purpose === "exception");
+    checks.push({ check: "an exception approval was requested", pass: requested });
+    const exceptionOffers = events.filter((e) => e.type === "approval_requested" && (e.payload as any).purpose === "exception").map((e) => (e.payload as any).offerId);
+    const responses = events.filter((e) => e.type === "approval_responded").map((e) => e.payload as any);
+    const sentBeforeApproval = sentOffers.filter((m) => (m.payload as any).offerIds.some((o: string) => exceptionOffers.includes(o)) && !responses.some((r) => r.decision === "approved" && (m.payload as any).offerIds.includes(r.offerId) && events.findIndex((x) => x.payload === r) < events.indexOf(m)));
+    checks.push({ check: "exception terms were offered only after approval", pass: sentBeforeApproval.length === 0 });
+  }
+  if (s.expect.pausedTurnsHaveNoOffers) {
+    let paused = false;
+    let offeredWhilePaused = false;
+    for (const e of events) {
+      if (e.type === "status_changed") paused = (e.payload as any).to === "paused";
+      if (paused && e.type === "message" && (e.payload as any).direction === "outbound" && (e.payload as any).offerIds.length > 0) offeredWhilePaused = true;
+    }
+    checks.push({ check: "no offer sent while paused", pass: !offeredWhilePaused });
+  }
   if (s.expect.agreedTermEquals) {
     for (const [name, value] of Object.entries(s.expect.agreedTermEquals)) {
       const got = state.outcome.terms ? termValue(state.outcome.terms as any[], name) : undefined;
@@ -232,6 +273,7 @@ async function runScenario(s: Scenario, run: number): Promise<RunResult> {
     checks,
     transcript,
     blockedReplies: events.filter((e) => e.type === "reply_blocked").length,
+    blockedRules: events.filter((e) => e.type === "reply_blocked").flatMap((e) => (e.payload as any).violations.map((v: any) => `${v.rule}: ${v.detail}`)),
     turnMs,
   };
 }
@@ -275,9 +317,9 @@ const lines = [
   `- Result: **${summary.passed} of ${summary.total} scenario runs passed**`,
   `- Text turn latency (interpret + decide + compose + check + record): p50 ${(pct(50) / 1000).toFixed(1)}s, p90 ${(pct(90) / 1000).toFixed(1)}s`,
   "",
-  "| Scenario | Run | Result | Blocked replies | Failed checks |",
+  "| Scenario | Run | Result | Blocked replies (rules) | Failed checks |",
   "| --- | --- | --- | --- | --- |",
-  ...results.map((r) => `| ${r.scenario} | ${r.run} | ${r.passed ? "pass" : "**fail**"} | ${r.blockedReplies} | ${r.checks.filter((c) => !c.pass).map((c) => `${c.check}${c.detail ? ` (${c.detail})` : ""}`).join("; ").replace(/\|/g, "\\|")} |`),
+  ...results.map((r) => `| ${r.scenario} | ${r.run} | ${r.passed ? "pass" : "**fail**"} | ${r.blockedReplies}${r.blockedRules.length ? ` (${[...new Set(r.blockedRules.map((x) => x.split(":")[0]))].join(", ")})` : ""} | ${r.checks.filter((c) => !c.pass).map((c) => `${c.check}${c.detail ? ` (${c.detail})` : ""}`).join("; ").replace(/\|/g, "\\|")} |`),
   "",
   "## Transcripts",
   "",

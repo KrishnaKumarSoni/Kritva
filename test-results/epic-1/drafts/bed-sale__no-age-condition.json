@@ -43,7 +43,7 @@
       "currency": "INR"
     },
     {
-      "id": "term_t_pickup_location",
+      "id": "term_t_pickup_place",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -52,8 +52,8 @@
           "quote": "Pickup from Koramangala, Bangalore."
         }
       ],
-      "name": "pickup location",
-      "description": "Where the buyer would pick up the bed.",
+      "name": "pickup place",
+      "description": "Place where the bed is to be picked up.",
       "valueType": "text",
       "unit": null,
       "currency": null
@@ -87,23 +87,25 @@
         }
       ],
       "partyId": "seller",
-      "description": "Sell the king-size bed.",
+      "kind": "objective",
+      "description": "Seller wants to sell the bed.",
+      "termIds": [],
       "priority": null
     }
   ],
   "facts": [
     {
-      "id": "fact_f_subject",
+      "id": "fact_f_bed_size_type",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
         {
           "sourceId": "listing-no-age-condition",
-          "quote": "King-size bed for sale"
+          "quote": "King-size bed"
         }
       ],
       "partyId": "seller",
-      "statement": "The item for sale is a king-size bed.",
+      "statement": "The item is a king-size bed.",
       "termId": null,
       "value": {
         "type": "text",
@@ -113,7 +115,7 @@
   ],
   "positions": [
     {
-      "id": "position_p_price",
+      "id": "position_p_price_asking",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -132,7 +134,7 @@
       "conditionIds": []
     },
     {
-      "id": "position_p_pickup_location",
+      "id": "position_p_pickup_place",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -142,7 +144,7 @@
         }
       ],
       "partyId": "seller",
-      "termId": "term_t_pickup_location",
+      "termId": "term_t_pickup_place",
       "value": {
         "type": "text",
         "value": "Koramangala, Bangalore"
@@ -169,25 +171,33 @@
     }
   ],
   "limits": [],
+  "targets": [],
+  "preferences": [],
+  "alternatives": [],
   "permissions": [],
   "conditions": [],
   "issues": [
     {
       "id": "issue_1",
       "kind": "missing",
-      "message": "No explicit authority is stated for the agent to accept an agreement on the seller's behalf.",
+      "message": "No stated authority for the agent to accept an agreement on the seller's behalf.",
       "relatedIds": [],
       "sourceRefs": []
     },
     {
       "id": "issue_2",
       "kind": "missing",
-      "message": "No minimum acceptable price or other price concession limit is stated for negotiation below the listed price.",
+      "message": "No stated lowest acceptable price or authority to accept less than the listed price.",
       "relatedIds": [
         "term_t_price",
-        "position_p_price"
+        "position_p_price_asking"
       ],
-      "sourceRefs": []
+      "sourceRefs": [
+        {
+          "sourceId": "listing-no-age-condition",
+          "quote": "Price: ₹20,000"
+        }
+      ]
     }
   ],
   "approval": {

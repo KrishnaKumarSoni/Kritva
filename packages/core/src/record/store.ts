@@ -12,7 +12,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { validateConfirmedMandate } from "../mandate/confirm.ts";
 import type { ConfirmedMandate } from "../schema/records.ts";
 import type { ValidationIssue } from "../schema/validate.ts";
-import { canonicalJson, type Actor, type EventType, type NewEvent, type RecordedEvent } from "./events.ts";
+import { canonicalJson, PAYLOADS, type Actor, type EventType, type NewEvent, type RecordedEvent } from "./events.ts";
 import { SessionContext, validateNewEvent, visibilityFor } from "./rules.ts";
 
 export interface SessionRow {
@@ -149,7 +149,10 @@ export class NegotiationRecord {
     if (errors.length > 0) return fail("invalid_event", "The event was rejected.", errors);
 
     const seq = (ctx.events.at(-1)?.seq ?? 0) + 1;
-    const row = toRow(event, actor, sessionId, seq, this.#now().toISOString(), visibilityFor(event.type, ctx, event.payload));
+    // Store the parsed payload, so defaults are written down rather than implied.
+    const stored = { ...event, payload: PAYLOADS[event.type].parse(event.payload) } as NewEvent;
+    const row = toRow(stored, actor, sessionId, seq, this.#now().toISOString(), visibilityFor(event.type, ctx, event.payload));
+    row.contentHash = contentHash;
     this.#backend.insertEvent(row);
     return { ok: true, event: fromRow(row), created: true };
   }

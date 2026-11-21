@@ -3,7 +3,7 @@
  * live seller's mandate. Each record quotes its source exactly, as the validator requires.
  */
 import { confirmMandate, type ValidConfirmedMandate } from "../../src/mandate/confirm.ts";
-import { SCHEMA_VERSION, type MandateDraft, type Value } from "../../src/schema/records.ts";
+import { SCHEMA_VERSION, type MandateDraftInput as MandateDraft, type Value } from "../../src/schema/records.ts";
 import { validateDraft } from "../../src/schema/validate.ts";
 
 export const LISTING = "King-size bed, one year old, good condition. Price: ₹20,000. Pickup from Koramangala, Bangalore. Delivery is not included.";
@@ -103,5 +103,56 @@ export function listingOnlyDeliveryMandate(minimum = 18_000): ValidConfirmedMand
     build: (d) => {
       d.limits.push({ id: "limit_min", status: "stated", disclosure: "private", sourceRefs: ref("instructions", `don't go below ${amount}`), partyId: "seller", termId: "term_price", kind: "minimum", value: money(minimum), conditionIds: [] });
     },
+  });
+}
+
+const minLimit = (amount: number, exception: "not_allowed" | "with_approval" | "unspecified", quote: string) => ({
+  id: "limit_min",
+  status: "stated" as const,
+  disclosure: "private" as const,
+  sourceRefs: ref("instructions", quote),
+  partyId: "seller",
+  termId: "term_price",
+  kind: "minimum" as const,
+  value: money(amount),
+  conditionIds: [],
+  exception,
+});
+
+/** "Never below ₹18,000; no exceptions." Test data. */
+export function noExceptionMandate(): ValidConfirmedMandate {
+  return buildMandate({
+    instructions: "You can negotiate the price. Never below ₹18,000; no exceptions. Ask me before accepting any offer.",
+    build: (d) => d.limits.push(minLimit(18_000, "not_allowed", "Never below ₹18,000; no exceptions")),
+  });
+}
+
+/** "Below ₹18,000 requires my approval." Test data. */
+export function exceptionMandate(): ValidConfirmedMandate {
+  return buildMandate({
+    instructions: "You can negotiate the price. Below ₹18,000 requires my approval. Ask me before accepting any offer.",
+    build: (d) => d.limits.push(minLimit(18_000, "with_approval", "Below ₹18,000 requires my approval")),
+  });
+}
+
+/** Two minimums with no correction: the price authority stays unresolved. Test data. */
+export function conflictingMinimumsMandate(): ValidConfirmedMandate {
+  return buildMandate({
+    instructions: "You can negotiate the price. My minimum is ₹18,000. Don't accept anything below ₹19,000. Ask me before accepting any offer.",
+    build: (d) => {
+      d.limits.push(
+        { ...minLimit(18_000, "unspecified", "My minimum is ₹18,000"), id: "limit_min_a" },
+        { ...minLimit(19_000, "unspecified", "Don't accept anything below ₹19,000"), id: "limit_min_b" },
+      );
+      d.issues.push({ id: "issue_conflict", kind: "conflict", message: "Two different minimum prices were given.", relatedIds: ["limit_min_a", "limit_min_b"], sourceRefs: [] });
+    },
+  });
+}
+
+/** "Discuss offers, but ask before accepting." No price floor at all. Test data. */
+export function askBeforeAcceptingMandate(): ValidConfirmedMandate {
+  return buildMandate({
+    instructions: "You can negotiate the price, but ask me before accepting any offer.",
+    build: () => undefined,
   });
 }

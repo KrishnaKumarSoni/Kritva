@@ -42,7 +42,8 @@ export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
 
   for (const sentence of sentences) {
     for (const amount of findAmounts(sentence)) {
-      if (view.privateAmounts.includes(amount) && !offered.includes(amount)) {
+      // Repeating the counterparty's own number reveals nothing; any other private value does.
+      if (view.privateAmounts.includes(amount) && !offered.includes(amount) && !ctx.counterpartyAmounts.includes(amount)) {
         violations.push({ rule: "private_amount", detail: "Mentions a private value that is not being offered." });
       } else if (!allowed.has(amount)) {
         violations.push({ rule: "unplanned_amount", detail: "Mentions an amount that is not part of the planned move." });

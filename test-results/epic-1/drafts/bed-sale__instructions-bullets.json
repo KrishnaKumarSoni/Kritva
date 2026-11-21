@@ -49,13 +49,13 @@
         }
       ],
       "name": "price",
-      "description": "Sale price for the bed.",
+      "description": "sale price for the bed",
       "valueType": "money",
       "unit": null,
       "currency": "INR"
     },
     {
-      "id": "term_t_pickup_location",
+      "id": "term_t_pickup_place",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -64,8 +64,8 @@
           "quote": "Pickup from Koramangala, Bangalore."
         }
       ],
-      "name": "pickup location",
-      "description": "Location where the bed is to be picked up.",
+      "name": "pickup place",
+      "description": "place where the bed is to be picked up",
       "valueType": "text",
       "unit": null,
       "currency": null
@@ -81,7 +81,7 @@
         }
       ],
       "name": "delivery included",
-      "description": "Whether delivery is included in the sale.",
+      "description": "whether delivery is included in the sale",
       "valueType": "boolean",
       "unit": null,
       "currency": null
@@ -89,7 +89,7 @@
   ],
   "goals": [
     {
-      "id": "goal_g_sell_quickly_fair_price",
+      "id": "goal_g_sell_quickly_fair",
       "status": "stated",
       "disclosure": "private",
       "sourceRefs": [
@@ -99,13 +99,17 @@
         }
       ],
       "partyId": "seller",
+      "kind": "objective",
       "description": "Sell quickly at a fair price.",
+      "termIds": [
+        "term_t_price"
+      ],
       "priority": null
     }
   ],
   "facts": [
     {
-      "id": "fact_f_king_size_bed",
+      "id": "fact_f_subject_bed",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -123,7 +127,7 @@
       }
     },
     {
-      "id": "fact_f_one_year_old",
+      "id": "fact_f_age",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -141,13 +145,13 @@
       }
     },
     {
-      "id": "fact_f_good_condition",
+      "id": "fact_f_condition",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
         {
           "sourceId": "listing",
-          "quote": "in good condition"
+          "quote": "good condition"
         }
       ],
       "partyId": "seller",
@@ -180,7 +184,7 @@
       "conditionIds": []
     },
     {
-      "id": "position_p_pickup_location",
+      "id": "position_p_pickup_place",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -190,7 +194,7 @@
         }
       ],
       "partyId": "seller",
-      "termId": "term_t_pickup_location",
+      "termId": "term_t_pickup_place",
       "value": {
         "type": "text",
         "value": "Koramangala, Bangalore"
@@ -218,7 +222,7 @@
   ],
   "limits": [
     {
-      "id": "limit_l_min_price",
+      "id": "limit_l_lowest_price",
       "status": "stated",
       "disclosure": "private",
       "sourceRefs": [
@@ -235,9 +239,13 @@
         "amount": 18000,
         "currency": "INR"
       },
-      "conditionIds": []
+      "conditionIds": [],
+      "exception": "unspecified"
     }
   ],
+  "targets": [],
+  "preferences": [],
+  "alternatives": [],
   "permissions": [
     {
       "id": "permission_perm_accept_requires_approval",
@@ -253,7 +261,7 @@
       "action": "accept_agreement",
       "mode": "requires_approval",
       "termIds": [],
-      "description": "Ask the seller before accepting any offer.",
+      "description": "Seller must be asked before accepting any offer.",
       "conditionIds": []
     },
     {

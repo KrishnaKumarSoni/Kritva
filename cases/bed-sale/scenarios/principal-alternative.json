@@ -1,0 +1,37 @@
+{
+  "name": "principal-alternative",
+  "story": "4.1",
+  "description": "\"If no deal, I will keep the bed\": alternative recorded; no invented monetary value or competing buyer.",
+  "sources": [
+    "listing",
+    "principal-alternative"
+  ],
+  "expect": {
+    "require": [
+      {
+        "record": "alternative",
+        "party": "principal",
+        "textIncludesAny": [
+          "keep"
+        ]
+      }
+    ],
+    "forbid": [
+      {
+        "record": "alternative",
+        "value": {
+          "type": "money"
+        }
+      },
+      {
+        "record": "alternative",
+        "textIncludesAny": [
+          "buyer",
+          "competing",
+          "another",
+          "offer"
+        ]
+      }
+    ]
+  }
+}

@@ -55,7 +55,7 @@
       "currency": "INR"
     },
     {
-      "id": "term_t_pickup_location",
+      "id": "term_t_pickup_place",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -64,8 +64,8 @@
           "quote": "Pickup from Koramangala, Bangalore."
         }
       ],
-      "name": "pickup location",
-      "description": "Location where the bed is to be picked up.",
+      "name": "pickup place",
+      "description": "Place where the bed is to be picked up.",
       "valueType": "text",
       "unit": null,
       "currency": null
@@ -99,7 +99,9 @@
         }
       ],
       "partyId": "seller",
-      "description": "Sell quickly.",
+      "kind": "objective",
+      "description": "Sell the bed quickly.",
+      "termIds": [],
       "priority": null
     },
     {
@@ -113,13 +115,17 @@
         }
       ],
       "partyId": "seller",
+      "kind": "objective",
       "description": "Achieve a fair price.",
+      "termIds": [
+        "term_t_price"
+      ],
       "priority": null
     }
   ],
   "facts": [
     {
-      "id": "fact_f_bed_type",
+      "id": "fact_f_bed_size",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -129,11 +135,11 @@
         }
       ],
       "partyId": "seller",
-      "statement": "The item for sale is a king-size bed.",
+      "statement": "The bed is king-size.",
       "termId": null,
       "value": {
         "type": "text",
-        "value": "king-size bed"
+        "value": "king-size"
       }
     },
     {
@@ -150,8 +156,9 @@
       "statement": "The bed is one year old.",
       "termId": null,
       "value": {
-        "type": "text",
-        "value": "One-year-old"
+        "type": "quantity",
+        "amount": 1,
+        "unit": "year"
       }
     },
     {
@@ -194,7 +201,7 @@
       "conditionIds": []
     },
     {
-      "id": "position_p_pickup_location",
+      "id": "position_p_pickup_place",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -204,7 +211,7 @@
         }
       ],
       "partyId": "seller",
-      "termId": "term_t_pickup_location",
+      "termId": "term_t_pickup_place",
       "value": {
         "type": "text",
         "value": "Koramangala, Bangalore"
@@ -212,7 +219,7 @@
       "conditionIds": []
     },
     {
-      "id": "position_p_delivery_not_included",
+      "id": "position_p_no_delivery",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -232,7 +239,7 @@
   ],
   "limits": [
     {
-      "id": "limit_l_minimum_price",
+      "id": "limit_l_min_price",
       "status": "stated",
       "disclosure": "private",
       "sourceRefs": [
@@ -249,12 +256,16 @@
         "amount": 18000,
         "currency": "INR"
       },
-      "conditionIds": []
+      "conditionIds": [],
+      "exception": "unspecified"
     }
   ],
+  "targets": [],
+  "preferences": [],
+  "alternatives": [],
   "permissions": [
     {
-      "id": "permission_perm_accept_offers",
+      "id": "permission_perm_accept_requires_approval",
       "status": "stated",
       "disclosure": "private",
       "sourceRefs": [
@@ -267,11 +278,11 @@
       "action": "accept_agreement",
       "mode": "requires_approval",
       "termIds": [],
-      "description": "Ask the seller first before accepting every offer.",
+      "description": "Ask the seller before accepting every offer.",
       "conditionIds": []
     },
     {
-      "id": "permission_perm_disclose_minimum_price",
+      "id": "permission_perm_do_not_disclose_min_price",
       "status": "stated",
       "disclosure": "private",
       "sourceRefs": [
@@ -286,7 +297,7 @@
       "termIds": [
         "term_t_price"
       ],
-      "description": "Do not disclose the seller's minimum price to the buyer.",
+      "description": "Do not share the seller's minimum price with the buyer.",
       "conditionIds": []
     }
   ],

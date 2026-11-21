@@ -83,10 +83,9 @@
       "currency": null
     }
   ],
-  "goals": [],
-  "facts": [
+  "goals": [
     {
-      "id": "fact_f_subject",
+      "id": "goal_g_sell_bed",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -96,15 +95,33 @@
         }
       ],
       "partyId": "seller",
-      "statement": "The item for sale is a king-size bed.",
+      "kind": "objective",
+      "description": "Seller wants to sell the bed.",
+      "termIds": [],
+      "priority": null
+    }
+  ],
+  "facts": [
+    {
+      "id": "fact_f_bed_size",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "King-size bed for sale"
+        }
+      ],
+      "partyId": "seller",
+      "statement": "The bed is king-size.",
       "termId": null,
       "value": {
         "type": "text",
-        "value": "king-size bed"
+        "value": "king-size"
       }
     },
     {
-      "id": "fact_f_age",
+      "id": "fact_f_bed_age",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -117,12 +134,13 @@
       "statement": "The bed is one year old.",
       "termId": null,
       "value": {
-        "type": "text",
-        "value": "One-year-old"
+        "type": "quantity",
+        "amount": 1,
+        "unit": "year"
       }
     },
     {
-      "id": "fact_f_condition",
+      "id": "fact_f_bed_condition",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -137,6 +155,24 @@
       "value": {
         "type": "text",
         "value": "good condition"
+      }
+    },
+    {
+      "id": "fact_f_location",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "listing",
+          "quote": "Pickup from Koramangala, Bangalore."
+        }
+      ],
+      "partyId": "seller",
+      "statement": "Pickup is from Koramangala, Bangalore.",
+      "termId": "term_t_pickup_location",
+      "value": {
+        "type": "text",
+        "value": "Koramangala, Bangalore"
       }
     }
   ],
@@ -198,9 +234,12 @@
     }
   ],
   "limits": [],
+  "targets": [],
+  "preferences": [],
+  "alternatives": [],
   "permissions": [
     {
-      "id": "permission_perm_accept_requires_approval",
+      "id": "permission_perm_accept_approval",
       "status": "stated",
       "disclosure": "private",
       "sourceRefs": [
@@ -213,7 +252,7 @@
       "action": "accept_agreement",
       "mode": "requires_approval",
       "termIds": [],
-      "description": "The agent must ask the seller before accepting any offer.",
+      "description": "Seller must be asked before accepting any offer.",
       "conditionIds": []
     }
   ],
@@ -222,19 +261,24 @@
     {
       "id": "issue_1",
       "kind": "missing",
-      "message": "No lowest acceptable price is stated, so any price concession or acceptance threshold is unresolved.",
+      "message": "No minimum acceptable price or authority to accept a specific price without approval is stated.",
       "relatedIds": [
         "term_t_price",
-        "position_p_price"
+        "permission_perm_accept_approval"
       ],
-      "sourceRefs": []
+      "sourceRefs": [
+        {
+          "sourceId": "instructions-approval-only",
+          "quote": "Ask me before accepting any offer."
+        }
+      ]
     },
     {
       "id": "issue_2",
       "kind": "missing",
-      "message": "No explicit authority is stated to make concessions or propose changed terms without approval.",
+      "message": "No explicit authority to propose terms, counteroffers, or make concessions is stated.",
       "relatedIds": [
-        "permission_perm_accept_requires_approval"
+        "permission_perm_accept_approval"
       ],
       "sourceRefs": [
         {

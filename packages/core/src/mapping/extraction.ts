@@ -37,6 +37,8 @@ export interface ExtractedTerm {
 export interface ExtractedGoal {
   ref: string;
   party_id: string;
+  kind?: "objective" | "need" | "reason";
+  term_refs?: string[];
   description: string;
   priority: number | null;
   status: Status;
@@ -70,6 +72,31 @@ export interface ExtractedLimit {
   kind: "minimum" | "maximum" | "must_equal" | "must_not_equal" | "allowed_value";
   value: ExtractedValue | null;
   condition_refs: string[];
+  /** Whether the principal allows asking for an exception to this limit. */
+  exception?: "not_allowed" | "with_approval" | "unspecified";
+  status: Status;
+  quotes: ExtractedQuote[];
+}
+
+export interface ExtractedTarget {
+  ref: string;
+  party_id: string;
+  term_ref: string;
+  value: ExtractedValue | null;
+  condition_refs: string[];
+  status: Status;
+  quotes: ExtractedQuote[];
+}
+
+export interface ExtractedPreference extends ExtractedTarget {
+  strength: "preferred" | "acceptable" | "avoid";
+}
+
+export interface ExtractedAlternative {
+  ref: string;
+  party_id: string;
+  description: string;
+  value: ExtractedValue | null;
   status: Status;
   quotes: ExtractedQuote[];
 }
@@ -108,6 +135,10 @@ export interface Extraction {
   facts: ExtractedFact[];
   positions: ExtractedPosition[];
   limits: ExtractedLimit[];
+  /** Added in mapping/4. Older outputs may leave these out. */
+  targets?: ExtractedTarget[];
+  preferences?: ExtractedPreference[];
+  alternatives?: ExtractedAlternative[];
   permissions: ExtractedPermission[];
   conditions: ExtractedCondition[];
   issues: ExtractedIssue[];
@@ -119,6 +150,9 @@ export const EXTRACTION_COLLECTIONS = [
   "facts",
   "positions",
   "limits",
+  "targets",
+  "preferences",
+  "alternatives",
   "permissions",
   "conditions",
 ] as const;
@@ -174,7 +208,16 @@ export function buildExtractionJsonSchema(partyIds: string[], sourceIds: string[
       }),
     ),
     goals: arr(
-      obj({ ref: str, party_id: partyId, description: str, priority: { type: ["integer", "null"] }, status, quotes }),
+      obj({
+        ref: str,
+        party_id: partyId,
+        kind: enumOf(["objective", "need", "reason"]),
+        term_refs: arr(str),
+        description: str,
+        priority: { type: ["integer", "null"] },
+        status,
+        quotes,
+      }),
     ),
     facts: arr(
       obj({ ref: str, party_id: partyId, statement: str, term_ref: nullableStr, value: nullableValue, status, quotes }),
@@ -190,10 +233,25 @@ export function buildExtractionJsonSchema(partyIds: string[], sourceIds: string[
         kind: enumOf(["minimum", "maximum", "must_equal", "must_not_equal", "allowed_value"]),
         value: nullableValue,
         condition_refs: arr(str),
+        exception: enumOf(["not_allowed", "with_approval", "unspecified"]),
         status,
         quotes,
       }),
     ),
+    targets: arr(obj({ ref: str, party_id: partyId, term_ref: str, value: nullableValue, condition_refs: arr(str), status, quotes })),
+    preferences: arr(
+      obj({
+        ref: str,
+        party_id: partyId,
+        term_ref: str,
+        value: nullableValue,
+        strength: enumOf(["preferred", "acceptable", "avoid"]),
+        condition_refs: arr(str),
+        status,
+        quotes,
+      }),
+    ),
+    alternatives: arr(obj({ ref: str, party_id: partyId, description: str, value: nullableValue, status, quotes })),
     permissions: arr(
       obj({
         ref: str,

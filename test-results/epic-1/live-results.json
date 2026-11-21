@@ -1,8 +1,8 @@
 {
-  "runAt": "2026-11-21T13:58:18.571Z",
-  "commit": "56b98e0 + uncommitted changes",
+  "runAt": "2026-11-21T14:49:12.710Z",
+  "commit": "6e1205a + uncommitted changes",
   "model": "gpt-5.5",
-  "promptVersion": "mapping/3",
+  "promptVersion": "mapping/5",
   "runs": [
     {
       "key": "bed-sale/approval-only",
@@ -13,7 +13,7 @@
       "llmCalls": 1,
       "repaired": false,
       "repairReasons": [],
-      "latencyMs": 18861,
+      "latencyMs": 23618,
       "model": "gpt-5.5-2026-04-23",
       "errorCode": null,
       "validationErrors": [],
@@ -45,7 +45,7 @@
       "llmCalls": 1,
       "repaired": false,
       "repairReasons": [],
-      "latencyMs": 17714,
+      "latencyMs": 21790,
       "model": "gpt-5.5-2026-04-23",
       "errorCode": null,
       "validationErrors": [],
@@ -73,7 +73,7 @@
       "llmCalls": 1,
       "repaired": false,
       "repairReasons": [],
-      "latencyMs": 12167,
+      "latencyMs": 53058,
       "model": "gpt-5.5-2026-04-23",
       "errorCode": null,
       "validationErrors": [],
@@ -113,7 +113,7 @@
       "llmCalls": 1,
       "repaired": false,
       "repairReasons": [],
-      "latencyMs": 32893,
+      "latencyMs": 26993,
       "model": "gpt-5.5-2026-04-23",
       "errorCode": null,
       "validationErrors": [],
@@ -141,7 +141,7 @@
       "llmCalls": 1,
       "repaired": false,
       "repairReasons": [],
-      "latencyMs": 22282,
+      "latencyMs": 10627,
       "model": "gpt-5.5-2026-04-23",
       "errorCode": null,
       "validationErrors": [],
@@ -185,7 +185,7 @@
       "llmCalls": 1,
       "repaired": false,
       "repairReasons": [],
-      "latencyMs": 18283,
+      "latencyMs": 34587,
       "model": "gpt-5.5-2026-04-23",
       "errorCode": null,
       "validationErrors": [],
@@ -229,7 +229,7 @@
       "llmCalls": 1,
       "repaired": false,
       "repairReasons": [],
-      "latencyMs": 11758,
+      "latencyMs": 11798,
       "model": "gpt-5.5-2026-04-23",
       "errorCode": null,
       "validationErrors": [],
@@ -273,7 +273,7 @@
       "llmCalls": 1,
       "repaired": false,
       "repairReasons": [],
-      "latencyMs": 17131,
+      "latencyMs": 19085,
       "model": "gpt-5.5-2026-04-23",
       "errorCode": null,
       "validationErrors": [],
@@ -295,6 +295,14 @@
           "pass": true
         },
         {
+          "check": "forbid {\"record\":\"target\"}",
+          "pass": true
+        },
+        {
+          "check": "forbid {\"record\":\"alternative\"}",
+          "pass": true
+        },
+        {
           "check": "forbidText [\"mattress\",\"logo\",\"svg\",\"revision\",\"concept\"]",
           "pass": true
         }
@@ -309,7 +317,7 @@
       "llmCalls": 1,
       "repaired": false,
       "repairReasons": [],
-      "latencyMs": 19050,
+      "latencyMs": 18082,
       "model": "gpt-5.5-2026-04-23",
       "errorCode": null,
       "validationErrors": [],
@@ -329,6 +337,150 @@
       ]
     },
     {
+      "key": "bed-sale/principal-alternative",
+      "story": "4.1",
+      "description": "\"If no deal, I will keep the bed\": alternative recorded; no invented monetary value or competing buyer.",
+      "ok": true,
+      "passed": true,
+      "llmCalls": 1,
+      "repaired": false,
+      "repairReasons": [],
+      "latencyMs": 22159,
+      "model": "gpt-5.5-2026-04-23",
+      "errorCode": null,
+      "validationErrors": [],
+      "checks": [
+        {
+          "check": "draft is unapproved",
+          "pass": true
+        },
+        {
+          "check": "require {\"record\":\"alternative\",\"party\":\"principal\",\"textIncludesAny\":[\"keep\"]}",
+          "pass": true
+        },
+        {
+          "check": "forbid {\"record\":\"alternative\",\"value\":{\"type\":\"money\"}}",
+          "pass": true
+        },
+        {
+          "check": "forbid {\"record\":\"alternative\",\"textIncludesAny\":[\"buyer\",\"competing\",\"another\",\"offer\"]}",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "key": "bed-sale/principal-need",
+      "story": "4.1",
+      "description": "\"I need the room cleared soon\": need recorded; no invented deadline or permission to reduce price.",
+      "ok": true,
+      "passed": true,
+      "llmCalls": 1,
+      "repaired": false,
+      "repairReasons": [],
+      "latencyMs": 32959,
+      "model": "gpt-5.5-2026-04-23",
+      "errorCode": null,
+      "validationErrors": [],
+      "checks": [
+        {
+          "check": "draft is unapproved",
+          "pass": true
+        },
+        {
+          "check": "require {\"record\":\"goal\",\"party\":\"principal\",\"goalKind\":\"need\"}",
+          "pass": true
+        },
+        {
+          "check": "forbid {\"record\":\"permission\",\"action\":\"make_concession\"}",
+          "pass": true
+        },
+        {
+          "check": "forbid {\"record\":\"permission\",\"action\":\"propose_terms\"}",
+          "pass": true
+        },
+        {
+          "check": "forbid {\"record\":[\"position\",\"limit\",\"condition\",\"fact\"],\"value\":{\"type\":\"date_text\"}}",
+          "pass": true
+        },
+        {
+          "check": "forbid {\"record\":\"limit\",\"kind\":\"minimum\"}",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "key": "bed-sale/principal-preference",
+      "story": "4.1",
+      "description": "\"Saturday pickup preferred; Sunday also works\": preference recorded; Sunday remains possible.",
+      "ok": true,
+      "passed": true,
+      "llmCalls": 1,
+      "repaired": false,
+      "repairReasons": [],
+      "latencyMs": 34047,
+      "model": "gpt-5.5-2026-04-23",
+      "errorCode": null,
+      "validationErrors": [],
+      "checks": [
+        {
+          "check": "draft is unapproved",
+          "pass": true
+        },
+        {
+          "check": "require {\"record\":\"preference\",\"party\":\"principal\",\"strength\":\"preferred\",\"value\":{\"textIncludes\":\"saturday\"}}",
+          "pass": true
+        },
+        {
+          "check": "forbid {\"record\":\"limit\",\"kind\":\"must_equal\",\"value\":{\"textIncludes\":\"saturday\"}}",
+          "pass": true
+        },
+        {
+          "check": "forbid {\"record\":\"limit\",\"kind\":\"must_not_equal\",\"value\":{\"textIncludes\":\"sunday\"}}",
+          "pass": true
+        },
+        {
+          "check": "forbid {\"record\":\"preference\",\"strength\":\"avoid\",\"value\":{\"textIncludes\":\"sunday\"}}",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "key": "bed-sale/principal-target-limit",
+      "story": "4.1",
+      "description": "\"Target ₹20,000; do not accept below ₹18,000\": separate target and limit.",
+      "ok": true,
+      "passed": true,
+      "llmCalls": 1,
+      "repaired": false,
+      "repairReasons": [],
+      "latencyMs": 21303,
+      "model": "gpt-5.5-2026-04-23",
+      "errorCode": null,
+      "validationErrors": [],
+      "checks": [
+        {
+          "check": "draft is unapproved",
+          "pass": true
+        },
+        {
+          "check": "require {\"record\":\"target\",\"party\":\"principal\",\"value\":{\"type\":\"money\",\"amount\":20000}}",
+          "pass": true
+        },
+        {
+          "check": "require {\"record\":\"limit\",\"party\":\"principal\",\"kind\":\"minimum\",\"value\":{\"type\":\"money\",\"amount\":18000}}",
+          "pass": true
+        },
+        {
+          "check": "forbid {\"record\":\"limit\",\"value\":{\"amount\":20000}}",
+          "pass": true
+        },
+        {
+          "check": "forbid {\"record\":\"target\",\"value\":{\"amount\":18000}}",
+          "pass": true
+        }
+      ]
+    },
+    {
       "key": "bed-sale/two-minimums",
       "story": "2",
       "description": "Two minimum prices without a correction: conflict returned, and neither is selected.",
@@ -337,7 +489,7 @@
       "llmCalls": 1,
       "repaired": false,
       "repairReasons": [],
-      "latencyMs": 38009,
+      "latencyMs": 21117,
       "model": "gpt-5.5-2026-04-23",
       "errorCode": null,
       "validationErrors": [],
@@ -365,7 +517,7 @@
       "llmCalls": 1,
       "repaired": false,
       "repairReasons": [],
-      "latencyMs": 27788,
+      "latencyMs": 19748,
       "model": "gpt-5.5-2026-04-23",
       "errorCode": null,
       "validationErrors": [],
@@ -417,7 +569,7 @@
       "llmCalls": 1,
       "repaired": false,
       "repairReasons": [],
-      "latencyMs": 22139,
+      "latencyMs": 18938,
       "model": "gpt-5.5-2026-04-23",
       "errorCode": null,
       "validationErrors": [],
@@ -439,6 +591,14 @@
           "pass": true
         },
         {
+          "check": "forbid {\"record\":\"target\"}",
+          "pass": true
+        },
+        {
+          "check": "forbid {\"record\":\"alternative\"}",
+          "pass": true
+        },
+        {
           "check": "forbidText [\"mattress\",\"logo\",\"svg\",\"revision\",\"concept\"]",
           "pass": true
         }
@@ -453,7 +613,7 @@
       "llmCalls": 1,
       "repaired": false,
       "repairReasons": [],
-      "latencyMs": 35231,
+      "latencyMs": 20822,
       "model": "gpt-5.5-2026-04-23",
       "errorCode": null,
       "validationErrors": [],
@@ -505,7 +665,7 @@
       "llmCalls": 1,
       "repaired": false,
       "repairReasons": [],
-      "latencyMs": 21358,
+      "latencyMs": 19104,
       "model": "gpt-5.5-2026-04-23",
       "errorCode": null,
       "validationErrors": [],
@@ -524,6 +684,14 @@
         },
         {
           "check": "forbid {\"record\":\"permission\"}",
+          "pass": true
+        },
+        {
+          "check": "forbid {\"record\":\"target\"}",
+          "pass": true
+        },
+        {
+          "check": "forbid {\"record\":\"alternative\"}",
           "pass": true
         },
         {

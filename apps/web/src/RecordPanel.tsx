@@ -1,7 +1,9 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { OperatorView, RecordEvent } from "./api.ts";
+import { BuyerPanel } from "./BuyerPanel.tsx";
 import { DealSpace } from "./DealSpace.tsx";
+import { MandatePanel } from "./MandatePanel.tsx";
 import { LockIcon, ShieldIcon } from "./icons.tsx";
 
 const spring = { type: "spring", duration: 0.35, bounce: 0 } as const;
@@ -17,13 +19,15 @@ const FILTERS: Array<{ id: Filter; label: string; match: (e: RecordEvent) => boo
       ["offer_extracted", "offer_proposed", "decision", "acceptance_recorded", "approval_requested", "approval_responded", "agreement_recorded", "status_changed"].includes(e.type),
   },
   { id: "blocked", label: "Blocked", match: (e) => e.type === "reply_blocked" },
-  { id: "checks", label: "Checks", match: (e) => e.type === "proposal_checked" || e.type === "term_requested" || e.type === "mandate_revised" },
+  { id: "checks", label: "Checks", match: (e) => ["proposal_checked", "term_requested", "mandate_revised", "action_checked", "mandate_draft_proposed", "mandate_draft_rejected"].includes(e.type) },
 ];
 
-type Tab = "record" | "deal";
+type Tab = "record" | "deal" | "buyer" | "mandate";
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: "record", label: "Record" },
   { id: "deal", label: "Deal space" },
+  { id: "buyer", label: "Buyer" },
+  { id: "mandate", label: "Mandate" },
 ];
 
 const ACTOR_LABEL: Record<RecordEvent["actor"], string> = {
@@ -46,9 +50,11 @@ interface RecordPanelProps {
   view: OperatorView | null;
   responding: boolean;
   onRespond: (requestId: string, decision: "approved" | "rejected") => void;
+  onPause: (paused: boolean) => void;
+  onChanged: () => void;
 }
 
-export function RecordPanel({ view, responding, onRespond }: RecordPanelProps) {
+export function RecordPanel({ view, responding, onRespond, onPause, onChanged }: RecordPanelProps) {
   const [filter, setFilter] = useState<Filter>("all");
   const [tab, setTab] = useState<Tab>("record");
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -79,6 +85,11 @@ export function RecordPanel({ view, responding, onRespond }: RecordPanelProps) {
           </h2>
           <p className="panel-subtitle">Operator view of the shared record. Private items never reach the buyer.</p>
         </div>
+        {view && view.state.status !== "agreed" && (
+          <button type="button" className={`button ${view.state.paused ? "button-neutral" : "button-secondary"}`} onClick={() => onPause(!view.state.paused)} aria-pressed={view.state.paused}>
+            {view.state.paused ? "Resume" : "Pause"}
+          </button>
+        )}
       </header>
 
       {state && (
@@ -103,7 +114,7 @@ export function RecordPanel({ view, responding, onRespond }: RecordPanelProps) {
             exit={{ opacity: 0 }}
             transition={spring}
           >
-            <h3 id="approval-title">The buyer confirmed these terms</h3>
+            <h3 id="approval-title">{state.pendingApproval.purpose === "exception" ? "Exception requested" : "The buyer confirmed these terms"}</h3>
             {state.pendingApproval.terms && (
               <dl className="terms">
                 {state.pendingApproval.terms.map((t) => (
@@ -114,7 +125,8 @@ export function RecordPanel({ view, responding, onRespond }: RecordPanelProps) {
                 ))}
               </dl>
             )}
-            <p>Your mandate requires your approval before Kritva records an agreement.</p>
+            {state.pendingApproval.breachedRules.length > 0 && <p>Crosses: {state.pendingApproval.breachedRules.join("; ")}. Approval covers these exact terms once; your standing limit stays.</p>}
+            <p>{state.pendingApproval.requestedAction || "Your mandate requires your approval before Kritva records an agreement."}</p>
             <div className="approval-actions">
               <button type="button" className="button button-accent" disabled={responding} onClick={() => onRespond(state.pendingApproval!.requestId, "approved")}>
                 {responding ? <span className="spinner" aria-hidden="true" /> : null}
@@ -153,6 +165,16 @@ export function RecordPanel({ view, responding, onRespond }: RecordPanelProps) {
       {tab === "deal" && view && (
         <div role="tabpanel" id="panel-deal" aria-labelledby="tab-deal" className="tabpanel">
           <DealSpace view={view.dealSpace} />
+        </div>
+      )}
+      {tab === "buyer" && view && (
+        <div role="tabpanel" id="panel-buyer" aria-labelledby="tab-buyer" className="tabpanel">
+          <BuyerPanel view={view.counterparty} />
+        </div>
+      )}
+      {tab === "mandate" && view && (
+        <div role="tabpanel" id="panel-mandate" aria-labelledby="tab-mandate" className="tabpanel">
+          <MandatePanel sessionId={view.session.id} principal={view.principal} drafts={view.drafts} onChanged={onChanged} />
         </div>
       )}
 

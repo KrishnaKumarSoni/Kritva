@@ -1,0 +1,16 @@
+{
+  "name": "paused",
+  "description": "While the seller has paused the negotiation, the buyer gets a neutral status and no offer; after resuming, negotiation continues.",
+  "turns": [
+    { "seller": "pause" },
+    { "buyer": "I can offer ₹19,000." },
+    { "seller": "resume" },
+    { "buyer": "I can offer ₹19,000." }
+  ],
+  "expect": {
+    "outcome": ["in_progress"],
+    "pausedTurnsHaveNoOffers": true,
+    "agentMustSay": ["paused"],
+    "agentMustNotSay": []
+  }
+}

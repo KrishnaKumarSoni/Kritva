@@ -37,7 +37,7 @@
         }
       ],
       "name": "price",
-      "description": "Total budget or price for the logo design work.",
+      "description": "Amount payable for the logo design work.",
       "valueType": "money",
       "unit": null,
       "currency": "INR"
@@ -59,7 +59,7 @@
       "currency": null
     },
     {
-      "id": "term_t_revision_rounds",
+      "id": "term_t_revisions",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -69,13 +69,13 @@
         }
       ],
       "name": "revision rounds",
-      "description": "Number of revision rounds to be included.",
+      "description": "Number of revision rounds to be provided.",
       "valueType": "quantity",
       "unit": "revision rounds",
       "currency": null
     },
     {
-      "id": "term_t_delivery_time",
+      "id": "term_t_delivery",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -84,8 +84,8 @@
           "quote": "Delivery five days after kickoff"
         }
       ],
-      "name": "delivery time",
-      "description": "Time for delivery after kickoff.",
+      "name": "delivery timing",
+      "description": "When delivery is due relative to kickoff.",
       "valueType": "date_text",
       "unit": null,
       "currency": null
@@ -100,7 +100,7 @@
           "quote": "Final files in SVG format"
         }
       ],
-      "name": "file format",
+      "name": "final file format",
       "description": "Format for final logo files.",
       "valueType": "text",
       "unit": null,
@@ -119,14 +119,16 @@
         }
       ],
       "partyId": "client",
+      "kind": "objective",
       "description": "Find a logo designer.",
+      "termIds": [],
       "priority": null
     }
   ],
   "facts": [],
   "positions": [
     {
-      "id": "position_p_price",
+      "id": "position_p_budget",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -164,7 +166,7 @@
       "conditionIds": []
     },
     {
-      "id": "position_p_revision_rounds",
+      "id": "position_p_revisions",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -174,7 +176,7 @@
         }
       ],
       "partyId": "client",
-      "termId": "term_t_revision_rounds",
+      "termId": "term_t_revisions",
       "value": {
         "type": "quantity",
         "amount": 2,
@@ -183,7 +185,7 @@
       "conditionIds": []
     },
     {
-      "id": "position_p_delivery_time",
+      "id": "position_p_delivery",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -193,7 +195,7 @@
         }
       ],
       "partyId": "client",
-      "termId": "term_t_delivery_time",
+      "termId": "term_t_delivery",
       "value": {
         "type": "date_text",
         "value": "five days after kickoff"
@@ -219,37 +221,24 @@
       "conditionIds": []
     }
   ],
-  "limits": [
-    {
-      "id": "limit_l_price_budget",
-      "status": "inferred",
-      "disclosure": "public",
-      "sourceRefs": [
-        {
-          "sourceId": "brief",
-          "quote": "Budget: ₹5,000"
-        }
-      ],
-      "partyId": "client",
-      "termId": "term_t_price",
-      "kind": "maximum",
-      "value": {
-        "type": "money",
-        "amount": 5000,
-        "currency": "INR"
-      },
-      "conditionIds": []
-    }
-  ],
+  "limits": [],
+  "targets": [],
+  "preferences": [],
+  "alternatives": [],
   "permissions": [],
   "conditions": [],
   "issues": [
     {
       "id": "issue_1",
       "kind": "missing",
-      "message": "No explicit authority is stated for the agent to accept an agreement on the client's behalf.",
+      "message": "No explicit authority is stated for the agent to accept an agreement.",
       "relatedIds": [],
-      "sourceRefs": []
+      "sourceRefs": [
+        {
+          "sourceId": "brief",
+          "quote": "Looking for a logo designer.\n\nBudget: ₹5,000\nTwo logo concepts\nTwo revision rounds\nDelivery five days after kickoff\nFinal files in SVG format"
+        }
+      ]
     }
   ],
   "approval": {

@@ -104,11 +104,19 @@ export const Term = z.strictObject({
 });
 export type Term = z.infer<typeof Term>;
 
+export const GoalKind = z.enum(["objective", "need", "reason"]);
+/**
+ * What a party wants (objective), needs (e.g. "the room cleared soon"), or a reason it gives.
+ * A need never implies a deadline, and urgency never grants permission to concede or disclose.
+ */
 export const Goal = z.strictObject({
   ...recordBase,
   partyId: Id,
+  kind: GoalKind.default("objective"),
   description: NonEmptyText.max(1_000),
-  /** 1 is the highest priority. Null when the source gives no ordering. */
+  /** Terms this goal concerns, when the source ties it to them. */
+  termIds: z.array(Id).max(20).default([]),
+  /** 1 is the highest priority. Null when the source gives no ordering. Never invented. */
   priority: z.number().int().min(1).max(100).nullable(),
 });
 export type Goal = z.infer<typeof Goal>;
@@ -138,6 +146,11 @@ export type Position = z.infer<typeof Position>;
  * excluded one. allowed_value: one permitted option; several on the same term form an option set.
  */
 export const LimitKind = z.enum(["minimum", "maximum", "must_equal", "must_not_equal", "allowed_value"]);
+/**
+ * Whether an exception to a limit may be requested from the principal.
+ * unspecified behaves like not_allowed: silence never authorizes an exception.
+ */
+export const LimitException = z.enum(["not_allowed", "with_approval", "unspecified"]);
 /** A boundary the agent must not cross, such as a minimum acceptable price. */
 export const Limit = z.strictObject({
   ...recordBase,
@@ -146,8 +159,43 @@ export const Limit = z.strictObject({
   kind: LimitKind,
   value: Value.nullable(),
   conditionIds: z.array(Id).max(20),
+  exception: LimitException.default("unspecified"),
 });
 export type Limit = z.infer<typeof Limit>;
+
+/** The value a party hopes to reach on a term. Distinct from its asking value and from its limit. */
+export const Target = z.strictObject({
+  ...recordBase,
+  partyId: Id,
+  termId: Id,
+  value: Value.nullable(),
+  conditionIds: z.array(Id).max(20),
+});
+export type Target = z.infer<typeof Target>;
+
+export const PreferenceStrength = z.enum(["preferred", "acceptable", "avoid"]);
+/** A preference on a term. Never a fixed condition: other values stay possible unless a limit says otherwise. */
+export const Preference = z.strictObject({
+  ...recordBase,
+  partyId: Id,
+  termId: Id,
+  value: Value.nullable(),
+  strength: PreferenceStrength,
+  conditionIds: z.array(Id).max(20),
+});
+export type Preference = z.infer<typeof Preference>;
+
+/**
+ * What a party says it will do if there is no agreement (its BATNA). Always the party's own
+ * attributed statement, never a verified fact. An absent alternative stays unknown.
+ */
+export const Alternative = z.strictObject({
+  ...recordBase,
+  partyId: Id,
+  description: NonEmptyText.max(1_000),
+  value: Value.nullable(),
+});
+export type Alternative = z.infer<typeof Alternative>;
 
 export const PermissionAction = z.enum([
   "accept_agreement",
@@ -207,6 +255,9 @@ const mandateBody = {
   facts: z.array(Fact).max(500),
   positions: z.array(Position).max(500),
   limits: z.array(Limit).max(500),
+  targets: z.array(Target).max(200).default([]),
+  preferences: z.array(Preference).max(200).default([]),
+  alternatives: z.array(Alternative).max(50).default([]),
   permissions: z.array(Permission).max(200),
   conditions: z.array(Condition).max(200),
   issues: z.array(Issue).max(200),
@@ -217,6 +268,8 @@ export const MandateDraft = z.strictObject({
   approval: z.strictObject({ status: z.literal("unapproved") }),
 });
 export type MandateDraft = z.infer<typeof MandateDraft>;
+/** A draft as written by hand or by a converter: fields with defaults may be left out. */
+export type MandateDraftInput = z.input<typeof MandateDraft>;
 
 /**
  * A mandate the principal reviewed and confirmed. Only a confirmed mandate can start a
@@ -241,6 +294,9 @@ export const RECORD_COLLECTIONS = [
   "facts",
   "positions",
   "limits",
+  "targets",
+  "preferences",
+  "alternatives",
   "permissions",
   "conditions",
 ] as const;

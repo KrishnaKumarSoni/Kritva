@@ -45,7 +45,7 @@
         },
         {
           "sourceId": "instructions-conditional-minimum",
-          "quote": "I'll go down to ₹18,000"
+          "quote": "₹18,000"
         }
       ],
       "name": "price",
@@ -81,7 +81,7 @@
         }
       ],
       "name": "delivery included",
-      "description": "Whether delivery is included in the deal.",
+      "description": "Whether delivery is included in the sale.",
       "valueType": "boolean",
       "unit": null,
       "currency": null
@@ -93,11 +93,11 @@
       "sourceRefs": [
         {
           "sourceId": "instructions-conditional-minimum",
-          "quote": "only if collection is on Saturday"
+          "quote": "collection is on Saturday"
         }
       ],
       "name": "collection day",
-      "description": "Day when the buyer collects the bed.",
+      "description": "Day for collection of the bed.",
       "valueType": "date_text",
       "unit": null,
       "currency": null
@@ -105,7 +105,7 @@
   ],
   "goals": [
     {
-      "id": "goal_g_sell_bed",
+      "id": "goal_g_sell",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -115,13 +115,15 @@
         }
       ],
       "partyId": "seller",
+      "kind": "objective",
       "description": "Sell the king-size bed.",
+      "termIds": [],
       "priority": null
     }
   ],
   "facts": [
     {
-      "id": "fact_f_item_bed",
+      "id": "fact_f_bed_type",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -139,7 +141,7 @@
       }
     },
     {
-      "id": "fact_f_item_age",
+      "id": "fact_f_bed_age",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -157,13 +159,13 @@
       }
     },
     {
-      "id": "fact_f_item_condition",
+      "id": "fact_f_bed_condition",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
         {
           "sourceId": "listing",
-          "quote": "in good condition"
+          "quote": "good condition"
         }
       ],
       "partyId": "seller",
@@ -234,7 +236,7 @@
   ],
   "limits": [
     {
-      "id": "limit_l_min_price_if_saturday",
+      "id": "limit_l_conditional_minimum_price",
       "status": "stated",
       "disclosure": "private",
       "sourceRefs": [
@@ -252,14 +254,18 @@
         "currency": "INR"
       },
       "conditionIds": [
-        "condition_c_collection_saturday"
-      ]
+        "condition_c_saturday_collection"
+      ],
+      "exception": "unspecified"
     }
   ],
+  "targets": [],
+  "preferences": [],
+  "alternatives": [],
   "permissions": [],
   "conditions": [
     {
-      "id": "condition_c_collection_saturday",
+      "id": "condition_c_saturday_collection",
       "status": "stated",
       "disclosure": "private",
       "sourceRefs": [
@@ -268,7 +274,7 @@
           "quote": "only if collection is on Saturday"
         }
       ],
-      "description": "The minimum price of ₹18,000 applies only if collection is on Saturday.",
+      "description": "Collection must be on Saturday for the seller to go down to ₹18,000.",
       "termId": "term_t_collection_day",
       "operator": "equals",
       "value": {
@@ -281,11 +287,24 @@
     {
       "id": "issue_1",
       "kind": "missing",
-      "message": "No explicit authority is stated for the agent to accept an agreement or make concessions; the recorded price floor is a limit, not acceptance authority.",
-      "relatedIds": [
-        "limit_l_min_price_if_saturday"
-      ],
+      "message": "No explicit authority is stated for the agent to accept an agreement on the seller's behalf.",
+      "relatedIds": [],
       "sourceRefs": []
+    },
+    {
+      "id": "issue_2",
+      "kind": "missing",
+      "message": "The seller states a ₹18,000 minimum only if collection is on Saturday; the lowest acceptable price for any other collection day is not stated.",
+      "relatedIds": [
+        "limit_l_conditional_minimum_price",
+        "condition_c_saturday_collection"
+      ],
+      "sourceRefs": [
+        {
+          "sourceId": "instructions-conditional-minimum",
+          "quote": "I'll go down to ₹18,000 only if collection is on Saturday."
+        }
+      ]
     }
   ],
   "approval": {

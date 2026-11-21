@@ -5,7 +5,7 @@
 import type { MandateDraft, Value } from "../../src/schema/records.ts";
 import type { ScenarioExpectations } from "./cases.ts";
 
-export type RecordKind = "term" | "goal" | "fact" | "position" | "limit" | "permission" | "condition" | "issue";
+export type RecordKind = "term" | "goal" | "fact" | "position" | "limit" | "target" | "preference" | "alternative" | "permission" | "condition" | "issue";
 
 export interface Matcher {
   record: RecordKind | RecordKind[];
@@ -16,6 +16,8 @@ export interface Matcher {
   kind?: string;
   action?: string;
   mode?: string;
+  goalKind?: "objective" | "need" | "reason";
+  strength?: "preferred" | "acceptable" | "avoid";
   hasCondition?: boolean;
   termNameIncludesAny?: string[];
   textIncludesAny?: string[];
@@ -40,6 +42,9 @@ const COLLECTION: Record<RecordKind, keyof MandateDraft> = {
   fact: "facts",
   position: "positions",
   limit: "limits",
+  target: "targets",
+  preference: "preferences",
+  alternative: "alternatives",
   permission: "permissions",
   condition: "conditions",
   issue: "issues",
@@ -52,6 +57,7 @@ function recordText(kind: RecordKind, r: Loose): string {
   if (kind === "term") parts.push(r.name, r.description);
   if (kind === "goal") parts.push(r.description);
   if (kind === "fact") parts.push(r.statement);
+  if (kind === "alternative") parts.push(r.description);
   if (kind === "permission" || kind === "condition") parts.push(r.description);
   if (kind === "issue") parts.push(r.message);
   const value = r.value as Value | null | undefined;
@@ -72,6 +78,8 @@ function matches(draft: MandateDraft, kind: RecordKind, r: Loose, m: Matcher): b
   if (m.disclosure && r.disclosure !== m.disclosure) return false;
   if (m.kind && r.kind !== m.kind) return false;
   if (m.action && r.action !== m.action) return false;
+  if (m.goalKind && (kind !== "goal" || r.kind !== m.goalKind)) return false;
+  if (m.strength && r.strength !== m.strength) return false;
   if (m.mode && r.mode !== m.mode) return false;
   if (m.hasCondition !== undefined) {
     const ids = r.conditionIds as string[] | undefined;
@@ -141,7 +149,7 @@ export function checkExpectations(draft: MandateDraft, expect: ScenarioExpectati
 
 /** Whole-word search across record content. Issue messages are excluded: they may name a gap. */
 export function forbiddenWordsIn(draft: MandateDraft, words: string[]): string[] {
-  const kinds: RecordKind[] = ["term", "goal", "fact", "position", "limit", "permission", "condition"];
+  const kinds: RecordKind[] = ["term", "goal", "fact", "position", "limit", "target", "preference", "alternative", "permission", "condition"];
   const text = kinds
     .flatMap((kind) => (draft[COLLECTION[kind]] as unknown as Loose[]).map((r) => recordText(kind, r)))
     .join("\n");

@@ -35,13 +35,17 @@
   ],
   "terms": [
     {
-      "id": "term_term_price",
+      "id": "term_price",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
         {
           "sourceId": "listing",
           "quote": "Price: ₹20,000"
+        },
+        {
+          "sourceId": "instructions-two-minimums",
+          "quote": "My minimum is ₹18,000."
         }
       ],
       "name": "price",
@@ -51,7 +55,7 @@
       "currency": "INR"
     },
     {
-      "id": "term_term_pickup_location",
+      "id": "term_pickup_place",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -60,14 +64,14 @@
           "quote": "Pickup from Koramangala, Bangalore."
         }
       ],
-      "name": "pickup location",
-      "description": "Location where the buyer would pick up the bed.",
+      "name": "pickup place",
+      "description": "Place where the buyer would collect the bed.",
       "valueType": "text",
       "unit": null,
       "currency": null
     },
     {
-      "id": "term_term_delivery_included",
+      "id": "term_delivery_included",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -83,25 +87,10 @@
       "currency": null
     }
   ],
-  "goals": [
-    {
-      "id": "goal_goal_sell_bed",
-      "status": "inferred",
-      "disclosure": "public",
-      "sourceRefs": [
-        {
-          "sourceId": "listing",
-          "quote": "King-size bed for sale"
-        }
-      ],
-      "partyId": "seller",
-      "description": "Sell the king-size bed.",
-      "priority": null
-    }
-  ],
+  "goals": [],
   "facts": [
     {
-      "id": "fact_fact_item_bed",
+      "id": "fact_fact_bed_for_sale",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -111,15 +100,15 @@
         }
       ],
       "partyId": "seller",
-      "statement": "The item for sale is a king-size bed.",
+      "statement": "The seller is selling a king-size bed.",
       "termId": null,
       "value": {
         "type": "text",
-        "value": "king-size bed"
+        "value": "King-size bed for sale"
       }
     },
     {
-      "id": "fact_fact_age",
+      "id": "fact_fact_bed_age",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -137,7 +126,7 @@
       }
     },
     {
-      "id": "fact_fact_condition",
+      "id": "fact_fact_bed_condition",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -167,7 +156,7 @@
         }
       ],
       "partyId": "seller",
-      "termId": "term_term_price",
+      "termId": "term_price",
       "value": {
         "type": "money",
         "amount": 20000,
@@ -176,7 +165,7 @@
       "conditionIds": []
     },
     {
-      "id": "position_pos_pickup_location",
+      "id": "position_pos_pickup_place",
       "status": "stated",
       "disclosure": "public",
       "sourceRefs": [
@@ -186,7 +175,7 @@
         }
       ],
       "partyId": "seller",
-      "termId": "term_term_pickup_location",
+      "termId": "term_pickup_place",
       "value": {
         "type": "text",
         "value": "Koramangala, Bangalore"
@@ -204,7 +193,7 @@
         }
       ],
       "partyId": "seller",
-      "termId": "term_term_delivery_included",
+      "termId": "term_delivery_included",
       "value": {
         "type": "boolean",
         "value": false
@@ -214,7 +203,7 @@
   ],
   "limits": [
     {
-      "id": "limit_limit_min_price_18000",
+      "id": "limit_lim_min_18000",
       "status": "stated",
       "disclosure": "private",
       "sourceRefs": [
@@ -224,17 +213,18 @@
         }
       ],
       "partyId": "seller",
-      "termId": "term_term_price",
+      "termId": "term_price",
       "kind": "minimum",
       "value": {
         "type": "money",
         "amount": 18000,
         "currency": "INR"
       },
-      "conditionIds": []
+      "conditionIds": [],
+      "exception": "unspecified"
     },
     {
-      "id": "limit_limit_min_price_17500",
+      "id": "limit_lim_min_17500",
       "status": "stated",
       "disclosure": "private",
       "sourceRefs": [
@@ -244,26 +234,30 @@
         }
       ],
       "partyId": "seller",
-      "termId": "term_term_price",
+      "termId": "term_price",
       "kind": "minimum",
       "value": {
         "type": "money",
         "amount": 17500,
         "currency": "INR"
       },
-      "conditionIds": []
+      "conditionIds": [],
+      "exception": "unspecified"
     }
   ],
+  "targets": [],
+  "preferences": [],
+  "alternatives": [],
   "permissions": [],
   "conditions": [],
   "issues": [
     {
       "id": "issue_1",
       "kind": "conflict",
-      "message": "The seller gives two incompatible minimum price limits: ₹18,000 and a separate instruction not to accept below ₹17,500.",
+      "message": "The seller gives two different minimum acceptable prices for the same price term, and neither statement clearly corrects the other.",
       "relatedIds": [
-        "limit_limit_min_price_18000",
-        "limit_limit_min_price_17500"
+        "limit_lim_min_18000",
+        "limit_lim_min_17500"
       ],
       "sourceRefs": [
         {
@@ -279,7 +273,7 @@
     {
       "id": "issue_2",
       "kind": "missing",
-      "message": "No explicit authority is stated for the agent to accept any agreement.",
+      "message": "No explicit authority is stated for the agent to accept an agreement on the seller's behalf.",
       "relatedIds": [],
       "sourceRefs": []
     }

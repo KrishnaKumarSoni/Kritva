@@ -1,0 +1,44 @@
+{
+  "name": "principal-target-limit",
+  "story": "4.1",
+  "description": "\"Target ₹20,000; do not accept below ₹18,000\": separate target and limit.",
+  "sources": [
+    "listing",
+    "principal-target-limit"
+  ],
+  "expect": {
+    "require": [
+      {
+        "record": "target",
+        "party": "principal",
+        "value": {
+          "type": "money",
+          "amount": 20000
+        }
+      },
+      {
+        "record": "limit",
+        "party": "principal",
+        "kind": "minimum",
+        "value": {
+          "type": "money",
+          "amount": 18000
+        }
+      }
+    ],
+    "forbid": [
+      {
+        "record": "limit",
+        "value": {
+          "amount": 20000
+        }
+      },
+      {
+        "record": "target",
+        "value": {
+          "amount": 18000
+        }
+      }
+    ]
+  }
+}

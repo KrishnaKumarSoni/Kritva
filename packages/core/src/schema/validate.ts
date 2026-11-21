@@ -214,6 +214,7 @@ export function semanticErrors(draft: Omit<MandateDraft, "approval">): Validatio
 
   // ---- Goals ----
   draft.goals.forEach((g, i) => {
+    g.termIds.forEach((id, j) => checkTerm(id, `goals[${i}]`, `termIds[${j}]`));
     const path = `goals[${i}]`;
     checkParty(g.partyId, path);
     checkAuthorship(g.partyId, checkProvenance(g, path), path);
@@ -266,6 +267,26 @@ export function semanticErrors(draft: Omit<MandateDraft, "approval">): Validatio
     checkValue(l.value, l.status, checkTerm(l.termId, path), path, true);
     checkConditions(l.conditionIds, path);
     checkConditionAuthorship(l.partyId, l.conditionIds, path);
+  });
+
+  // ---- Targets and preferences: attributed to the party that states them ----
+  for (const collection of ["targets", "preferences"] as const) {
+    draft[collection].forEach((r, i) => {
+      const path = `${collection}[${i}]`;
+      checkParty(r.partyId, path);
+      checkAuthorship(r.partyId, checkProvenance(r, path), path);
+      checkValue(r.value, r.status, checkTerm(r.termId, path), path, true);
+      checkConditions(r.conditionIds, path);
+      checkConditionAuthorship(r.partyId, r.conditionIds, path);
+    });
+  }
+
+  // ---- Alternatives: the party's own statement of what happens without a deal ----
+  draft.alternatives.forEach((a, i) => {
+    const path = `alternatives[${i}]`;
+    checkParty(a.partyId, path);
+    checkAuthorship(a.partyId, checkProvenance(a, path), path);
+    checkValue(a.value, a.status, undefined, path, false);
   });
 
   // ---- Permissions: explicit, principal-only authority ----

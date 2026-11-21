@@ -1,0 +1,43 @@
+{
+  "name": "principal-need",
+  "story": "4.1",
+  "description": "\"I need the room cleared soon\": need recorded; no invented deadline or permission to reduce price.",
+  "sources": [
+    "listing",
+    "principal-need"
+  ],
+  "expect": {
+    "require": [
+      {
+        "record": "goal",
+        "party": "principal",
+        "goalKind": "need"
+      }
+    ],
+    "forbid": [
+      {
+        "record": "permission",
+        "action": "make_concession"
+      },
+      {
+        "record": "permission",
+        "action": "propose_terms"
+      },
+      {
+        "record": [
+          "position",
+          "limit",
+          "condition",
+          "fact"
+        ],
+        "value": {
+          "type": "date_text"
+        }
+      },
+      {
+        "record": "limit",
+        "kind": "minimum"
+      }
+    ]
+  }
+}

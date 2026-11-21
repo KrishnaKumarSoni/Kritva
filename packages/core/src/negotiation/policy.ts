@@ -5,11 +5,11 @@
  * The policy only ever proposes values inside the confirmed mandate. It reads limits and
  * authority from the mandate, never from conversation content.
  */
-import type { DecisionKind, OfferTerm } from "../record/events.ts";
+import { hashTerms, type DecisionKind, type OfferTerm } from "../record/events.ts";
 import type { Value } from "../schema/records.ts";
 import { applicableLimit, type DealCheck } from "../dealspace/check.ts";
 import { numericValue, violatesFixedRule, withTerm, type MandateView } from "./mandate-view.ts";
-import { fitsNow, type NegotiationState, type StatedOffer } from "./state.ts";
+import { approvedFor, clearedNow, type NegotiationState, type StatedOffer } from "./state.ts";
 
 export interface Interpretation {
   intent: "offer" | "accept_stated_terms" | "question" | "request_change" | "reject" | "greeting" | "other";
@@ -21,6 +21,10 @@ export interface Interpretation {
   questions: string[];
   /** Things the counterparty asked for that no mandate term covers (e.g. an added service). */
   newTerms: Array<{ name: string; description: string | null; value: Value | null }>;
+  /** Needs, constraints, reasons, claims and the like, each with the counterparty's exact words. */
+  notes?: Array<{ kind: string; quote: string; summary: string; termId: string | null; value: Value | null; condition: string | null; basis: "stated" | "inferred" }>;
+  /** Answers to questions the agent asked earlier. */
+  answers?: Array<{ questionId: string; quote: string | null; resolution: "answered" | "partial" | "refused" }>;
 }
 
 /** The counterparty's proposal as a whole: their terms on top of the agent's current package, and its deal-space check. */
@@ -52,11 +56,13 @@ export interface Plan {
   /** The counterparty amount this move responds to, if any. */
   respondingTo: number | null;
   /** Something the reply must tell the counterparty first. */
-  notice: "approval_rejected" | "terms_changed" | "rephrase" | null;
+  notice: "approval_rejected" | "terms_changed" | "rephrase" | "check_with_principal" | "paused" | null;
   /** Term names to ask the counterparty about (missing details a rule depends on). Values are never suggested. */
   clarify: string[];
   /** Requests the mandate does not address: taken to the principal, never promised or priced. */
   unresolved: string[];
+  /** A prepared question to ask (selection is a placeholder until strategy, Epic 8). */
+  ask: { questionId: string; text: string } | null;
 }
 
 export function decide(state: NegotiationState, interp: Interpretation, deal: DealInput): Plan {
@@ -76,6 +82,7 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
     notice: null,
     clarify: [],
     unresolved: interp.newTerms.map((t) => t.name),
+    ask: null,
   };
 
   if (state.outcome.kind === "agreement") {
@@ -131,9 +138,10 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
   // Accepting the stated terms, with nothing changed.
   if (interp.acceptsStatedTerms && amount === null && plan.declined.length === 0 && extras.length === 0 && plan.unresolved.length === 0) {
     const final = state.pendingFinal;
-    // Accept only terms that were delivered and still pass a check against the mandate in force.
-    if (final && final.communicated && fitsNow(state, final.offerId, final.termsHash)) {
-      if (view.acceptRequiresApproval) {
+    // Accept only terms that were delivered and are cleared under the mandate in force.
+    if (final && final.communicated && clearedNow(state, final.offerId, final.termsHash)) {
+      // The principal already approved these exact terms (e.g. an exception): no second approval.
+      if (view.acceptRequiresApproval && !approvedFor(state, final.termsHash)) {
         return { ...plan, move: "request_approval", acceptanceOf: final, decision: { kind: "request_approval", reason: "Counterparty accepted the stated terms; the mandate requires the principal's approval." } };
       }
       return { ...plan, move: "confirm_agreement", acceptanceOf: final, decision: { kind: "record_agreement", reason: "Counterparty accepted the stated terms; the mandate allows accepting." } };
@@ -166,7 +174,18 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
       return holdAt(plan, view, ask, keep, `No authority to move from the current ask.${declineReason}`);
     }
     if (!atLeast(amount, limit)) {
-      if (ask === limit) return holdAt(plan, view, ask, keep, `Offer is outside the limit; the ask is already at the limit.${declineReason}`);
+      if (ask === limit) {
+        // Already holding at the limit. If the mandate lets the principal approve an exception to
+        // this limit, put the counterparty's terms to the principal; the gate turns this into an
+        // approval request, and nothing is offered unless the principal approves.
+        const binding = applicableLimit(state.space, n.termId, deal.package);
+        const candidate = finalPackage(view, amount, keep);
+        const alreadyRejected = state.approvals.some((a) => a.decision === "rejected" && a.termsHash === hashTerms(candidate) && a.mandateRevision === state.mandateRevision);
+        if (binding && !alreadyRejected && view.authority.exceptionFor(binding.ruleId) === "with_approval" && state.counterpartyAmounts.slice(0, -1).length > 0) {
+          return finalAt(plan, view, amount, keep, `Offer is outside the limit; the mandate allows asking the principal for an exception.${declineReason}`);
+        }
+        return holdAt(plan, view, ask, keep, `Offer is outside the limit; the ask is already at the limit.${declineReason}`);
+      }
       const next = clampToLimit({ ...n, limit }, roundToward(n, ask - towardSign(n) * Math.abs(ask - limit) / 2, step));
       return counterAt(plan, view, next === ask ? limit : next, keep, `Offer is outside the limit; counter without revealing it.${declineReason}`);
     }
