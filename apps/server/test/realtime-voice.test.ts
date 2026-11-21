@@ -1,0 +1,268 @@
+/** Realtime voice (docs/Kritva_Realtime_Voice.md): the call controller with a fake realtime connection. */
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { describe, expect, it } from "vitest";
+import {
+  MandateRevisions,
+  NegotiationEngine,
+  NegotiationRecord,
+  SqliteRecordBackend,
+  type PayloadOf,
+  type StructuredLlm,
+  type StructuredRequest,
+  type StructuredResponse,
+} from "@kritva/core";
+import { createApp } from "../src/app.ts";
+import { loadConfirmedMandates, loadExamples, loadListings } from "../src/main-helpers.ts";
+import { realtimeSettingsFromEnv, scriptLanguage, type RealtimeConnector, type RealtimeEvent, type RealtimeLink } from "../src/realtime-voice.ts";
+
+const CASES = resolve(import.meta.dirname, "../../../cases");
+
+class ScriptedLlm implements StructuredLlm {
+  readonly interpretations: Array<Record<string, unknown>> = [];
+  readonly compositions: string[] = [];
+  async generate(request: StructuredRequest): Promise<StructuredResponse> {
+    const reply = (json: unknown) => ({ json, rawText: JSON.stringify(json), model: "scripted", latencyMs: 0 });
+    if (request.purpose === "language_check") return reply({ concerns: [] });
+    if (request.purpose === "interpret_counterparty") {
+      return reply({ intent: "other", offer_terms: [], accepts_stated_terms: false, asks_private_info: false, claims_authority: false, offer_kind: "none", offer_conditions: [], ends_negotiation: false, corrects_previous: false, pressure: "none", notes: [], answers: [], new_terms: [], questions: [], ...this.interpretations.shift() });
+    }
+    const text = request.purpose === "compose_reply" ? this.compositions.shift() : undefined;
+    if (text !== undefined) return reply({ text });
+    throw new Error("template wording");
+  }
+}
+
+/** Records what the server sends; the test plays the realtime model's events. */
+class FakeLink implements RealtimeLink {
+  readonly sent: Array<Record<string, any>> = [];
+  onEvent: ((event: RealtimeEvent) => void) | null = null;
+  onClose: (() => void) | null = null;
+  closed = false;
+  send(event: Record<string, unknown>) {
+    this.sent.push(event);
+  }
+  close() {
+    this.closed = true;
+  }
+  emit(event: RealtimeEvent) {
+    this.onEvent?.(event);
+  }
+  says() {
+    return this.sent.filter((e) => e.type === "response.create").map((e) => ({ text: String(e.response.instructions).split("\n").slice(1).join("\n"), messageId: e.response.metadata?.message_id as string }));
+  }
+}
+
+class FakeConnector implements RealtimeConnector {
+  readonly sessions: Array<Record<string, any>> = [];
+  readonly link = new FakeLink();
+  async createCall(_sdp: string, session: Record<string, unknown>) {
+    this.sessions.push(session);
+    return { sdpAnswer: "v=0 answer", callId: "rtc_test1" };
+  }
+  async attach() {
+    return this.link;
+  }
+}
+
+const until = async (check: () => boolean, ms = 3_000) => {
+  const end = Date.now() + ms;
+  while (!check()) {
+    if (Date.now() > end) throw new Error("timed out");
+    await new Promise((r) => setTimeout(r, 10));
+  }
+};
+
+async function setup(withConnector = true) {
+  const dir = mkdtempSync(join(tmpdir(), "kritva-rt-"));
+  const record = new NegotiationRecord(new SqliteRecordBackend(join(dir, "db.sqlite")));
+  const llm = new ScriptedLlm();
+  const mandates = loadConfirmedMandates(CASES);
+  const listings = loadListings(CASES, mandates, loadExamples(CASES), null);
+  const engine = new NegotiationEngine({ record, llm, locale: "en-IN", subjectFacts: new Map([["bed-sale", "fact_f_item"]]), listingDetails: new Map(listings.map((l) => [l.caseId, l])) });
+  const connector = new FakeConnector();
+  const app = createApp({ record, engine, revisions: new MandateRevisions({ record, engine, mappingLlm: llm }), mandates, locale: "en-IN", realtime: withConnector ? { connector, settings: realtimeSettingsFromEnv({}) } : null });
+  const mandate = mandates.find((m) => m.id === "bed-sale/demo")!.mandate;
+  const started = await record.startSession({ mandate });
+  if (!started.ok) throw new Error(started.error.message);
+  const sessionId = started.session.id;
+  const priceTerm = mandate.terms.find((t) => t.valueType === "money")!.id;
+  const offer = (amount: number) => ({ intent: "offer", offer_kind: "offer", offer_terms: [{ term_id: priceTerm, value: { type: "money", amount, currency: null, unit: null, text: null, boolean: null } }] });
+  const startCall = () => app.request(`/api/buyer/sessions/${sessionId}/voice/realtime`, { method: "POST", headers: { "content-type": "application/sdp" }, body: "v=0 offer" });
+  const messages = async () =>
+    (await record.context(sessionId)).events.filter((e) => e.type === "message").map((e) => ({ id: e.id, ...(e.payload as PayloadOf<"message">) }));
+  const link = connector.link;
+  /** One finished model response, as the realtime API reports it. */
+  const done = (output: Array<Record<string, unknown>>, metadata: Record<string, string> | null = null, status = "completed") => {
+    link.emit({ type: "response.created", response: { id: `resp_${Math.random()}`, metadata } });
+    link.emit({ type: "response.done", response: { status, metadata, output } });
+  };
+  const spoken = (transcript: string) => ({ type: "message", role: "assistant", content: [{ type: "output_audio", transcript }] });
+  return { record, engine, llm, connector, link, sessionId, startCall, messages, done, spoken, offer };
+}
+
+describe("Realtime voice: starting a call", () => {
+  it("without a realtime connection the route says so (501), so the browser uses turn-based voice", async () => {
+    const t = await setup(false);
+    expect((await t.startCall()).status).toBe(501);
+  });
+
+  it("creates the call with language hints, semantic turn-taking and the negotiate tool, and speaks the engine's greeting word for word", async () => {
+    const t = await setup();
+    const res = await t.startCall();
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { sdp: string }).sdp).toBe("v=0 answer");
+    const session = t.connector.sessions[0]!;
+    expect(session.audio.input.transcription.languages).toEqual(expect.arrayContaining(["hi", "ta", "en"]));
+    expect(session.audio.input.transcription.languages).not.toContain("ur");
+    expect(session.audio.input.turn_detection.type).toBe("semantic_vad");
+    expect(session.tools[0].name).toBe("negotiate");
+    // The voice model is never given the negotiated amount.
+    expect(session.instructions).not.toMatch(/20,000|18,000/);
+    expect(session.instructions).toMatch(/Devanagari/);
+    await until(() => t.link.says().length === 1);
+    const greeting = (await t.messages()).find((m) => m.direction === "outbound")!;
+    expect(t.link.says()[0]).toEqual({ text: greeting.text, messageId: greeting.id });
+  });
+});
+
+describe("Realtime voice: turns", () => {
+  it("a deal turn: the acknowledgement is kept as a fragment, the engine decides, and its checked reply is spoken word for word", async () => {
+    const t = await setup();
+    await t.startCall();
+    await until(() => t.link.says().length === 1);
+    t.done([t.spoken("x")], { kritva: "say", message_id: t.link.says()[0]!.messageId });
+    t.llm.interpretations.push(t.offer(15_000));
+    t.link.emit({ type: "input_audio_buffer.committed", item_id: "item_a1" });
+    t.done([t.spoken("ठीक है, एक सेकंड।"), { type: "function_call", name: "negotiate", call_id: "call_1", arguments: JSON.stringify({ their_words: "मैं 15000 दूँगा", language: "hi" }) }]);
+    await until(() => t.link.says().length === 2);
+    const msgs = await t.messages();
+    expect(msgs.find((m) => m.direction === "inbound")!.text).toBe("मैं 15000 दूँगा");
+    const reply = msgs.at(-1)!;
+    expect(reply.direction).toBe("outbound");
+    expect(t.link.says()[1]).toEqual({ text: reply.text, messageId: reply.id });
+    const output = t.link.sent.find((e) => e.type === "conversation.item.create")!;
+    expect(output.item).toMatchObject({ type: "function_call_output", call_id: "call_1" });
+    expect(JSON.parse(output.item.output).reply_to_say).toBe(reply.text);
+    const fragments = (await t.record.context(t.sessionId)).events.filter((e) => e.type === "transcript_fragment");
+    expect((fragments[0]!.payload as PayloadOf<"transcript_fragment">).text).toBe("ठीक है, एक सेकंड।");
+  });
+
+  it("a conversation turn the model answered itself is recorded with both sides and a passing check", async () => {
+    const t = await setup();
+    await t.startCall();
+    await until(() => t.link.says().length === 1);
+    t.done([t.spoken("x")], { kritva: "say", message_id: t.link.says()[0]!.messageId });
+    t.link.emit({ type: "input_audio_buffer.committed", item_id: "item_b1" });
+    t.link.emit({ type: "conversation.item.input_audio_transcription.completed", item_id: "item_b1", transcript: "Is it still available?" });
+    t.done([t.spoken("Yes, it's still available for pickup.")]);
+    let msgs = await t.messages();
+    for (let i = 0; i < 100 && msgs.length < 3; i += 1) {
+      await new Promise((r) => setTimeout(r, 20));
+      msgs = await t.messages();
+    }
+    expect(msgs.slice(-2).map((m) => [m.direction, m.text])).toEqual([
+      ["inbound", "Is it still available?"],
+      ["outbound", "Yes, it's still available for pickup."],
+    ]);
+    const check = (await t.record.context(t.sessionId)).events.filter((e) => e.type === "action_checked").at(-1)!;
+    expect((check.payload as PayloadOf<"action_checked">).decision).toBe("allow");
+    expect(t.link.says()).toHaveLength(1);
+  });
+
+  it("an amount the model said itself fails the check: the audio is cleared, a correction is spoken, and the block is recorded", async () => {
+    const t = await setup();
+    await t.startCall();
+    await until(() => t.link.says().length === 1);
+    t.done([t.spoken("x")], { kritva: "say", message_id: t.link.says()[0]!.messageId });
+    t.link.emit({ type: "input_audio_buffer.committed", item_id: "item_c1" });
+    t.link.emit({ type: "conversation.item.input_audio_transcription.completed", item_id: "item_c1", transcript: "Can you do it cheaper?" });
+    t.done([t.spoken("Sure, I can do ₹17,500 for you.")]);
+    await until(() => t.link.says().length === 2);
+    expect(t.link.sent.some((e) => e.type === "output_audio_buffer.clear")).toBe(true);
+    expect(t.link.says()[1]!.text).toMatch(/ignore what I just said/);
+    const blocked = (await t.record.context(t.sessionId)).events.filter((e) => e.type === "action_checked").map((e) => e.payload as PayloadOf<"action_checked">);
+    expect(blocked.some((c) => c.decision === "block" && c.reasons.some((r) => r.rule === "unplanned_amount"))).toBe(true);
+  });
+
+  it("an acknowledgement that claims agreement is corrected before the engine's reply", async () => {
+    const t = await setup();
+    await t.startCall();
+    await until(() => t.link.says().length === 1);
+    t.done([t.spoken("x")], { kritva: "say", message_id: t.link.says()[0]!.messageId });
+    t.llm.interpretations.push(t.offer(19_000));
+    t.link.emit({ type: "input_audio_buffer.committed", item_id: "item_d1" });
+    t.done([t.spoken("Great, we have a deal!"), { type: "function_call", name: "negotiate", call_id: "call_2", arguments: JSON.stringify({ their_words: "I'll pay 19000", language: "en" }) }]);
+    await until(() => t.link.says().length === 2);
+    expect(t.link.says()[1]!.text).toMatch(/ignore what I just said/);
+  });
+
+  it("the engine's reply spoken with a different amount is said again, once", async () => {
+    const t = await setup();
+    await t.startCall();
+    await until(() => t.link.says().length === 1);
+    const greeting = t.link.says()[0]!;
+    t.done([t.spoken("Hi, the price is ₹21,000.")], { kritva: "say", message_id: greeting.messageId });
+    await until(() => t.link.says().length === 2);
+    expect(t.link.says()[1]).toEqual(greeting);
+    t.done([t.spoken("Hi, the price is ₹21,000.")], { kritva: "say", message_id: greeting.messageId });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(t.link.says()).toHaveLength(2);
+  });
+
+  it("a message the engine records during the call (for example after an approval) is spoken once", async () => {
+    const t = await setup();
+    await t.startCall();
+    await until(() => t.link.says().length === 1);
+    t.done([t.spoken("x")], { kritva: "say", message_id: t.link.says()[0]!.messageId });
+    const line = await t.engine.recordVoiceLine({ sessionId: t.sessionId, text: "Thanks for waiting.", reason: "test" });
+    expect(line.ok).toBe(true);
+    await until(() => t.link.says().length === 2, 4_000);
+    expect(t.link.says()[1]!.text).toBe("Thanks for waiting.");
+    await new Promise((r) => setTimeout(r, 1_500));
+    expect(t.link.says()).toHaveLength(2);
+  });
+});
+
+describe("Realtime voice: what the engine reads", () => {
+  const dealTurn = async (transcript: string, modelWords: string) => {
+    const t = await setup();
+    await t.startCall();
+    await until(() => t.link.says().length === 1);
+    t.done([t.spoken("x")], { kritva: "say", message_id: t.link.says()[0]!.messageId });
+    t.link.emit({ type: "input_audio_buffer.committed", item_id: "item_e1" });
+    t.link.emit({ type: "conversation.item.input_audio_transcription.completed", item_id: "item_e1", transcript });
+    t.done([t.spoken("Got it."), { type: "function_call", name: "negotiate", call_id: "call_e", arguments: JSON.stringify({ their_words: modelWords, language: "ta" }) }]);
+    await until(() => t.link.says().length === 2);
+    return (await t.messages()).find((m) => m.direction === "inbound")!.text;
+  };
+
+  it("reads the dedicated transcript when it carries the same amounts as the voice model heard", async () => {
+    expect(await dealTurn("இதன் விலை எவ்வளவு?", "டெலிவரி விலை எவ்வளவு?")).toBe("இதன் விலை எவ்வளவு?");
+  });
+
+  it("reads the voice model's words when it heard an amount the transcript wrote in words", async () => {
+    expect(await dealTurn("मैं अठारह हज़ार दूँगा", "मैं 18000 दूँगा")).toBe("मैं 18000 दूँगा");
+  });
+});
+
+describe("Realtime voice: language", () => {
+  it("reads the language from the script", () => {
+    expect(scriptLanguage("मैं 18000 दूँगा")).toBe("hi");
+    expect(scriptLanguage("இதன் விலை எவ்வளவு?")).toBe("ta");
+    expect(scriptLanguage("How much is it?")).toBe("en");
+  });
+
+  it("the engine is told the language they spoke on a live call", async () => {
+    const t = await setup();
+    const briefs: string[] = [];
+    const generate = t.llm.generate.bind(t.llm);
+    t.llm.generate = async (request) => {
+      if (request.purpose === "compose_reply") briefs.push(JSON.stringify(request.messages));
+      return generate(request);
+    };
+    await t.engine.handleCounterpartyMessage({ sessionId: t.sessionId, text: "இதன் விலை எவ்வளவு?", channel: "voice", messageId: "msg_lang1", language: "ta" });
+    expect(briefs.join(" ")).toMatch(/Tamil/);
+  });
+});

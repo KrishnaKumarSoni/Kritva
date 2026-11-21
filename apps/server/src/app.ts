@@ -12,6 +12,7 @@ import { registerIntakeRoutes } from "./intake-routes.ts";
 import { registerLibraryRoutes, type LibraryDeps } from "./library-routes.ts";
 import type { ListingConfig } from "./main-helpers.ts";
 import { registerVoiceRoutes } from "./voice-routes.ts";
+import { registerRealtimeRoutes, realtimeSettingsFromEnv, type RealtimeConnector, type RealtimeSettings } from "./realtime-voice.ts";
 import {
   formatValue,
   negotiationInsights,
@@ -65,6 +66,8 @@ export interface AppDeps {
   /** Epic 14: demo listings and the library mandates their calls use. */
   listings?: ListingConfig[];
   transcriptionPrompt?: string;
+  /** Realtime voice (docs/Kritva_Realtime_Voice.md). Without a connector the browser uses turn-based voice. */
+  realtime?: { connector: RealtimeConnector | null; settings?: RealtimeSettings; log?: (entry: Record<string, unknown>) => void } | null;
   /** Required by the network server. In-process tools can call the app as the operator. */
   operatorKey?: string;
 }
@@ -109,6 +112,8 @@ export function createApp(deps: AppDeps): Hono {
       return buyerOutcome(state, await record.context(id), locale, engine.publicSubject(state.view));
     },
   });
+
+  registerRealtimeRoutes(app, { record, engine, connector: deps.realtime?.connector ?? null, settings: deps.realtime?.settings ?? realtimeSettingsFromEnv(), log: deps.realtime?.log });
 
   /** Prepared mandates from cases/, plus saved mandates with a confirmed revision. Unconfirmed drafts never appear. */
   app.get("/api/operator/mandates", (c) =>

@@ -385,6 +385,19 @@ export const api = {
     if (!res.ok) throw new ApiError(res.status, json.message ?? "That didn't go through. Nothing was sent.", json.error);
     return json as { transcript: string; reply: { messageId: string; text: string } | null; timings: { transcribeMs: number; turnMs: number; serverMs: number } };
   },
+  /** Live voice: the browser's WebRTC offer in, the call's answer out. 501 means live voice is off. */
+  voiceRealtime: async (id: string, sdp: string) => {
+    let res: Response;
+    try {
+      res = await fetch(`/api/buyer/sessions/${id}/voice/realtime`, { method: "POST", headers: { "content-type": "application/sdp" }, body: sdp });
+    } catch {
+      throw new ApiError(0, "Unable to reach the Kritva server. Voice didn't start.");
+    }
+    const json = (await res.json().catch(() => ({}))) as { message?: string; error?: string; sdp?: string; afterSeq?: number };
+    if (!res.ok) throw new ApiError(res.status, json.message ?? "Voice couldn't connect. You can keep typing.", json.error);
+    return json as { sdp: string; afterSeq: number };
+  },
+  voiceRealtimeEnd: (id: string) => fetch(`/api/buyer/sessions/${id}/voice/realtime/end`, { method: "POST", keepalive: true }),
   speechUrl: (id: string, messageId: string) => `/api/buyer/sessions/${id}/voice/speech/${encodeURIComponent(messageId)}`,
   endNegotiation: (id: string, reason: string) => call<unknown>("POST", `/api/operator/sessions/${id}/end`, { reason }),
   library: {

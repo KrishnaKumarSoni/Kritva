@@ -73,6 +73,8 @@ const SCHEMA = {
 export interface ComposeInput {
   /** Where the reply goes: a chat, or spoken on a voice call. */
   channel?: "text" | "voice";
+  /** The language they spoke, when the channel knows it (ISO 639-1, from live voice). */
+  language?: string | null;
   view: MandateView;
   publicPrincipalName?: string;
   publicTerms: OfferTerm[];
@@ -115,6 +117,7 @@ export function composeBrief(input: ComposeInput): Record<string, unknown> {
     counterparty_stated_budget: amount(plan.statedBudget),
     enquired_amount: amount(plan.enquiredAmount),
     channel: input.channel ?? "text",
+    ...(languageName(input.language) ? { reply_language: languageName(input.language) } : {}),
     their_offer: plan.respondingTo !== null && plan.respondingTo !== undefined && ["counter", "hold", "state_final_terms"].includes(plan.move) ? amount(plan.respondingTo) : null,
     move: plan.move,
     action: plan.action ?? null,
@@ -182,8 +185,10 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
     check_with_principal: "Say that this needs a decision from the person you represent, and that you will come back to them.",
   };
   // How it should sound comes first: on a call, warmer and fuller; in chat, friendly and complete.
-  must.unshift(input.channel === "voice"
-    ? "This is a live voice call. Speak like a friendly person on the phone: two to four natural sentences. Acknowledge what they said or how they feel, give the answer or move, and if it fits end with one short, friendly line that keeps the conversation open. Do not repeat details you already gave, do not add terms or facts they did not ask about, and promise nothing (no holding, reserving or checking back unless the brief says so). Say amounts and places in full, never as a list."
+  must.unshift(input.channel === "voice" && plan.opening
+    ? "This is the start of a live voice call. In one or two short, warm sentences, say who you are and invite them to talk. Do not mention the price, terms or other details yet."
+    : input.channel === "voice"
+    ? `This is a live voice call. Speak like a friendly person on the phone: two to four natural sentences. Acknowledge what they said or how they feel, give the answer or move, and if it fits end with one short, friendly line that keeps the conversation open. Do not repeat details you already gave, do not add terms or facts they did not ask about, and promise nothing (no holding, reserving or checking back unless the brief says so). Say places in full and never read terms as a list. Reply in ${languageName(input.language) ?? "the language of their latest message"}, in that language's own script (Hindi in Devanagari, never Urdu script; Tamil in Tamil script), and write every amount in digits with its currency symbol, never in words.`
     : "This is a chat. Write in warm, complete sentences that respond to what they said; one to three sentences.");
   if (plan.notice && notice[plan.notice]) must.unshift(notice[plan.notice]!);
   if (plan.move === "hold" || plan.move === "price_pressure") must.push("Hold by stating the amount positively (\"The price is ...\"). Never say you can't go lower, can't move or can't change it \"right now\": that hints at a limit.");
@@ -214,4 +219,15 @@ export async function composeReply(llm: StructuredLlm, input: ComposeInput): Pro
   const { text, question } = response.json as { text?: unknown; question?: unknown };
   if (typeof text !== "string" || text.trim().length === 0) throw new Error("empty reply");
   return { text: text.trim(), question: typeof question === "string" ? question.trim() : null };
+}
+
+/** A language code as a name for the brief ("ta" → "Tamil"); null when unknown. */
+function languageName(code: string | null | undefined): string | null {
+  if (!code || !/^[a-z]{2,3}$/.test(code)) return null;
+  try {
+    const name = new Intl.DisplayNames(["en"], { type: "language" }).of(code);
+    return name && name !== code ? name : null;
+  } catch {
+    return null;
+  }
 }

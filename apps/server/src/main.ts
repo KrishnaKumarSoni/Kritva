@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { serve } from "@hono/node-server";
 import { createAgentFromEnv, createIntakeAgentFromEnv, createMappingLlmFromEnv, createSpeechFromEnv, createTurnLlmFromEnv, IntakeService, SqliteIntakeStore, MandateLibrary, MandateRevisions, NegotiationEngine, NegotiationRecord, SqliteLibraryBackend, SqliteRecordBackend } from "@kritva/core";
 import { createApp } from "./app.ts";
+import { OpenAIRealtimeConnector, realtimeSettingsFromEnv } from "./realtime-voice.ts";
 import { loadCaseRuntime } from "./main-helpers.ts";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
@@ -40,6 +41,11 @@ const app = createApp({
   listings,
   operatorKey,
   transcriptionPrompt: process.env.KRITVA_TRANSCRIPTION_PROMPT,
+  // Live voice by default; KRITVA_VOICE_MODE=turns keeps the turn-based pipeline.
+  realtime:
+    process.env.OPENAI_API_KEY && (process.env.KRITVA_VOICE_MODE ?? "realtime") === "realtime"
+      ? { connector: new OpenAIRealtimeConnector(process.env.OPENAI_API_KEY), settings: realtimeSettingsFromEnv(), log: (entry) => console.log("[voice]", JSON.stringify(entry)) }
+      : null,
 });
 const port = Number(process.env.PORT ?? 8787);
 

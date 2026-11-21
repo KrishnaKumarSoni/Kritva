@@ -115,6 +115,30 @@ export class NegotiationEngine {
     return fact?.value?.type === "text" ? fact.value.value : null;
   }
 
+  /**
+   * Realtime voice: what the voice model may say on its own. Public facts and the public terms
+   * that are not negotiated, with no amount of the negotiated term (price questions go to the engine).
+   */
+  async voiceBriefing(sessionId: string): Promise<{ status: NegotiationState["status"]; subject: string | null; principalName: string | null; principalRole: string; counterpartyRole: string; facts: string[]; terms: string[] } | null> {
+    const ctx = await this.#record.context(sessionId);
+    if (!ctx.mandate) return null;
+    const state = projectState(ctx);
+    const { view } = state;
+    const negotiated = view.negotiable?.termId ?? null;
+    const terms = publicDealTerms(state)
+      .filter((t) => t.termId !== negotiated)
+      .map((t) => `${view.terms.get(t.termId)?.name ?? t.termId}: ${formatValue(t.value, this.#locale)}`);
+    return {
+      status: state.status,
+      subject: this.publicSubject(view),
+      principalName: this.#listingDetails.get(view.mandate.caseId)?.publicPrincipalName?.trim() || null,
+      principalRole: view.principalRole,
+      counterpartyRole: view.counterpartyRole,
+      facts: view.publicFacts,
+      terms,
+    };
+  }
+
   /** Handles one completed counterparty turn (a typed message or a final voice transcript). */
   handleCounterpartyMessage(input: {
     sessionId: string;
@@ -123,11 +147,13 @@ export class NegotiationEngine {
     /** Client-supplied ID makes retries safe: a repeated message is not processed twice. */
     messageId?: string;
     utteranceId?: string | null;
+    /** The language they spoke (ISO 639-1), when a live voice call knows it. The reply uses it. */
+    language?: string | null;
   }): Promise<TurnResult | TurnError> {
     return this.#serialize(input.sessionId, () => this.#counterpartyTurn(input));
   }
 
-  async #counterpartyTurn(input: { sessionId: string; text: string; channel: Channel; messageId?: string; utteranceId?: string | null }): Promise<TurnResult | TurnError> {
+  async #counterpartyTurn(input: { sessionId: string; text: string; channel: Channel; messageId?: string; utteranceId?: string | null; language?: string | null }): Promise<TurnResult | TurnError> {
     const started = performance.now();
     const { sessionId, channel } = input;
     const session = await this.#record.getSession(sessionId);
@@ -242,7 +268,7 @@ export class NegotiationEngine {
           const check = await this.#recordCheck(writes, state, offerExtractedId, deal.package, deal.check, requestedIds, agent);
           related.push(check.id);
         }
-        turn.ctx = { sessionId, channel, agent, interp, inboundId: inbound.event.id, related, conversation, currentMessage, rephrase };
+        turn.ctx = { sessionId, channel, agent, interp, inboundId: inbound.event.id, related, conversation, currentMessage, rephrase, language: input.language ?? null };
         turn.planned = await this.#plan(writes, turn.ctx);
         return turn.planned.drafting.brief;
       };
@@ -370,7 +396,7 @@ export class NegotiationEngine {
 
     if (plan.move === "confirm_agreement" && plan.acceptanceOf) plan.approvalGranted = Boolean(approvedFor(state, plan.acceptanceOf.termsHash));
     const offerIds = await this.#recordCommitments(writes, state, plan, ctx.inboundId, ctx.agent);
-    return { plan, state, prepared, offerIds, exception: false, drafting: this.#drafting(state, plan, ctx.conversation, ctx.currentMessage, ctx.channel) };
+    return { plan, state, prepared, offerIds, exception: false, drafting: this.#drafting(state, plan, ctx.conversation, ctx.currentMessage, ctx.channel, ctx.language) };
   }
 
   /**
@@ -449,7 +475,7 @@ export class NegotiationEngine {
     await writes.put({ id: newEventId(), type: "decision", channel: null, payload: { kind: "request_approval", reason: "The terms cross a limit the principal may approve an exception to; asking before offering.", relatedEventIds: [...ctx.related, offerId] } }, ctx.agent);
     const holding = basePlan("await_approval", { kind: "request_approval", reason: "Waiting for the principal's exception decision." }, null);
     holding.notice = "check_with_principal";
-    return { plan: holding, state, prepared: state.mandateRevision, offerIds: [], exception: true, drafting: this.#drafting(state, holding, ctx.conversation, ctx.currentMessage, ctx.channel) };
+    return { plan: holding, state, prepared: state.mandateRevision, offerIds: [], exception: true, drafting: this.#drafting(state, holding, ctx.conversation, ctx.currentMessage, ctx.channel, ctx.language) };
   }
 
   /** Records what the counterparty said and answered, then prepares questions from the updated context. */
@@ -542,12 +568,12 @@ export class NegotiationEngine {
   }
 
   /** Everything one reply's wording depends on: the plan, public content and the brief the agent reads. */
-  #drafting(state: NegotiationState, plan: Plan, conversation: Conversation, currentMessage: string | null = null, channel: Channel = "text"): Drafting {
+  #drafting(state: NegotiationState, plan: Plan, conversation: Conversation, currentMessage: string | null = null, channel: Channel = "text", language: string | null = null): Drafting {
     const subject = this.publicSubject(state.view);
     const publicPrincipalName = this.#listingDetails.get(state.view.mandate.caseId)?.publicPrincipalName?.trim();
     const publicTerms = publicDealTerms(state);
     const offerInvitedRecently = invitedOfferRecently(conversation);
-    const brief = composeBrief({ view: state.view, plan, publicTerms, publicPrincipalName, conversation, theirMessage: currentMessage, locale: this.#locale, outcome: state.outcome.kind, offerInvitedRecently, channel: channel === "voice" ? "voice" : "text" });
+    const brief = composeBrief({ view: state.view, plan, publicTerms, publicPrincipalName, conversation, theirMessage: currentMessage, locale: this.#locale, outcome: state.outcome.kind, offerInvitedRecently, channel: channel === "voice" ? "voice" : "text", language });
     return {
       state, plan, conversation, currentMessage, subject, publicPrincipalName, publicTerms, offerInvitedRecently, brief,
       previousReply: [...conversation].reverse().find((c) => c.speaker === "agent")?.text ?? null,
@@ -856,6 +882,86 @@ export class NegotiationEngine {
     return result.event;
   }
 
+  /**
+   * Realtime voice: checks words the voice model said on its own (a conversation answer or a short
+   * acknowledgement before a deal turn). Only public amounts, the counterparty's own figures and
+   * amounts already offered may appear, and no agreement, approval or commitment may be claimed.
+   */
+  async checkVoiceWords(sessionId: string, text: string, theirWords = ""): Promise<ReplyViolation[]> {
+    const ctx = await this.#record.context(sessionId);
+    if (!ctx.mandate) return [];
+    return voiceWordsViolations(projectState(ctx), text, findAmounts(theirWords));
+  }
+
+  /** Realtime voice: an acknowledgement spoken before a deal turn, kept as a transcript fragment (never a message). */
+  async recordVoiceFragment(input: { sessionId: string; text: string; utteranceId: string }): Promise<RecordedEvent | TurnError> {
+    const ctx = await this.#record.context(input.sessionId);
+    if (!ctx.mandate) return { ok: false, code: "session_not_found", message: "The session does not exist." };
+    const principalId = projectState(ctx).view.principalId;
+    const result = await this.#record.append(
+      input.sessionId,
+      { id: newEventId(), type: "transcript_fragment", channel: "voice", payload: { utteranceId: input.utteranceId, speakerPartyId: principalId, text: input.text.slice(0, 10_000) } },
+      { kind: AGENT, partyId: principalId },
+    );
+    if (!result.ok) return { ok: false, code: result.error.code === "write_failed" ? "write_failed" : "invalid_event", message: result.error.message };
+    return result.event;
+  }
+
+  /**
+   * Realtime voice: a conversation turn the voice model answered itself from public facts (a greeting,
+   * small talk, a repeat, a listed detail). Recorded like any turn (their message, a decision, the
+   * check and the reply as spoken) so the engine always sees the whole conversation. The reply was
+   * already spoken, so a failed check is recorded as a block and returned for the caller to correct.
+   */
+  recordVoiceAnswer(input: { sessionId: string; buyerText: string; replyText: string; messageId: string; utteranceId?: string | null }): Promise<{ ok: true; violations: ReplyViolation[]; replyId: string } | TurnError> {
+    return this.#serialize(input.sessionId, async () => {
+      const ctx = await this.#record.context(input.sessionId);
+      if (!ctx.mandate) return { ok: false, code: "session_not_found", message: "The session does not exist." };
+      const state = projectState(ctx);
+      const counterparty: Actor = { kind: "counterparty", partyId: state.view.counterpartyId };
+      const agent: Actor = { kind: AGENT, partyId: state.view.principalId };
+      const writes = new Writer(this.#record, input.sessionId);
+      try {
+        const inbound = await writes.put(
+          { id: input.messageId, type: "message", channel: "voice", payload: { direction: "inbound", speakerPartyId: state.view.counterpartyId, text: input.buyerText.slice(0, 2_000), utteranceId: input.utteranceId ?? null, offerIds: [] } },
+          counterparty,
+        );
+        const violations = voiceWordsViolations(state, input.replyText);
+        const plan = basePlan("answer", { kind: "answer", reason: "Answered in conversation by the voice agent from public facts." }, null);
+        await writes.put({ id: newEventId(), type: "decision", channel: null, payload: { kind: "answer", reason: plan.decision.reason, relatedEventIds: [inbound.id], action: "answer", assessment: null, mandateRevision: state.mandateRevision, guidance: this.guidanceFor(state.view.mandate.caseId).id } }, agent);
+        await this.#recordGate(writes, plan, { decision: violations.length ? "block" : "allow", reasons: violations.map((v) => ({ rule: v.rule, detail: v.detail })), mandateRevision: state.mandateRevision, termsHash: null, breachedRuleIds: [] }, "send", null, agent);
+        const reply = await writes.put({ id: newEventId(), type: "message", channel: "voice", payload: { direction: "outbound", speakerPartyId: state.view.principalId, text: input.replyText.slice(0, 10_000), utteranceId: null, offerIds: [] } }, agent);
+        return { ok: true, violations, replyId: reply.id };
+      } catch (error) {
+        if (error instanceof WriteFailure) return { ok: false, code: error.code, message: error.message };
+        throw error;
+      }
+    });
+  }
+
+  /** Realtime voice: a short reply the engine already checked elsewhere (a correction line), recorded as spoken. */
+  recordVoiceLine(input: { sessionId: string; text: string; reason: string }): Promise<{ ok: true; replyId: string } | TurnError> {
+    return this.#serialize(input.sessionId, async () => {
+      const ctx = await this.#record.context(input.sessionId);
+      if (!ctx.mandate) return { ok: false, code: "session_not_found", message: "The session does not exist." };
+      const state = projectState(ctx);
+      const agent: Actor = { kind: AGENT, partyId: state.view.principalId };
+      const writes = new Writer(this.#record, input.sessionId);
+      try {
+        const violations = voiceWordsViolations(state, input.text);
+        if (violations.length) return { ok: false, code: "invalid_event", message: "The line did not pass the outgoing check." };
+        const plan = basePlan("answer", { kind: "answer", reason: input.reason }, null);
+        await writes.put({ id: newEventId(), type: "decision", channel: null, payload: { kind: "answer", reason: input.reason, relatedEventIds: [], action: "answer", assessment: null, mandateRevision: state.mandateRevision, guidance: this.guidanceFor(state.view.mandate.caseId).id } }, agent);
+        await this.#recordGate(writes, plan, { decision: "allow", reasons: [], mandateRevision: state.mandateRevision, termsHash: null, breachedRuleIds: [] }, "send", null, agent);
+        const reply = await writes.put({ id: newEventId(), type: "message", channel: "voice", payload: { direction: "outbound", speakerPartyId: state.view.principalId, text: input.text, utteranceId: null, offerIds: [] } }, agent);
+        return { ok: true, replyId: reply.id };
+      } catch (error) {
+        if (error instanceof WriteFailure) return { ok: false, code: error.code, message: error.message };
+        throw error;
+      }
+    });
+  }
+
   /** The principal answers a pending approval request. Identity comes from the calling route. */
   respondToApproval(input: { sessionId: string; requestId: string; decision: "approved" | "rejected"; note?: string | null; channel?: Channel; expected?: { offerId?: string | null; mandateRevision?: number | null } }): Promise<TurnResult | TurnError> {
     return this.#serialize(input.sessionId, async () => {
@@ -1105,6 +1211,7 @@ interface ActContext {
   conversation: Conversation;
   currentMessage: string;
   rephrase: boolean;
+  language?: string | null;
 }
 
 /** Placeholder until strategy (Epic 8): ask at most one never-asked question, only while holding or answering. */
@@ -1226,6 +1333,16 @@ class Writer {
     if (result.created) this.created.push(result.event);
     return result.event;
   }
+}
+
+/**
+ * Words the realtime voice model said itself: public amounts, the counterparty's own figures and
+ * amounts already offered to them are allowed; anything else, and any agreement, approval or
+ * commitment claim, is a violation.
+ */
+function voiceWordsViolations(state: NegotiationState, text: string, theirAmounts: number[] = []): ReplyViolation[] {
+  const plan = basePlan("answer", { kind: "answer", reason: "Voice model's own words." }, null);
+  return checkReply(text, { view: state.view, plan, counterpartyAmounts: [...state.counterpartyAmounts, ...state.askHistory, ...theirAmounts] });
 }
 
 function basePlan(move: Plan["move"], decision: Plan["decision"], offer: Plan["offer"]): Plan {

@@ -2,6 +2,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api, type BuyerMessage } from "./api.ts";
 import { AlertIcon, MicIcon, MicOffIcon, PhoneOffIcon } from "./icons.tsx";
+import { RealtimeVoice, UnavailableError } from "./realtime.ts";
 import { VoiceSession, type VoiceState } from "./voice.ts";
 
 const spring = { type: "spring", duration: 0.35, bounce: 0 } as const;
@@ -40,6 +41,8 @@ export function VoiceBar({ sessionId, messages, paused, startRequest = 0, onActi
   const [error, setError] = useState<string | null>(null);
   const [last, setLast] = useState<{ transcript: string; ms: number | null } | null>(null);
   const session = useRef<VoiceSession | null>(null);
+  /** Live voice (realtime call). When it is unavailable, the turn-based pipeline is used. */
+  const live = useRef<RealtimeVoice | null>(null);
   const spoken = useRef(new Set<string>());
   const queue = useRef<Array<{ id: string; text: string }>>([]);
   const playing = useRef<VoiceSession | null>(null);
@@ -65,6 +68,11 @@ export function VoiceBar({ sessionId, messages, paused, startRequest = 0, onActi
   // follows the seller's approval while the call is on).
   useEffect(() => {
     if (!active || afterSeq.current === null) return;
+    if (live.current) {
+      // The call speaks replies itself; the bar only needs their text to report what was heard.
+      for (const m of messages) if (m.from === "agent" && m.channel === "voice") live.current.know(m.id, m.text);
+      return;
+    }
     for (const m of messages) {
       if (m.from !== "agent" || m.channel !== "voice" || m.seq <= afterSeq.current || spoken.current.has(m.id)) continue;
       spoken.current.add(m.id);
@@ -74,6 +82,14 @@ export function VoiceBar({ sessionId, messages, paused, startRequest = 0, onActi
   }, [messages, active, drain]);
 
   const end = useCallback(() => {
+    const rt = live.current;
+    if (rt) {
+      live.current = null;
+      afterSeq.current = null;
+      rt.end();
+      if (sessionId) void api.voiceRealtimeEnd(sessionId);
+      return;
+    }
     const call = session.current;
     if (!call) return;
     call.end();
@@ -81,10 +97,10 @@ export function VoiceBar({ sessionId, messages, paused, startRequest = 0, onActi
     afterSeq.current = null;
     queue.current = [];
     playing.current = null;
-  }, []);
+  }, [sessionId]);
 
   const disconnect = useCallback(() => {
-    if (!session.current || !sessionId) return;
+    if ((!session.current && !live.current) || !sessionId) return;
     end();
     setError("Voice was interrupted. Start voice again to continue.");
     if (navigator.onLine) void api.voiceInterrupted(sessionId).then(onTurn).catch(() => undefined);
@@ -108,20 +124,62 @@ export function VoiceBar({ sessionId, messages, paused, startRequest = 0, onActi
     if (paused) session.current?.interrupt();
   }, [paused]);
 
+  const report = useCallback((messageId: string, status: "delivered" | "interrupted" | "failed", heard: string | null, ms: number | null) => {
+    if (!sessionId) return;
+    // Preserve ordering when the next utterance follows immediately after a reply.
+    delivery.current = delivery.current.then(async () => {
+      await api.reportVoiceDelivery(sessionId, messageId, status, heard, ms);
+      onTurn();
+    }).catch(() => {
+      setError("The reply's delivery couldn't be saved. Please confirm the terms again.");
+    });
+  }, [sessionId, onTurn]);
+
+  /** Live voice first; false when it is unavailable, so the turn-based pipeline starts instead. */
+  const startLive = useCallback(async (): Promise<boolean> => {
+    if (!sessionId) return true;
+    let unavailable = false;
+    const rt = new RealtimeVoice({
+      onState: setState,
+      onError: setError,
+      onHeard: (transcript) => setLast({ transcript, ms: null }),
+      onDelivery: (messageId, status, heard, ms) => {
+        report(messageId, status, heard ?? (status === "interrupted" ? "" : null), ms);
+        if (ms !== null) setLast((l) => (l ? { ...l, ms: l.ms ?? ms } : l));
+      },
+      onDisconnected: () => disconnectRef.current(),
+      onActivity: () => onTurn(),
+    });
+    live.current = rt;
+    const ok = await rt.start(async (sdp) => {
+      try {
+        const answer = await api.voiceRealtime(sessionId, sdp);
+        afterSeq.current = answer.afterSeq;
+        return answer.sdp;
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 501) {
+          unavailable = true;
+          throw new UnavailableError();
+        }
+        throw e;
+      }
+    }).catch(() => false);
+    if (unavailable) {
+      if (live.current === rt) live.current = null;
+      setError(null);
+      return false;
+    }
+    if (!ok && live.current === rt) live.current = null;
+    if (ok) onTurn();
+    return true;
+  }, [sessionId, report, onTurn]);
+
   const start = useCallback(async () => {
-    if (!sessionId || session.current) return;
+    if (!sessionId || session.current || live.current) return;
     setError(null);
     setLast(null);
     spoken.current.clear();
-    const report = (messageId: string, status: "delivered" | "interrupted" | "failed", heard: string | null, ms: number | null) => {
-      // Preserve ordering when the next utterance follows immediately after a reply.
-      delivery.current = delivery.current.then(async () => {
-        await api.reportVoiceDelivery(sessionId, messageId, status, heard, ms);
-        onTurn();
-      }).catch(() => {
-        setError("The reply's delivery couldn't be saved. Please confirm the terms again.");
-      });
-    };
+    if (await startLive()) return;
     const v = new VoiceSession({
       onState: setState,
       onError: setError,
@@ -183,7 +241,7 @@ export function VoiceBar({ sessionId, messages, paused, startRequest = 0, onActi
       setError(e instanceof ApiError ? e.message : "Voice couldn't connect. You can keep typing.");
       end();
     }
-  }, [sessionId, drain, onTurn, end]);
+  }, [sessionId, drain, onTurn, end, report, startLive]);
 
   const started = useRef(0);
   useEffect(() => {
@@ -215,7 +273,7 @@ export function VoiceBar({ sessionId, messages, paused, startRequest = 0, onActi
           </button>
         ) : (
           <>
-            <button type="button" className="button button-secondary" onClick={() => session.current?.setMuted(!muted)} aria-pressed={muted} disabled={state === "connecting"}>
+            <button type="button" className="button button-secondary" onClick={() => (live.current ?? session.current)?.setMuted(!muted)} aria-pressed={muted} disabled={state === "connecting"}>
               {muted ? <MicIcon /> : <MicOffIcon />}
               {muted ? "Unmute" : "Mute"}
             </button>
