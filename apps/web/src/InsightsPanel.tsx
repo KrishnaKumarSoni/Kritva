@@ -199,7 +199,9 @@ export function InsightsPanel({ view, responding, onRespond, onPause, onEditInst
               <div className="kv-row">
                 <dt>Discount earned</dt>
                 <dd>
-                  {s.allowance ? (
+                  {s.allowance && s.allowance.earned === 0 ? (
+                    "None earned yet"
+                  ) : s.allowance ? (
                     <span className="meter-wrap">
                       <span className="meter" aria-hidden="true">
                         <motion.span className="meter-fill" initial={false} animate={{ width: `${s.allowance.earned ? (s.allowance.used / s.allowance.earned) * 100 : 0}%` }} transition={reduced ? { duration: 0 } : spring} />
@@ -301,7 +303,9 @@ export function InsightsPanel({ view, responding, onRespond, onPause, onEditInst
 function nextConcession(insights: NonNullable<OperatorView["insights"]>, counterparty: string): string {
   const { nextStepCap, allowance } = insights.strategy;
   const cap = nextStepCap === null ? null : Math.min(nextStepCap, allowance ? allowance.remaining : nextStepCap);
-  if (allowance && allowance.remaining <= 0) return `None until the ${counterparty} improves their offer`;
+  if (allowance && allowance.remaining <= 0) {
+    return insights.counterparty.bestOffer === null ? `None until the ${counterparty} makes an offer` : `None until the ${counterparty} improves their offer`;
+  }
   if (cap === null) return "Half the distance to your limit";
   return cap > 0 ? `Up to ${formatAmount(insights, cap)}` : "None left";
 }
