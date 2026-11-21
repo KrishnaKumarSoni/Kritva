@@ -1,0 +1,25 @@
+{
+  "name": "humane-refuses-budget",
+  "description": "Conversation quality: the buyer refuses to give a budget. Kritva does not insist or repeat the question.",
+  "turns": [
+    {
+      "buyer": "₹16,000."
+    },
+    {
+      "buyer": "I'd rather not share my budget."
+    },
+    {
+      "buyer": "Okay, ₹16,500 then."
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "in_progress",
+      "no_agreement"
+    ],
+    "noOfferBelow": 18000,
+    "agentMustNotSay": [
+      "budget.*budget"
+    ]
+  }
+}

@@ -90,6 +90,9 @@ export function prepareQuestions(model: CounterpartyModel, termName: (termId: st
 }
 
 function addConditional(add: (q: QuestionCandidate) => void, item: NoteItem): void {
+  // Only a condition that is an open event ("if I get a truck") can be asked about this way;
+  // a qualifier such as "including pickup costs" is not something they will "know" later.
+  if (!/^(if|only if|provided( that)?|as long as|once|when|unless)\b/i.test(item.condition!.trim())) return;
   add({
     issueKey: `conditional:${item.id}`,
     issueKind: "conditional",

@@ -103,7 +103,7 @@ describe("Epic 9, Story 1: buyer messages go through the core", () => {
   it("a question about a mattress, with no mattress fact, gets no invented answer", async () => {
     const { say } = await setup(listingOnlyDeliveryMandate());
     const t = await say("Is a mattress included?", { intent: "question", questions: ["Is a mattress included?"] });
-    expect(t.reply!.text).toContain("I don't have information about that");
+    expect(t.reply!.text).toContain("I don't have that detail confirmed");
     expect(t.reply!.text).not.toMatch(/mattress (is|comes) included|includes a mattress/i);
   });
 
@@ -177,7 +177,7 @@ describe("Epic 9, Story 2: offers and the correct outcome", () => {
     const c = await commitments();
     expect(c.stopped!.by).toBe("counterparty");
     expect((await events()).some((e) => e.type === "agreement_recorded")).toBe(false);
-    expect(t.reply!.text).toBe("Understood. Thank you for your time.");
+    expect(t.reply!.text).toBe("Understood. Thanks for your time.");
   });
 
   it("an approved seller offer that was never delivered cannot be agreed by a buyer's 'yes'", async () => {
@@ -230,3 +230,76 @@ describe("Epic 9, Story 3: pause and resume from the saved record", () => {
     expect((await events()).filter((e) => e.type === "offer_proposed")).toHaveLength(1);
   });
 });
+
+describe("Humane conversation guide", () => {
+  it("Kritva introduces itself once as the principal's AI assistant, then never repeats it", async () => {
+    const { say } = await setup(listingOnlyDeliveryMandate());
+    const first = await say("Is it still available?", { intent: "question" });
+    expect(first.reply!.text).toMatch(/^Hi, I'm Kritva, the seller's AI assistant\./);
+    const second = await say("₹15,000.", offer(15_000));
+    expect(second.reply!.text).not.toMatch(/Kritva|AI assistant/);
+  });
+
+  it("a composed reply never carries an em or en dash", async () => {
+    const { say } = await setup(listingOnlyDeliveryMandate());
+    await say("Hi.", { intent: "greeting" });
+    const t = await say("₹15,000.", offer(15_000), { composed: "Thanks for that — I could do ₹18,000 – would that work?" });
+    expect(t.reply!.text).not.toMatch(/[\u2014\u2013]/);
+    expect(t.reply!.text).toBe("Thanks for that, I could do ₹18,000, would that work?");
+  });
+
+  it("internal vocabulary in a composed reply is blocked and replaced by checked wording", async () => {
+    const { say, events } = await setup(listingOnlyDeliveryMandate());
+    await say("Hi.", { intent: "greeting" });
+    const t = await say("₹15,000.", offer(15_000), { composed: "Per my mandate I could do ₹19,000." });
+    expect(t.reply!.text).not.toMatch(/mandate/i);
+    const blocked = (await events()).find((e) => e.type === "reply_blocked")!.payload as PayloadOf<"reply_blocked">;
+    expect(blocked.violations.some((v) => v.rule === "internal_term")).toBe(true);
+  });
+
+  it("the opening greeting states public terms only, is recorded once, and offers nothing", async () => {
+    const { engine, sessionId, events } = await setup(listingOnlyDeliveryMandate());
+    const g = await engine.greet({ sessionId, channel: "voice" });
+    expect(g.ok && g.reply!.text).toBe("Hi, I'm Kritva, the seller's AI assistant. It's listed at ₹20,000. What would you like to know?");
+    const again = await engine.greet({ sessionId, channel: "voice" });
+    expect(again.ok && again.reply).toBeNull();
+    const all = await events();
+    expect(all.filter((e) => e.type === "message")).toHaveLength(1);
+    expect(all.some((e) => e.type === "offer_proposed")).toBe(false);
+    expect(JSON.stringify(all.filter((e) => e.visibility === "public"))).not.toContain("18,000");
+  });
+
+  it("quoting the buyer's own figure back in a question passes the check", async () => {
+    const { say, events } = await setup(listingOnlyDeliveryMandate());
+    await say("Hi.", { intent: "greeting" });
+    const t = await say("Pickup will cost me ₹2,000.", { intent: "other" }, { composed: "That makes sense. With the ₹2,000 for pickup, what total budget are you working with?" });
+    expect(t.reply!.text).toContain("₹2,000");
+    expect((await events()).some((e) => e.type === "reply_blocked")).toBe(false);
+  });
+
+  it("after a pause notice, the first real reply still introduces Kritva once", async () => {
+    const { say, engine, sessionId } = await setup(listingOnlyDeliveryMandate());
+    await engine.setPaused({ sessionId, paused: true });
+    const paused = await say("₹15,000.", offer(15_000));
+    expect(paused.reply!.text).not.toMatch(/Kritva/);
+    await engine.setPaused({ sessionId, paused: false });
+    const real = await say("₹15,000.", offer(15_000));
+    expect(real.reply!.text).toMatch(/^Hi, I'm Kritva/);
+  });
+
+  it("a composed reply that opens like the previous one is replaced by varied checked wording", async () => {
+    const { say } = await setup(listingOnlyDeliveryMandate());
+    await say("Hi.", { intent: "greeting" }, { composed: "Hi, I'm Kritva, the seller's AI assistant. Happy to help." });
+    const first = await say("Is it in good condition?", { intent: "question", questions: ["Is it in good condition?"] }, { composed: "Happy to help with that. I don't have that detail confirmed." });
+    const second = await say("And the size?", { intent: "question", questions: ["And the size?"] }, { composed: "Happy to help with that too. I don't have that detail confirmed." });
+    expect(first.reply!.text.split(" ").slice(0, 3)).not.toEqual(second.reply!.text.split(" ").slice(0, 3));
+  });
+
+  it("a qualifier like \"including pickup costs\" is not turned into a \"when will you know\" question", async () => {
+    const { say, events } = await setup(listingOnlyDeliveryMandate());
+    await say("₹17,000 because of pickup.", { ...offer(17_000), notes: [{ kind: "constraint", quote: "because of pickup", summary: "Pickup cost matters.", term_id: null, value: null, condition: "including pickup costs", basis: "stated" }] });
+    const kinds = (await events()).filter((e) => e.type === "question_prepared").map((e) => (e.payload as PayloadOf<"question_prepared">).issueKind);
+    expect(kinds).not.toContain("conditional");
+  });
+});
+

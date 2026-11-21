@@ -23,7 +23,7 @@ import { decide, type DealInput, type Interpretation, type Plan } from "./policy
 import { checkReply, type ReplyViolation } from "./reply-check.ts";
 import { approvedFor, projectState, type NegotiationState } from "./state.ts";
 import { MINIMAL_GUIDANCE, type StrategyGuidance } from "../strategy/guidance.ts";
-import { templateReply } from "./templates.ts";
+import { clean, introduction, templateReply } from "./templates.ts";
 
 export interface EngineOptions {
   record: NegotiationRecord;
@@ -32,6 +32,11 @@ export interface EngineOptions {
   locale: string;
   /** Tactic parameters from a strategy document. Never overrides the mandate or governance. */
   guidance?: StrategyGuidance;
+  /**
+   * How voice replies are worded. "composed": the model words each reply (then it is checked).
+   * "template": checked template wording only, which skips two model calls and answers faster.
+   */
+  voiceWording?: "composed" | "template";
 }
 
 export interface TurnResult {
@@ -54,6 +59,7 @@ export class NegotiationEngine {
   readonly #llm: StructuredLlm;
   readonly #locale: string;
   readonly #guidance: StrategyGuidance;
+  readonly #voiceWording: "composed" | "template";
   readonly #locks = new Map<string, Promise<unknown>>();
 
   constructor(options: EngineOptions) {
@@ -61,6 +67,7 @@ export class NegotiationEngine {
     this.#llm = options.llm;
     this.#locale = options.locale;
     this.#guidance = options.guidance ?? MINIMAL_GUIDANCE;
+    this.#voiceWording = options.voiceWording ?? "composed";
   }
 
   get guidance(): StrategyGuidance {
@@ -248,6 +255,10 @@ export class NegotiationEngine {
       }
       if (state.status === "paused") plan.notice = "paused";
       if (ctx.rephrase) plan.notice ??= "rephrase";
+      // Kritva introduces itself once, on its first real reply (a pause notice doesn't count).
+      const history = await this.#record.context(ctx.sessionId);
+      plan.turnIndex = outboundCount(history);
+      plan.introduce = !alreadyIntroduced(history) && plan.notice !== "paused" && plan.notice !== "ended";
       const prepared = state.mandateRevision;
 
       // A change while waiting for approval supersedes the pending request.
@@ -285,7 +296,7 @@ export class NegotiationEngine {
 
       const offerIds = await this.#recordCommitments(writes, state, plan, ctx.inboundId, ctx.agent);
       // Phase 2: the words, built only from checked terms and permitted facts.
-      const text = await this.#word(writes, state, plan, ctx.conversation, ctx.agent, ctx.interp);
+      const text = await this.#word(writes, state, plan, ctx.conversation, ctx.agent, ctx.interp, ctx.channel);
 
       // Send: the action may go only under the authority it was prepared with.
       const now = projectState(await this.#record.context(ctx.sessionId));
@@ -449,8 +460,8 @@ export class NegotiationEngine {
    * checked fields, never written by the model. Other replies may be composed, then must pass the
    * code checks and the language check; otherwise checked template wording is used.
    */
-  async #word(writes: Writer, state: NegotiationState, plan: Plan, conversation: Conversation, agent: Actor, interp: Interpretation): Promise<string> {
-    const templateOnly = plan.move === "state_final_terms" || plan.move === "confirm_agreement" || plan.move === "end_negotiation" || plan.notice === "paused" || plan.notice === "check_with_principal" || plan.notice === "ended";
+  async #word(writes: Writer, state: NegotiationState, plan: Plan, conversation: Conversation, agent: Actor, interp: Interpretation, channel: Channel = "text"): Promise<string> {
+    const templateOnly = (channel === "voice" && this.#voiceWording === "template") || plan.move === "state_final_terms" || plan.move === "confirm_agreement" || plan.move === "end_negotiation" || plan.notice === "paused" || plan.notice === "check_with_principal" || plan.notice === "ended";
     if (!templateOnly) {
       let draft: string | null = null;
       try {
@@ -458,7 +469,12 @@ export class NegotiationEngine {
       } catch {
         draft = null;
       }
+      if (draft !== null) draft = clean(draft);
+      // A reply that opens exactly like the previous one sounds scripted: use varied checked wording instead.
+      const previous = [...conversation].reverse().find((c) => c.speaker === "agent")?.text ?? null;
+      if (draft !== null && previous && opener(draft) === opener(previous)) draft = null;
       if (draft !== null && plan.ask && !draft.includes(plan.ask.text)) draft = `${draft} ${plan.ask.text}`;
+      if (draft !== null && plan.introduce && !/\bkritva\b/i.test(draft)) draft = `${introduction(state.view)} ${draft}`;
       if (draft !== null) {
         const wording = gateWording(state, plan, draft);
         if (wording.decision !== "allow") {
@@ -480,7 +496,11 @@ export class NegotiationEngine {
         }
       }
     }
+    const previousReply = [...conversation].reverse().find((c) => c.speaker === "agent")?.text ?? null;
     let fallback = templateReply(state.view, plan, this.#locale);
+    for (let shift = 1; previousReply && shift < 3 && opener(fallback) === opener(previousReply); shift += 1) {
+      fallback = templateReply(state.view, { ...plan, turnIndex: (plan.turnIndex ?? 0) + shift }, this.#locale);
+    }
     if (plan.ask && !fallback.includes(plan.ask.text)) fallback = `${fallback} ${plan.ask.text}`;
     const fallbackGate = gateWording(state, plan, fallback);
     if (fallbackGate.decision === "allow") return fallback;
@@ -594,10 +614,10 @@ export class NegotiationEngine {
   }
 
   /** The channel reports what it delivered. Only then does an offer count as communicated. */
-  async reportDelivery(input: { sessionId: string; messageId: string; channel: Channel; status: "delivered" | "interrupted" | "failed"; deliveredText?: string | null }): Promise<RecordedEvent | TurnError> {
+  async reportDelivery(input: { sessionId: string; messageId: string; channel: Channel; status: "delivered" | "interrupted" | "failed"; deliveredText?: string | null; audioStartMs?: number | null }): Promise<RecordedEvent | TurnError> {
     const result = await this.#record.append(
       input.sessionId,
-      { id: `delivery_${input.messageId}`, type: "delivery_reported", channel: input.channel, payload: { messageId: input.messageId, status: input.status, deliveredText: input.deliveredText ?? null } },
+      { id: `delivery_${input.messageId}`, type: "delivery_reported", channel: input.channel, payload: { messageId: input.messageId, status: input.status, deliveredText: input.deliveredText ?? null, audioStartMs: input.audioStartMs ?? null } },
       { kind: "system", partyId: null },
     );
     if (!result.ok) return { ok: false, code: result.error.code === "write_failed" ? "write_failed" : "invalid_event", message: result.error.message };
@@ -605,7 +625,7 @@ export class NegotiationEngine {
   }
 
   /** The principal answers a pending approval request. Identity comes from the calling route. */
-  respondToApproval(input: { sessionId: string; requestId: string; decision: "approved" | "rejected"; note?: string | null; channel?: Channel }): Promise<TurnResult | TurnError> {
+  respondToApproval(input: { sessionId: string; requestId: string; decision: "approved" | "rejected"; note?: string | null; channel?: Channel; expected?: { offerId?: string | null; mandateRevision?: number | null } }): Promise<TurnResult | TurnError> {
     return this.#serialize(input.sessionId, async () => {
       const started = performance.now();
       const state = projectState(await this.#record.context(input.sessionId));
@@ -613,6 +633,10 @@ export class NegotiationEngine {
       const pending = state.pendingApproval;
       if (!pending || pending.requestId !== input.requestId) {
         return { ok: false, code: "not_pending", message: "That approval request is no longer pending." };
+      }
+      // The decision applies only to the exact offer version and mandate revision the principal saw.
+      if ((input.expected?.offerId && input.expected.offerId !== pending.offerId) || (input.expected?.mandateRevision && input.expected.mandateRevision !== state.mandateRevision)) {
+        return { ok: false, code: "not_pending", message: "The terms or instructions changed since you opened this request. Review the current request." };
       }
       const principal: Actor = { kind: "principal", partyId: state.view.principalId };
       const agent: Actor = { kind: AGENT, partyId: state.view.principalId };
@@ -741,6 +765,38 @@ export class NegotiationEngine {
     });
   }
 
+  /**
+   * Kritva's opening line when a conversation starts (for example a voice call): it introduces
+   * itself once as the principal's AI assistant and states only public terms. Nothing is offered.
+   * If Kritva has already spoken in this session, nothing is sent.
+   */
+  greet(input: { sessionId: string; channel: Channel }): Promise<{ ok: true; reply: TurnResult["reply"] } | TurnError> {
+    return this.#serialize(input.sessionId, async () => {
+      const ctx = await this.#record.context(input.sessionId);
+      if (!ctx.mandate) return { ok: false, code: "session_not_found", message: "The session does not exist." };
+      const state = projectState(ctx);
+      if (outboundCount(ctx) > 0) return { ok: true, reply: null };
+      if (state.status !== "active") return { ok: false, code: "not_pending", message: "This negotiation is not active." };
+      const agent: Actor = { kind: AGENT, partyId: state.view.principalId };
+      const n = state.view.negotiable;
+      const listed = n ? ` It's listed at ${formatValue(numericValue(n, n.opening), this.#locale)}.` : "";
+      const text = clean(`${introduction(state.view)}${listed} What would you like to know?`);
+      const plan = basePlan("answer", { kind: "answer", reason: "Introduce Kritva at the start of the conversation." }, null);
+      const wording = gateWording(state, plan, text);
+      if (wording.decision !== "allow") return { ok: false, code: "invalid_event", message: "The greeting did not pass the outgoing check." };
+      const writes = new Writer(this.#record, input.sessionId);
+      try {
+        await writes.put({ id: newEventId(), type: "decision", channel: null, payload: { kind: "answer", reason: plan.decision.reason, relatedEventIds: [], action: "answer", assessment: null, mandateRevision: state.mandateRevision, guidance: this.#guidance.id } }, agent);
+        await this.#recordGate(writes, plan, { decision: "allow", reasons: [], mandateRevision: state.mandateRevision, termsHash: null, breachedRuleIds: [] }, "send", null, agent);
+        const reply = await writes.put({ id: newEventId(), type: "message", channel: input.channel, payload: { direction: "outbound", speakerPartyId: state.view.principalId, text, utteranceId: null, offerIds: [] } }, agent);
+        return { ok: true, reply: { messageId: reply.id, text, offerIds: [], channel: input.channel } };
+      } catch (error) {
+        if (error instanceof WriteFailure) return { ok: false, code: error.code, message: error.message };
+        throw error;
+      }
+    });
+  }
+
   /** A retried message returns the turn that was already recorded for it. */
   async #replay(sessionId: string, inbound: RecordedEvent, started: number): Promise<TurnResult> {
     const events = await this.#record.read(sessionId, { viewer: "operator" });
@@ -788,6 +844,21 @@ function selectQuestion(model: CounterpartyModel, plan: Plan): Plan["ask"] {
   if (plan.notice || plan.clarify.length > 0 || plan.unresolved.length > 0 || plan.questions.length > 0 || plan.refuseDisclosure) return null;
   const q = model.questions.find((x) => x.status === "open");
   return q ? { questionId: q.id, text: q.text } : null;
+}
+
+/** Kritva has already introduced itself in this session. */
+function alreadyIntroduced(ctx: { events: RecordedEvent[] }): boolean {
+  return ctx.events.some((e) => e.type === "message" && (e.payload as { direction: string; text: string }).direction === "outbound" && /\bKritva\b/.test((e.payload as { text: string }).text));
+}
+
+/** The first few words of a reply, ignoring the one-time introduction. */
+function opener(text: string): string {
+  return text.replace(/^Hi, I'm Kritva[^.]*\.\s*/, "").toLowerCase().split(/\s+/).slice(0, 3).join(" ");
+}
+
+/** Replies the agent has already sent in this session. */
+function outboundCount(ctx: { events: RecordedEvent[] }): number {
+  return ctx.events.filter((e) => e.type === "message" && (e.payload as { direction: string }).direction === "outbound").length;
 }
 
 /** A conditional question was already put to the counterparty in this session. */

@@ -1,7 +1,9 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import type React from "react";
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { BuyerMessage, BuyerView, TermView } from "./api.ts";
 import { AlertIcon, CheckIcon, ClockIcon, SendIcon, SparkIcon } from "./icons.tsx";
+import { VoiceBar } from "./VoiceBar.tsx";
 
 const spring = { type: "spring", duration: 0.35, bounce: 0 } as const;
 
@@ -15,10 +17,15 @@ interface ChatProps {
   onSend: (text: string) => void;
   onRetry: (() => void) | null;
   onDisplayed: (messageIds: string[]) => void;
+  /** Browser voice for this session (Epic 13). Omit to offer text only. */
+  voice?: { sessionId: string | null; autoStart?: boolean; onTurn: () => void } | null;
+  /** Content shown above the conversation, such as the demo listing. */
+  header?: React.ReactNode;
 }
 
-export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplayed }: ChatProps) {
+export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplayed, voice = null, header = null }: ChatProps) {
   const [draft, setDraft] = useState("");
+  const [voiceOn, setVoiceOn] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const reduced = useReducedMotion();
@@ -27,7 +34,8 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
 
   // Report agent replies as delivered once they are on screen. Only then does an offer count as communicated.
   useEffect(() => {
-    const shown = messages.filter((m) => m.from === "agent").map((m) => m.id);
+    // Spoken replies count as delivered only when their audio finishes; the voice bar reports those.
+    const shown = messages.filter((m) => m.from === "agent" && m.channel !== "voice").map((m) => m.id);
     if (shown.length > 0) onDisplayed(shown);
   }, [messages, onDisplayed]);
 
@@ -39,7 +47,7 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
     const text = draft.trim();
-    if (!text || sending) return;
+    if (!text || sending || voiceOn) return;
     onSend(text);
     setDraft("");
   };
@@ -58,10 +66,10 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
       <header className="panel-header">
         <div>
           <h2 className="panel-title" id="chat-title">
-            Buyer chat
+            {header ? "Buyer view" : "Buyer chat"}
           </h2>
-          <p className="panel-subtitle">You are the buyer. Kritva replies for the seller, using the saved mandate.</p>
-          {listing && (
+          <p className="panel-subtitle">{header ? "What the buyer sees and hears. Call the seller, or type." : "You are the buyer. Kritva replies for the seller, using the saved mandate."}</p>
+          {listing && !header && (
             <ul className="listing" aria-label="Listing">
               {listing.terms.map((t) => (
                 <li key={t.termId} className="chip">
@@ -79,6 +87,7 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
         </div>
       </header>
 
+      {header}
       <p className="ai-notice" role="note">
         <SparkIcon width={16} height={16} />
         <span>
@@ -128,9 +137,11 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
         </AnimatePresence>
       </div>
 
-      <form className="composer" onSubmit={submit}>
+      {voice && <VoiceBar sessionId={voice.sessionId} messages={messages} autoStart={voice.autoStart} onActiveChange={setVoiceOn} onTurn={voice.onTurn} />}
+
+      <form className="composer" onSubmit={submit} aria-disabled={voiceOn}>
         <label className="composer-label" htmlFor="buyer-message">
-          Your message as the buyer
+          {voiceOn ? "Typing is off during the voice call. End voice to type." : "Your message as the buyer"}
         </label>
         <div className="composer-row">
           <textarea
@@ -138,14 +149,15 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
             ref={inputRef}
             rows={1}
             value={draft}
-            placeholder="e.g. Hi, is the bed still available?"
+            placeholder={voiceOn ? "Voice call in progress" : "e.g. Hi, is the bed still available?"}
+            disabled={voiceOn}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={onKeyDown}
             maxLength={2000}
             aria-describedby={error ? "composer-error composer-hint" : "composer-hint"}
             autoComplete="off"
           />
-          <button type="submit" className="button button-accent" disabled={sending || draft.trim().length === 0}>
+          <button type="submit" className="button button-accent" disabled={sending || voiceOn || draft.trim().length === 0}>
             {sending ? <span className="spinner" aria-hidden="true" /> : <SendIcon />}
             Send
           </button>
@@ -175,7 +187,8 @@ function Bubble({ message, enter }: { message: BuyerMessage; enter: object }) {
     <motion.div className={`bubble-row from-${message.from}`} {...enter} transition={spring}>
       <div className="bubble">{message.text}</div>
       <span className="bubble-meta">
-        {message.from === "agent" ? "Kritva (AI) for the seller" : "You"} · <time dateTime={message.at}>{time}</time>
+        {message.from === "agent" ? "Kritva (AI) for the seller" : "You"}
+        {message.channel === "voice" ? " · voice" : ""} · <time dateTime={message.at}>{time}</time>
       </span>
     </motion.div>
   );

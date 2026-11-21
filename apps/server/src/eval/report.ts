@@ -95,7 +95,7 @@ const median = (xs: number[]) => {
   const mid = Math.floor(s.length / 2);
   return s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
 };
-const fmt = (n: number | null, digits = 1) => (n === null ? "—" : Number.isInteger(n) ? String(n) : n.toFixed(digits));
+const fmt = (n: number | null, digits = 1) => (n === null ? "n/a" : Number.isInteger(n) ? String(n) : n.toFixed(digits));
 const money = (n: number) => `₹${n.toLocaleString("en-IN")}`;
 
 function row(label: string[], g: Group): string {
@@ -113,10 +113,10 @@ function row(label: string[], g: Group): string {
     String(g.review),
     fmt(mean(g.buyerTurns)),
     String(g.interventions),
-    g.prices.length ? g.prices.map(money).join(", ") : "—",
+    g.prices.length ? g.prices.map(money).join(", ") : "n/a",
     fmt(mean(g.calls)),
     fmt(mean(g.tokens), 0),
-    g.turnMs.length ? `${(median(g.turnMs)! / 1000).toFixed(1)}s` : "—",
+    g.turnMs.length ? `${(median(g.turnMs)! / 1000).toFixed(1)}s` : "n/a",
   ];
   return `| ${cells.join(" | ")} |`;
 }
@@ -156,7 +156,7 @@ export function markdownReport(runs: RunRecord[], scores: RunScore[], meta: Repo
   const lines: string[] = [];
   lines.push(`# Kritva vs a plain LLM seller (${meta.label})`, "");
   lines.push(`- Runs: ${scores.length} (${scenarios.length} scenarios × ${meta.runsPerScenario} runs × ${systems.length} systems). Completed: ${scores.filter((s) => s.status === "completed").length}. Failed: ${scores.filter((s) => s.status === "failed").length}.`);
-  lines.push(`- Run dates: ${dates[0] ?? "—"} to ${dates.at(-1) ?? "—"}`);
+  lines.push(`- Run dates: ${dates[0] ?? "n/a"} to ${dates.at(-1) ?? "n/a"}`);
   lines.push(`- Base model for both sellers and the buyer simulator: ${meta.model}`);
   for (const [system, versions] of Object.entries(meta.promptVersions)) lines.push(`- ${SYSTEM_LABEL[system as SystemName] ?? system} prompts: ${Object.entries(versions).map(([k, v]) => `${k} ${v}`).join(", ")}`);
   lines.push(`- Source data: \`${meta.generatedFrom}\`. Every count below is computed from those stored runs by \`apps/server/src/eval/score.ts\`; re-scoring gives the same numbers.`);
@@ -180,7 +180,7 @@ export function markdownReport(runs: RunRecord[], scores: RunScore[], meta: Repo
   for (const s of scores) {
     const r = byId.get(s.runId)!;
     const v = MEASURES.filter((m) => s.counts[m] > 0).map((m) => `${MEASURE_LABEL[m]} ${s.counts[m]}`).join("; ") || "none";
-    lines.push(`| [${s.runId}](#${anchor(s.runId)}) | ${s.outcomeClass.replace(/_/g, " ")} | ${v} | ${s.review.length} | ${s.buyerTurns} | ${s.finalTerms || "—"} | ${r.metrics.sellerCalls} | ${s.status}${r.error ? `: ${r.error}` : ""} |`);
+    lines.push(`| [${s.runId}](#${anchor(s.runId)}) | ${s.outcomeClass.replace(/_/g, " ")} | ${v} | ${s.review.length} | ${s.buyerTurns} | ${s.finalTerms || "n/a"} | ${r.metrics.sellerCalls} | ${s.status}${r.error ? `: ${r.error}` : ""} |`);
   }
   lines.push("");
 
@@ -193,7 +193,7 @@ export function markdownReport(runs: RunRecord[], scores: RunScore[], meta: Repo
     if (r.sessionId) lines.push(`- Kritva session: \`${r.sessionId}\``);
     for (const v of s.violations) lines.push(`- **${MEASURE_LABEL[v.measure]}** at \`${v.ref}\` (rule \`${v.rule}\`): ${v.detail} “${v.quote}”`);
     for (const x of s.review) lines.push(`- **Needs review** at \`${x.ref}\`: ${x.reason}${x.quote ? ` “${x.quote}”` : ""}`);
-    if (r.decisions.length) lines.push(`- Strategy actions: ${r.decisions.map((d) => d.action ?? "—").join(" → ")}`);
+    if (r.decisions.length) lines.push(`- Strategy actions: ${r.decisions.map((d) => d.action ?? "none").join(", then ")}`);
     lines.push("", "| # | From | Message | Source |", "| --- | --- | --- | --- |");
     for (const t of r.transcript) lines.push(`| ${t.index} | ${t.from.replace("_", " ")} | ${t.text.replace(/\|/g, "\\|").replace(/\n/g, " ")} | \`${t.ref}\` |`);
     lines.push("");

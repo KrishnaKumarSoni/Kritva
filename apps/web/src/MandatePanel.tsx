@@ -1,66 +1,17 @@
-import { useEffect, useState } from "react";
-import { api, ApiError, type DraftSummary, type PrincipalView } from "./api.ts";
+import type { PrincipalView } from "./api.ts";
 import { AlertIcon, LockIcon } from "./icons.tsx";
 
 interface Props {
-  sessionId: string;
   principal: PrincipalView;
-  drafts: DraftSummary[];
-  onChanged: () => void;
+  /** Pauses the negotiation and opens the saved mandate in the mandate library (Epic 11). */
+  onChangeInstructions: (() => void) | null;
 }
 
 /**
- * The principal's mandate: what is in force, and the only place it changes. Edited instructions
- * become a draft (mapped by the same mapper), which has no authority until confirmed here.
+ * The principal's mandate in force for this session. Changes are made in one place only, the
+ * mandate library (Epic 11), which pauses the negotiation and applies a confirmed revision here.
  */
-export function MandatePanel({ sessionId, principal, drafts, onChanged }: Props) {
-  const [editing, setEditing] = useState(false);
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState<"draft" | "confirm" | "reject" | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const open = drafts.find((d) => d.status === "open") ?? null;
-  const [acknowledged, setAcknowledged] = useState<Set<string>>(new Set());
-
-  useEffect(() => setAcknowledged(new Set()), [open?.draftId]);
-
-  const startEditing = async () => {
-    setError(null);
-    try {
-      setText((await api.instructions(sessionId)).instructions);
-      setEditing(true);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Unable to load your instructions.");
-    }
-  };
-  const prepare = async () => {
-    setBusy("draft");
-    setError(null);
-    try {
-      await api.proposeDraft(sessionId, text);
-      setEditing(false);
-      onChanged();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Unable to prepare a draft. Your mandate is unchanged.");
-    } finally {
-      setBusy(null);
-    }
-  };
-  const decide = async (kind: "confirm" | "reject") => {
-    if (!open) return;
-    setBusy(kind);
-    setError(null);
-    try {
-      if (kind === "confirm") await api.confirmDraft(sessionId, open.draftId, [...acknowledged]);
-      else await api.rejectDraft(sessionId, open.draftId);
-      onChanged();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Unable to record your decision. Your mandate is unchanged.");
-    } finally {
-      setBusy(null);
-    }
-  };
-  const allAcknowledged = open ? open.issues.every((i) => acknowledged.has(i.id)) : false;
-
+export function MandatePanel({ principal, onChangeInstructions }: Props) {
   return (
     <div className="dealspace">
       <section className="ds-section" aria-labelledby="mp-active">
@@ -95,95 +46,15 @@ export function MandatePanel({ sessionId, principal, drafts, onChanged }: Props)
         <h3 id="mp-change" className="ds-heading">
           Change instructions
         </h3>
-        {!editing && !open && (
+        {onChangeInstructions ? (
           <div>
-            <p className="ds-note">Edits become a draft. Nothing changes until you confirm it.</p>
-            <button type="button" className="button button-secondary" onClick={startEditing} style={{ marginBlockStart: 8 }}>
-              Edit instructions
+            <p className="ds-note">Changes go through your saved mandate. Kritva pauses this negotiation while you edit, and nothing changes until you confirm the new revision. Pending offers are then checked again.</p>
+            <button type="button" className="button button-secondary" onClick={onChangeInstructions} style={{ marginBlockStart: 8 }}>
+              Open in Mandates
             </button>
           </div>
-        )}
-        {editing && (
-          <div className="ds-card">
-            <label className="composer-label" htmlFor="mandate-instructions">
-              Your instructions to Kritva
-            </label>
-            <textarea id="mandate-instructions" className="mandate-text" value={text} onChange={(e) => setText(e.target.value)} rows={5} maxLength={5000} />
-            <div className="approval-actions">
-              <button type="button" className="button button-accent" onClick={prepare} disabled={busy !== null || text.trim().length === 0}>
-                {busy === "draft" && <span className="spinner" aria-hidden="true" />}
-                {busy === "draft" ? "Preparing draft" : "Prepare draft"}
-              </button>
-              <button type="button" className="button button-secondary" onClick={() => setEditing(false)} disabled={busy !== null}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-        {open && (
-          <div className="ds-card" aria-label="Draft for review">
-            <p className="ds-term-name">Draft based on revision {open.basedOnRevision}. Not in force.</p>
-            <ul className="ds-rules">
-              {open.rules.map((r, i) => (
-                <li key={i}>{r}</li>
-              ))}
-            </ul>
-            <p className="ds-note">Accepting an agreement: {open.readiness.accept.replace("_", " ")}.</p>
-            {open.readiness.unresolved.length > 0 && (
-              <p className="ds-warning">
-                <AlertIcon width={14} height={14} />
-                Unresolved until you clarify: {open.readiness.unresolved.map((u) => u.name).join(", ")}.
-              </p>
-            )}
-            {open.issues.length > 0 && (
-              <fieldset className="ack">
-                <legend className="ds-subheading">Acknowledge open issues to confirm</legend>
-                {open.issues.map((i) => (
-                  <label key={i.id} className="ack-row">
-                    <input
-                      type="checkbox"
-                      checked={acknowledged.has(i.id)}
-                      onChange={(e) => {
-                        const next = new Set(acknowledged);
-                        if (e.target.checked) next.add(i.id);
-                        else next.delete(i.id);
-                        setAcknowledged(next);
-                      }}
-                    />
-                    <span>
-                      <strong className="ack-kind">{i.kind}</strong> {i.message}
-                    </span>
-                  </label>
-                ))}
-              </fieldset>
-            )}
-            <div className="approval-actions">
-              <button type="button" className="button button-accent" onClick={() => decide("confirm")} disabled={busy !== null || !allAcknowledged}>
-                {busy === "confirm" && <span className="spinner" aria-hidden="true" />}
-                Confirm revision
-              </button>
-              <button type="button" className="button button-secondary" onClick={() => decide("reject")} disabled={busy !== null}>
-                Discard draft
-              </button>
-            </div>
-          </div>
-        )}
-        {error && (
-          <p className="composer-error" role="alert">
-            <AlertIcon />
-            {error}
-          </p>
-        )}
-        {drafts.filter((d) => d.status !== "open").length > 0 && (
-          <ul className="ds-facts">
-            {drafts
-              .filter((d) => d.status !== "open")
-              .map((d) => (
-                <li key={d.draftId}>
-                  Draft from revision {d.basedOnRevision}: {d.status}
-                </li>
-              ))}
-          </ul>
+        ) : (
+          <p className="ds-note">This session uses a prepared mandate file, which can't be edited here. Start a session from a saved mandate to change instructions while negotiating.</p>
         )}
       </section>
     </div>

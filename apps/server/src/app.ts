@@ -8,6 +8,8 @@
  */
 import { Hono } from "hono";
 import { registerLibraryRoutes, type LibraryDeps } from "./library-routes.ts";
+import type { ListingConfig } from "./main-helpers.ts";
+import { registerVoiceRoutes } from "./voice-routes.ts";
 import {
   formatValue,
   orderTerms,
@@ -21,6 +23,7 @@ import {
   type DraftView,
   type MandateRevisions,
   type MandateLibrary,
+  type SpeechProvider,
   type Value,
   type ConditionRef,
   type MandateView,
@@ -50,6 +53,11 @@ export interface AppDeps {
   /** Epic 11: the principal's saved, case-level mandates. Optional so tests and scripts can omit it. */
   library?: MandateLibrary;
   examples?: LibraryDeps["examples"];
+  /** Epic 13: speech provider for browser voice (server-side credentials only). */
+  speech?: SpeechProvider | null;
+  /** Epic 14: demo listings and the library mandates their calls use. */
+  listings?: ListingConfig[];
+  transcriptionPrompt?: string;
 }
 
 export function createApp(deps: AppDeps): Hono {
@@ -66,6 +74,16 @@ export function createApp(deps: AppDeps): Hono {
   // ---------- Operator (principal) ----------
 
   if (deps.library) registerLibraryRoutes(app, { library: deps.library, record, engine, locale, examples: deps.examples ?? [] });
+  registerVoiceRoutes(app, {
+    record,
+    engine,
+    speech: deps.speech ?? null,
+    library: deps.library ?? null,
+    listings: deps.listings ?? [],
+    locale,
+    transcriptionPrompt: deps.transcriptionPrompt,
+    buyerOutcome: async (id) => buyerOutcome(await engine.state(id), await record.context(id), locale),
+  });
 
   /** Prepared mandates from cases/, plus saved mandates with a confirmed revision. Unconfirmed drafts never appear. */
   app.get("/api/operator/mandates", (c) =>
@@ -117,7 +135,7 @@ export function createApp(deps: AppDeps): Hono {
       session,
       mandateId,
       mandateSource: latestSource?.mandateSource ?? source,
-      state: operatorState(state, locale),
+      state: { ...operatorState(state, locale), voiceInterrupted: voiceInterrupted(ctx.events) },
       dealSpace: dealSpaceView(state, locale),
       principal: principalView(state, locale),
       counterparty: counterpartyView(projectCounterparty(ctx, state.view.negotiable?.termId ?? null), state, locale),
@@ -128,9 +146,10 @@ export function createApp(deps: AppDeps): Hono {
   });
 
   app.post("/api/operator/sessions/:id/approvals/:requestId", async (c) => {
-    const body = await c.req.json<{ decision?: string; note?: string }>().catch(() => ({}) as Record<string, never>);
+    const body = await c.req.json<{ decision?: string; note?: string; offerId?: string; mandateRevision?: number }>().catch(() => ({}) as Record<string, never>);
     if (body.decision !== "approved" && body.decision !== "rejected") return c.json({ error: "invalid_decision" }, 400);
-    const result = await engine.respondToApproval({ sessionId: c.req.param("id"), requestId: c.req.param("requestId"), decision: body.decision, note: body.note ?? null });
+    // The decision names the offer version and mandate revision the principal reviewed; a mismatch is refused.
+    const result = await engine.respondToApproval({ sessionId: c.req.param("id"), requestId: c.req.param("requestId"), decision: body.decision, note: body.note ?? null, expected: { offerId: typeof body.offerId === "string" ? body.offerId : null, mandateRevision: typeof body.mandateRevision === "number" ? body.mandateRevision : null } });
     if (!result.ok) return c.json({ error: result.code, message: result.message }, result.code === "not_pending" ? 409 : 400);
     return c.json({ reply: result.reply, state: operatorState(result.state, locale) });
   });
@@ -212,9 +231,19 @@ export function createApp(deps: AppDeps): Hono {
 
   /** The buyer's chat reports that a reply was displayed. Only then is its offer communicated. */
   app.post("/api/buyer/sessions/:id/deliveries", async (c) => {
-    const body = await c.req.json<{ messageId?: string }>().catch(() => ({}) as Record<string, never>);
+    const body = await c.req.json<{ messageId?: string; channel?: string; status?: string; deliveredText?: string; audioStartMs?: number }>().catch(() => ({}) as Record<string, never>);
     if (typeof body.messageId !== "string") return c.json({ error: "invalid_delivery" }, 400);
-    const result = await engine.reportDelivery({ sessionId: c.req.param("id"), messageId: body.messageId, channel: "text", status: "delivered" });
+    // Text: shown on screen. Voice: played to the end ("delivered") or cut off ("interrupted", with what was spoken).
+    const channel = body.channel === "voice" ? "voice" : "text";
+    const status = channel === "voice" && body.status === "interrupted" ? "interrupted" : "delivered";
+    const result = await engine.reportDelivery({
+      sessionId: c.req.param("id"),
+      messageId: body.messageId,
+      channel,
+      status,
+      deliveredText: status === "interrupted" && typeof body.deliveredText === "string" ? body.deliveredText.slice(0, 10_000) : null,
+      audioStartMs: channel === "voice" && typeof body.audioStartMs === "number" && body.audioStartMs >= 0 ? Math.round(body.audioStartMs) : null,
+    });
     if ("ok" in result && result.ok === false) return c.json({ error: result.code, message: result.message }, 400);
     return c.json({ ok: true });
   });
@@ -502,6 +531,19 @@ function commitmentsView(ctx: SessionContext, state: NegotiationState, locale: s
   };
 }
 
+/** The last reply was cut off mid-speech and the buyer has not spoken since (a voice interruption or a dropped call). */
+function voiceInterrupted(events: RecordedEvent[]): boolean {
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const e = events[i]!;
+    if (e.type === "message") {
+      const p = e.payload as { direction: string };
+      if (p.direction === "inbound") return false;
+      return events.some((d) => d.type === "delivery_reported" && (d.payload as { messageId: string; status: string }).messageId === e.id && (d.payload as { status: string }).status === "interrupted");
+    }
+  }
+  return false;
+}
+
 /** The principal's console view: includes private limits and authority, for the operator only. */
 function operatorState(state: NegotiationState, locale: string) {
   const n = state.view.negotiable;
@@ -513,6 +555,8 @@ function operatorState(state: NegotiationState, locale: string) {
     pendingApproval: state.pendingApproval
       ? {
           requestId: state.pendingApproval.requestId,
+          offerId: state.pendingApproval.offerId,
+          mandateRevision: state.mandateRevision,
           purpose: state.pendingApproval.purpose,
           requestedAction: state.pendingApproval.requestedAction,
           breachedRules: state.pendingApproval.breachedRuleIds.map((id) => ruleText(state, id, locale)),
@@ -587,7 +631,7 @@ function describeEvent(e: RecordedEvent, view: MandateView, locale: string) {
       break;
     case "term_requested":
       title = "Buyer requested a new term";
-      summary = `${p.name}${p.description ? ` — ${p.description}` : ""}`;
+      summary = `${p.name}${p.description ? `: ${p.description}` : ""}`;
       break;
     case "proposal_checked": {
       const findings = (p.findings as Array<{ status: string; termName: string; detail: string }>).filter((f) => f.status !== "fits");

@@ -147,7 +147,7 @@ describe("checks in the running chat", () => {
     expect(requested.payload).toMatchObject({ name: "assembly", byPartyId: "buyer" });
     expect((requested.payload as PayloadOf<"term_requested">).sourceMessageId).toBe(all.find((e) => e.type === "message")!.id);
     expect(requested.visibility).toBe("public");
-    expect(turn.reply!.text).toMatch(/check with the person I represent/i);
+    expect(turn.reply!.text).toMatch(/ask the seller/i);
     expect(turn.reply!.text).toMatch(/can't promise/i);
     for (const e of all.filter((x) => x.type === "offer_proposed")) {
       expect(JSON.stringify(e.payload)).not.toMatch(/assembl/i);

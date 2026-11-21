@@ -52,3 +52,4 @@ export { assessPackage, type Assessment } from "./strategy/assess.ts";
 export { projectCommitments, noAgreementSummary, type CommitmentsModel, type OfferRecord, type OfferStatus, type SessionOutcome, type Obligation } from "./commitments/model.ts";
 export { promptVersions } from "./llm/prompt-versions.ts";
 export { MandateLibrary, SqliteLibraryBackend, blockers, type LibraryBackend, type LibraryDetail, type LibraryInput, type LibraryVersion, type Correction, type VersionStatus } from "./mandate/library.ts";
+export { OpenAISpeech, createSpeechFromEnv, type SpeechProvider } from "./voice/speech.ts";

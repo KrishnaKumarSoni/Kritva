@@ -1,0 +1,28 @@
+{
+  "name": "humane-changed-condition",
+  "description": "Conversation quality: the buyer changes a condition right before agreement. Kritva reflects the new package and asks for a fresh confirmation; the old acceptance is not reused.",
+  "turns": [
+    {
+      "buyer": "₹19,500 works for me."
+    },
+    {
+      "buyer": "Actually, can you deliver it instead of me picking it up?"
+    },
+    {
+      "buyer": "Okay fine, I'll pick it up. Yes, I confirm ₹19,500."
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "pending_approval",
+      "in_progress",
+      "agreement"
+    ],
+    "agentMustNotSay": [
+      "\\b(we|i)('ll| will| can) deliver"
+    ],
+    "agentMustSay": [
+      "Is that what you're agreeing to"
+    ]
+  }
+}

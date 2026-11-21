@@ -226,6 +226,25 @@ export class MandateLibrary {
     return { ok: true, value: { detail: this.get(mandateId)!, revision, mandate: confirmed.mandate } };
   }
 
+  /**
+   * Saves an already-confirmed mandate (for example a prepared case file) as revision 1 of a
+   * library mandate with a fixed ID. Idempotent: if that ID exists, nothing changes. The confirmed
+   * content is stored exactly as given; nothing is re-mapped or inferred.
+   */
+  importConfirmed(input: { mandateId: string; title: string; input: LibraryInput; mandate: ConfirmedMandate }): LibraryDetail {
+    const existing = this.get(input.mandateId);
+    if (existing) return existing;
+    const at = this.#now().toISOString();
+    const draft = { ...structuredClone(input.mandate), approval: { status: "unapproved" as const } } as unknown as MandateDraft;
+    const row = version(input.mandateId, 1, at, "text", input.input, [], null, draft);
+    this.#backend.transaction(() => {
+      this.#backend.insertMandate({ id: input.mandateId, caseId: input.mandate.caseId, title: input.title, createdAt: at });
+      this.#backend.insertVersion(row);
+      this.#backend.insertEvent({ id: `lev_${randomUUID()}`, mandateId: input.mandateId, versionId: row.id, kind: "confirmed", revision: 1, createdAt: at, confirmed: input.mandate });
+    });
+    return this.get(input.mandateId)!;
+  }
+
   discard(mandateId: string, versionId: string): LibraryResult<LibraryDetail> {
     const detail = this.get(mandateId);
     if (!detail?.latest || detail.latest.versionId !== versionId || detail.latest.status !== "draft") return { ok: false, code: "stale_draft", message: "Only the latest open draft can be discarded." };

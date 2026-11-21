@@ -268,6 +268,8 @@ export const PAYLOADS = {
     status: z.enum(["delivered", "interrupted", "failed"]),
     /** For voice, the part actually spoken before an interruption. */
     deliveredText: z.string().max(10_000).nullable(),
+    /** For voice: milliseconds from the end of the counterparty's speech to the start of this reply's audio. */
+    audioStartMs: z.number().int().min(0).max(600_000).nullable().default(null),
   }),
   status_changed: z.strictObject({
     from: SessionStatus,

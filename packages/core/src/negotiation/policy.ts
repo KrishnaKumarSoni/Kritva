@@ -90,6 +90,12 @@ export interface Plan {
   unresolved: string[];
   /** A prepared question to ask (selection is a placeholder until strategy, Epic 8). */
   ask: { questionId: string; text: string } | null;
+  /** A short acknowledgment to open with (for example after they decline to answer a question). */
+  acknowledge?: string;
+  /** First reply of the session: Kritva introduces itself once as the principal's AI assistant. */
+  introduce?: boolean;
+  /** How many replies the agent has sent before this one; varies fallback wording. */
+  turnIndex?: number;
 }
 
 /** What the strategy can see beyond the turn: guidance, and questions this turn prepared. */
@@ -348,6 +354,11 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
       strategyQuestion: probe ? { text: probe, kind: "terms_probe", purpose: "Learn what price and terms the counterparty can accept." } : undefined,
     };
   }
+  // They declined to answer a question: accept that, don't ask again, and leave the current offer open.
+  if ((interp.answers ?? []).some((a) => a.resolution === "refused") && interp.offerTerms.length === 0 && n && state.currentAsk !== null && state.status === "active" && plan.questions.length === 0) {
+    return { ...holdAt(plan, view, state.currentAsk, packageExtras(state, []), "They preferred not to answer; the current offer stays open."), action: "answer", acknowledge: "No problem." };
+  }
+
   // An objection with no new terms ("that's too much because ..."): the current offer stands.
   const objects = interp.intent === "reject" || (interp.notes ?? []).some((x) => x.kind === "reason" || x.kind === "constraint");
   if (objects && n && state.currentAsk !== null && interp.questions.length === 0 && interp.pressure !== "cheaper_elsewhere" && state.status === "active") {

@@ -1,0 +1,25 @@
+{
+  "name": "humane-pickup-cost",
+  "description": "Conversation quality: the buyer explains a pickup cost. Kritva responds to that concern and asks about the budget before moving on price.",
+  "turns": [
+    {
+      "buyer": "Hi! I can pay ₹17,000 because pickup will cost me another ₹2,000."
+    },
+    {
+      "buyer": "Including pickup I want to stay around ₹19,500 total."
+    },
+    {
+      "buyer": "So ₹17,500 for the bed itself?"
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "in_progress",
+      "no_agreement"
+    ],
+    "noOfferBelow": 18000,
+    "agentMustNotSay": [
+      "\\b(deal|agreed)\\b"
+    ]
+  }
+}

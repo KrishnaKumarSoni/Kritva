@@ -19,7 +19,12 @@ Kritva is a reusable AI negotiation capability for apps and assistants. It repre
 | 10. Comparison with a plain LLM | The same scenarios, buyer simulator, model and seller instructions run against Kritva and a well-prompted plain LLM seller; rule-based scoring with linked sources; Markdown and CSV reports; regression comparison against an earlier scenario run. |
 | 11. Mandate library | The principal describes a negotiation in plain language, reviews what Kritva understood, corrects values directly, and confirms the exact draft shown. Saved mandates and revisions exist before any session; sessions record the revision they used; new revisions apply to open sessions through Epic 4's checks. |
 
-Next: the seller console (Epic 12), browser voice and the demo interface.
+| Humane conversation guide | Replies are warm, short and specific: Kritva introduces itself once as the principal's AI assistant, responds to what was said, asks one useful question, varies its wording, and never uses internal terms or dashes. The guide changes wording only, never what is allowed. See `docs/Kritva_Humane_Negotiation_Instructions_P0.md`. |
+| 12. Seller console | One console on the shared record: messages with their channel, offers marked delivered or held back, approvals scoped to the exact offer version and mandate revision, pause and resume, "Change instructions" through the mandate library, and an outcome card with pending payment and pickup. |
+| 13. Browser voice | The buyer talks in the browser. Each utterance is transcribed and sent through the same text negotiation path; only recorded, checked replies are spoken. Talking over Kritva stops it and records what was heard; a cut-off read-back never counts as delivered. No phone calls. |
+| 14. Demo listing | A clearly labelled demo bed listing built from the confirmed mandate's public content, with "Call seller" opening one browser voice session beside the seller console. "New demo session" starts fresh with the same saved mandate. |
+
+Next: deployment on AWS and the final demonstration.
 
 ## Repository layout
 
@@ -35,6 +40,7 @@ packages/core/            the reusable core (TypeScript)
   src/mandate/            confirmation and mid-session revisions (drafts)
   src/commitments/        Epic 7: offer versions and statuses, outcomes, agreement obligations
   src/strategy/           Epic 8: package assessment and the strategy-guidance schema
+  src/voice/              Epic 13: speech-to-text and text-to-speech (provider-neutral, OpenAI adapter)
   src/mandate/library.ts  Epic 11: case-level mandates, versions, corrections and confirmations
   src/negotiation/        Epic 2A/8: state projection, the strategy chooser, reply check, turn engine
   src/llm/                provider-neutral model contract and the OpenAI adapter
@@ -42,6 +48,8 @@ packages/core/            the reusable core (TypeScript)
 apps/server/              HTTP API for the slice (Hono); buyer and operator routes
   src/library-routes.ts   Epic 11: the mandate library routes and review view
   src/eval/               Epic 10: buyer simulator, plain LLM seller, scoring and reports
+  src/voice-routes.ts     Epics 13-14: voice turns, reply audio, the demo listing and "Call seller"
+  scripts/voice-check.ts  Epic 13 timing check through the real audio pipeline (no microphone needed)
   scripts/run-scenarios.ts  the buyer scenarios, through the same routes as the chat page
 apps/web/                 buyer chat, seller console and outcome card (React + Vite)
 cases/                    case content, kept outside the core
@@ -76,7 +84,15 @@ KRITVA_TURN_REASONING_EFFORT=none
 KRITVA_LOCALE=en-IN
 # Strategy guidance file, relative to the repository root; "none" uses the built-in minimal guidance
 KRITVA_GUIDANCE=cases/bed-sale/strategy-guidance.json
+# Browser voice (Epic 13)
+KRITVA_TRANSCRIBE_MODEL=gpt-4o-mini-transcribe
+KRITVA_TTS_MODEL=gpt-4o-mini-tts
+KRITVA_TTS_VOICE=coral
+# "composed" (default): the model words each voice reply. "template": checked templates only, faster.
+KRITVA_VOICE_WORDING=composed
 ```
+
+The OpenAI Speech API models (`gpt-4o-mini-tts` and others) are scheduled for retirement on 2027-01-06; set `KRITVA_TTS_MODEL` (or move speech output to the Realtime API) before then.
 
 ## Run the chat page
 
@@ -91,6 +107,8 @@ npm run dev -w @kritva/web
 ```
 
 Open http://localhost:5173. Type as the buyer on the left. The seller console on the right shows the shared record, and approval requests appear there. The record is stored in `data/kritva.sqlite`, which Git ignores. "New session" starts a fresh session and keeps the old one.
+
+**Demo listing** (top bar, the default view) shows the prepared bed listing next to the seller console. "Call seller" starts a fresh session and a voice call in the browser (allow the microphone); typing still works when voice is off. Voice needs a secure origin: `localhost` works for development, and a deployed demo must be served over HTTPS.
 
 **Mandates** (top bar) opens the mandate library: describe a negotiation in your own words (or load an example), map it to a draft, check and correct what Kritva understood, and confirm it. "Use for the next negotiation" selects it; "New session" then starts a negotiation from its active revision.
 
@@ -214,3 +232,24 @@ node --env-file=.env packages/core/scripts/prepare-mandate.ts bed-sale demo --co
 - **The principal corrects, and corrections are the principal's.** A direct edit to a value, permission or item is a new draft version with its own quoted source, validated again. The old text is never re-mapped over it.
 - **Only the principal confirms, and only what was reviewed.** Confirmation names the exact draft version and content hash. Conflicts and unresolved permissions block it; other open questions must be marked as reviewed. A buyer message can never confirm a mandate.
 - **Saved before any session.** Case-level mandates and their revisions are stored on their own (append-only), survive restarts, and keep every earlier version. A session records the saved revision it started from. A new revision applies to open sessions through Epic 4's revision path, which rechecks pending offers and approvals without rewriting earlier offers or agreements.
+
+**Humane conversation (guide)**
+- **Wording, never permission.** The guide shapes how an approved move is said. Every number, condition and promise still comes from the strategy and passes the outgoing checks.
+- **Introduce once.** The first real reply (not a pause notice) introduces Kritva as the principal's AI assistant; no later reply repeats it.
+- **Sound like a person.** Composed replies respond to the last message, ask one question at most, and avoid scripted openers. A reply that opens like the previous one is replaced by a checked variant.
+- **No internal words, no dashes.** Replies with internal vocabulary ("mandate", "principal", "governance") or field names are blocked, and every em or en dash is removed before sending.
+- **Read-backs stay exact.** Complete-terms and agreement read-backs are built from the checked terms, in natural phrasing.
+
+**Seller console (Epic 12)**
+- **One record, one console.** Everything shown comes from the shared record and the commitments model; nothing is kept separately. Seller offers show whether they were delivered or held back.
+- **Approvals are scoped.** Approve and Reject carry the exact offer version and mandate revision shown; a decision for anything else is refused, and a repeat creates no second permission.
+- **One mandate editor.** "Change instructions" pauses the negotiation and opens the saved mandate in the library; nothing changes until a new revision is confirmed, and pending offers are then rechecked.
+
+**Browser voice (Epic 13)**
+- **A channel, not a second agent.** An utterance is transcribed, then handled exactly like a typed message (channel "voice"). Only messages the engine recorded can be turned into audio. Credentials stay on the server.
+- **Heard means delivered.** A reply counts as delivered when its audio finishes. Talking over it stops playback and records the part that was heard; an interrupted offer or read-back cannot be accepted. A dropped call never counts as acceptance.
+- **Failures say so.** A failed transcription sends nothing and records nothing; the buyer is asked to say it again.
+
+**Demo listing (Epic 14)**
+- **Public content only**, from the confirmed mandate the listing resolves to, labelled as a demo, not an official marketplace page.
+- **"Call seller" never guesses.** It needs a confirmed saved mandate; otherwise it shows a setup error and starts nothing. A double click returns the same session.

@@ -2,6 +2,7 @@
  * The negotiation's current position, derived only from recorded events. Strategy, the
  * console and the outcome card all read this projection; none keep their own history.
  */
+import { findAmounts } from "./reply-check.ts";
 import type { OfferTerm, PayloadOf, RecordedEvent, SessionStatus } from "../record/events.ts";
 import type { SessionContext } from "../record/rules.ts";
 import { buildDealSpace, type DealSpace } from "../dealspace/catalog.ts";
@@ -35,6 +36,8 @@ export interface NegotiationState {
   askHistory: number[];
   /** The counterparty's offers on the negotiable term, oldest first. */
   counterpartyAmounts: number[];
+  /** Every amount the counterparty wrote or said in its own messages (budgets, costs, offers). */
+  counterpartySaidAmounts: number[];
   countersMade: number;
   /** The agent has already offered to split the difference (guidance allows it once). */
   splitUsed: boolean;
@@ -96,6 +99,7 @@ export function projectState(ctx: SessionContext): NegotiationState {
   let currentAsk: number | null = n?.opening ?? null;
   const askHistory: number[] = currentAsk === null ? [] : [currentAsk];
   const counterpartyAmounts: number[] = [];
+  const counterpartySaidAmounts = new Set<number>();
   let countersMade = 0;
   let splitUsed = false;
   let offersSinceAsk = 0;
@@ -129,6 +133,9 @@ export function projectState(ctx: SessionContext): NegotiationState {
 
   for (const e of ctx.events as RecordedEvent[]) {
     if (e.type === "offer_proposed" && blocked.has(e.id)) continue;
+    if (e.type === "message" && (e.payload as PayloadOf<"message">).direction === "inbound") {
+      for (const a of findAmounts((e.payload as PayloadOf<"message">).text)) counterpartySaidAmounts.add(a);
+    }
     switch (e.type) {
       case "term_requested": {
         const p = e.payload as PayloadOf<"term_requested">;
@@ -243,6 +250,7 @@ export function projectState(ctx: SessionContext): NegotiationState {
     currentAsk,
     askHistory,
     counterpartyAmounts,
+    counterpartySaidAmounts: [...counterpartySaidAmounts],
     countersMade,
     splitUsed,
     offersSinceAsk,

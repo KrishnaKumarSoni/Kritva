@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, type BuyerView, type MandateOption, type OperatorView } from "./api.ts";
 import { Chat } from "./Chat.tsx";
 import { RefreshIcon } from "./icons.tsx";
+import { ListingCard } from "./ListingCard.tsx";
 import { MandatesPage } from "./MandatesPage.tsx";
 import { RecordPanel } from "./RecordPanel.tsx";
 import { Select } from "./Select.tsx";
@@ -26,7 +27,11 @@ export function App() {
   const reported = useRef(new Set<string>());
   const [mandates, setMandates] = useState<MandateOption[]>([]);
   const [mandateId, setMandateId] = useState<string | null>(null);
-  const [view, setView] = useState<"negotiation" | "mandates">("negotiation");
+  const [view, setView] = useState<"demo" | "negotiation" | "mandates">("demo");
+  const [openMandate, setOpenMandate] = useState<string | null>(null);
+  const [calling, setCalling] = useState(false);
+  const [autoVoice, setAutoVoice] = useState(false);
+  const callId = useRef<string | null>(null);
 
   const loadMandates = useCallback(() => {
     api
@@ -117,13 +122,50 @@ export function App() {
     if (!sessionId) return;
     setResponding(true);
     try {
-      await api.respond(sessionId, requestId, decision);
+      const pending = operator?.state.pendingApproval;
+      if (!pending || pending.requestId !== requestId) throw new ApiError(409, "That request changed. Review the current one.");
+      // The decision names the exact offer version and mandate revision on screen.
+      await api.respond(sessionId, requestId, decision, pending.offerId, pending.mandateRevision);
       await refresh(sessionId);
     } catch (e) {
       setConsoleError(e instanceof ApiError ? e.message : "Unable to record your decision. Try again.");
     } finally {
       setResponding(false);
     }
+  };
+
+  /** Epic 14: Call seller starts a fresh session for the listing's confirmed mandate, then voice. */
+  const callSeller = async (withVoice: boolean) => {
+    if (calling) return;
+    setCalling(true);
+    callId.current ??= crypto.randomUUID();
+    try {
+      const { sessionId: id } = await api.callSeller("bed-sale", callId.current, sessionId);
+      reported.current.clear();
+      setBuyer(null);
+      setOperator(null);
+      setError(null);
+      setAutoVoice(withVoice);
+      setSessionId(id);
+    } catch (e) {
+      setConsoleError(e instanceof ApiError ? e.message : "The call couldn't start. Nothing was created.");
+    } finally {
+      callId.current = null;
+      setCalling(false);
+    }
+  };
+
+  /** Epic 12: changing instructions pauses the negotiation and opens the mandate library. */
+  const changeInstructions = async () => {
+    if (!sessionId || !operator?.mandateId?.startsWith("library:")) return;
+    try {
+      if (!operator.state.paused && !["agreed", "no_agreement", "ended"].includes(operator.state.status)) await api.setPaused(sessionId, true);
+    } catch (e) {
+      setConsoleError(e instanceof ApiError ? e.message : "Unable to pause before changing instructions.");
+      return;
+    }
+    setOpenMandate(operator.mandateId.slice("library:".length));
+    setView("mandates");
   };
 
   const newSession = async () => {
@@ -149,12 +191,12 @@ export function App() {
           <span className="wordmark" aria-label="Kritva">
             Kritva<span className="wordmark-dot" aria-hidden="true" />
           </span>
-          <span className="brand-context" hidden={view !== "negotiation"}>
+          <span className="brand-context" hidden={view === "mandates"}>
             Negotiation slice · {mandates.find((m) => m.id === operator?.mandateId)?.title ?? "Confirmed seller mandate"}
           </span>
         </div>
         <nav className="view-switch" aria-label="Views">
-          {(["negotiation", "mandates"] as const).map((v) => (
+          {(["demo", "negotiation", "mandates"] as const).map((v) => (
             <button
               key={v}
               type="button"
@@ -162,19 +204,27 @@ export function App() {
               aria-current={view === v ? "page" : undefined}
               onClick={() => {
                 setView(v);
-                if (v === "negotiation") loadMandates();
+                if (v !== "mandates") loadMandates();
+                if (v === "mandates") setOpenMandate(null);
               }}
             >
-              {v === "negotiation" ? "Negotiation" : "Mandates"}
+              {v === "demo" ? "Demo listing" : v === "negotiation" ? "Negotiation" : "Mandates"}
             </button>
           ))}
         </nav>
-        <div className="topbar-actions" hidden={view !== "negotiation"}>
+        <div className="topbar-actions" hidden={view === "mandates"}>
           {sessionId && (
             <span className="mono session-id" title={`Session ${sessionId}${operator?.mandateId ? `, mandate ${operator.mandateId}` : ""}`}>
               {sessionId.slice(0, 12)}
             </span>
           )}
+          {view === "demo" ? (
+            <button type="button" className="button button-secondary" onClick={() => callSeller(false)} disabled={calling}>
+              {calling ? <span className="spinner" aria-hidden="true" /> : <RefreshIcon />}
+              New demo session
+            </button>
+          ) : (
+          <>
           <Select
             label="Mandate for new sessions"
             value={mandateId}
@@ -185,10 +235,13 @@ export function App() {
             {starting ? <span className="spinner" aria-hidden="true" /> : <RefreshIcon />}
             New session
           </button>
+          </>
+          )}
         </div>
       </header>
       {view === "mandates" ? (
         <MandatesPage
+          initialId={openMandate}
           onUse={(id) => {
             setMandateId(id);
             setView("negotiation");
@@ -198,7 +251,17 @@ export function App() {
       ) : (
       <main className="layout">
         <h1 className="visually-hidden">Kritva negotiation slice</h1>
-        <Chat view={buyer} pending={pending} sending={sending} error={error} onSend={(text) => send(text)} onRetry={retry} onDisplayed={onDisplayed} />
+        <Chat
+          view={buyer}
+          pending={pending}
+          sending={sending}
+          error={error}
+          onSend={(text) => send(text)}
+          onRetry={retry}
+          onDisplayed={onDisplayed}
+          header={view === "demo" ? <ListingCard caseId="bed-sale" calling={calling} onCall={() => callSeller(true)} /> : null}
+          voice={{ sessionId, autoStart: autoVoice, onTurn: () => sessionId && refresh(sessionId) }}
+        />
         <div className="panel-stack" style={{ display: "grid", gap: "var(--space-4)", minHeight: 0 }}>
           {consoleError && (
             <p className="composer-error" role="alert" style={{ margin: 0 }}>
@@ -219,6 +282,7 @@ export function App() {
               await refresh(sessionId);
             }}
             onChanged={() => sessionId && refresh(sessionId)}
+            onChangeInstructions={operator?.mandateId?.startsWith("library:") ? changeInstructions : null}
           />
         </div>
       </main>

@@ -30,6 +30,9 @@ export interface MandateView {
   mandate: ConfirmedMandate;
   principalId: string;
   counterpartyId: string;
+  /** The parties' roles as the host app supplied them, used in wording. */
+  principalRole: string;
+  counterpartyRole: string;
   terms: Map<string, Term>;
   /** The principal's public, unconditional values, i.e. the default complete terms. */
   defaultPackage: OfferTerm[];
@@ -112,6 +115,8 @@ export function readMandate(mandate: ConfirmedMandate): MandateView {
     mandate,
     principalId: principal.id,
     counterpartyId: counterparty.id,
+    principalRole: principal.role,
+    counterpartyRole: counterparty.role,
     terms,
     defaultPackage,
     negotiable,

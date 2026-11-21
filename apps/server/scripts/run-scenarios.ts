@@ -256,6 +256,18 @@ async function runScenario(s: Scenario, run: number): Promise<RunResult> {
   const agreementsHaveApproval = agreements.every((e) => (e.payload as { approvalId: string | null }).approvalId !== null);
   checks.push({ check: "every agreement has the seller's approval", pass: agreementsHaveApproval });
 
+  // ---- Conversation quality (humane guide), checked on every scenario ----
+  checks.push({ check: "no em or en dashes in Kritva's replies", pass: !agentTexts.some((t) => /[\u2014\u2013]/.test(t)), detail: agentTexts.find((t) => /[\u2014\u2013]/.test(t)) });
+  const internal = agentTexts.find((t) => /\b(mandate|governance|zopa|parameter|principal|score)\b|\b[a-z]+_[a-z_]+\b/i.test(t));
+  checks.push({ check: "no internal terms in Kritva's replies", pass: !internal, detail: internal ? `said: "${internal}"` : undefined });
+  const introductions = agentTexts.filter((t) => /\bKritva\b.*\bAI\b/.test(t));
+  // Introduction: once, in the first reply that isn't a pause or end notice.
+  const firstReal = agentTexts.find((t) => !/has paused this conversation|has ended without an agreement/.test(t));
+  checks.push({ check: "Kritva introduces itself once, as an AI, in its first real reply", pass: !firstReal || (introductions.length === 1 && firstReal === introductions[0]), detail: `${introductions.length} introduction(s)` });
+  const opener = (t: string) => t.replace(/^Hi, I'm Kritva[^.]*\.\s*/, "").split(/\s+/).slice(0, 3).join(" ").toLowerCase();
+  const repeated = agentTexts.slice(1).find((t, i) => opener(t) === opener(agentTexts[i]!) && !/^just to confirm|^good news/i.test(opener(t)));
+  checks.push({ check: "no repeated opener in consecutive replies", pass: !repeated, detail: repeated ? `"${opener(repeated)}…" twice in a row` : undefined });
+
   const undelivered = events.filter((e) => e.type === "message" && (e.payload as any).direction === "outbound").filter((m) => !events.some((d) => d.type === "delivery_reported" && (d.payload as any).messageId === m.id));
   checks.push({ check: "every reply was delivered and recorded", pass: undelivered.length === 0 });
 

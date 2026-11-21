@@ -10,13 +10,14 @@
  * - false_commitment: no claim of agreement or principal approval that the record does not hold.
  * - private_text: no passage copied from private instructions.
  * - missing_condition: an offer tied to an extra term (e.g. a day) must name it.
+ * - internal_term: no internal vocabulary ("mandate", "governance", "ZOPA"…) in what the other party reads.
  */
 import { normalizeForQuoteMatch } from "../schema/quotes.ts";
 import type { MandateView } from "./mandate-view.ts";
 import type { Plan } from "./policy.ts";
 
 export interface ReplyViolation {
-  rule: "private_amount" | "unplanned_amount" | "crosses_limit" | "missing_offer" | "missing_condition" | "false_commitment" | "private_text";
+  rule: "private_amount" | "unplanned_amount" | "crosses_limit" | "missing_offer" | "missing_condition" | "false_commitment" | "private_text" | "internal_term";
   detail: string;
 }
 
@@ -31,8 +32,14 @@ const DECLINE_CUE = /\b(can'?t|cannot|can not|won'?t|unable|not able|too low|too
 const AGREEMENT_CLAIM = /\b(we have (a |an )?(deal|agreement)|it'?s a deal|deal (is )?(done|confirmed)|agreement (is )?(confirmed|recorded)|(sold|it'?s yours)\b|i accept (your|the) offer|offer accepted)/i;
 const APPROVAL_CLAIM = /\b(has|have) approved\b|\bapproved (it|this|your offer|the (offer|terms))\b|\bapproval (is )?(given|granted|received)\b/i;
 
+const INTERNAL_TERM = /\b(mandate|governance|zopa|batna|parameter|principal|negotiation core|the core|strategy engine|guidance file|policy engine|score)\b/i;
+/** snake_case identifiers (prompt or record field names) never belong in a reply. */
+const FIELD_NAME = /\b[a-z]+_[a-z_]+\b/;
+const QUOTE_CUE = /\?\s*$|\b(you|your|you're|you've)\b/i;
+
 export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
   const violations: ReplyViolation[] = [];
+  if (INTERNAL_TERM.test(text) || FIELD_NAME.test(text)) violations.push({ rule: "internal_term", detail: "Uses internal vocabulary or a field name the other party should never see." });
   const { view, plan } = ctx;
   const n = view.negotiable;
   const sentences = splitSentences(text);
@@ -49,7 +56,9 @@ export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
         violations.push({ rule: "unplanned_amount", detail: "Mentions an amount that is not part of the planned move." });
       }
       const crosses = n ? (n.direction === "up" ? amount < n.limit : amount > n.limit) : false;
-      if (crosses && !offered.includes(amount) && !DECLINE_CUE.test(sentence)) {
+      // Quoting the counterparty's own figure back in a question or "your …" is not offering it.
+      const quotingThem = ctx.counterpartyAmounts.includes(amount) && QUOTE_CUE.test(sentence);
+      if (crosses && !offered.includes(amount) && !DECLINE_CUE.test(sentence) && !quotingThem) {
         violations.push({ rule: "crosses_limit", detail: "States an amount beyond the limit without declining it." });
       }
     }

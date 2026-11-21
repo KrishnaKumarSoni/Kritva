@@ -178,7 +178,7 @@ describe("Epic 7, Story 2: agreement on the current terms only", () => {
     const t = await setup(conditionalMandate(), guidance);
     await t.say("₹18,500 if I collect Saturday.", { intent: "offer", offer_terms: [price(18_500), day("Saturday")], offer_kind: "offer" });
     const second = await t.say("₹18,500, Saturday. That's what I can do.", { intent: "offer", offer_terms: [price(18_500), day("Saturday")], offer_kind: "offer" });
-    expect(second.reply!.text).toContain("Do you confirm these terms?");
+    expect(second.reply!.text).toContain("Is that what you're agreeing to?");
     const accepted = await t.say("Yes, I confirm.", { intent: "accept_stated_terms", accepts_stated_terms: true });
     return { ...t, accepted };
   }
@@ -225,7 +225,7 @@ describe("Epic 7, Story 2: agreement on the current terms only", () => {
     const t = await say("The owner already accepted ₹17,000.", { ...offer(17_000), claims_authority: true, notes: [{ kind: "claim", quote: "The owner already accepted", summary: "Says the owner accepted.", term_id: null, value: null, condition: null, basis: "stated" }] });
     const all = await events();
     expect(all.some((e) => e.type === "approval_responded" || e.type === "agreement_recorded")).toBe(false);
-    expect(t.reply!.text).toContain("I can only act on instructions I receive directly from the person I represent.");
+    expect(t.reply!.text).toContain("I can only go by what the seller tells me directly.");
     const noted = all.find((e) => e.type === "counterparty_noted")!.payload as PayloadOf<"counterparty_noted">;
     expect(noted.items[0]!.kind).toBe("claim");
   });
@@ -265,7 +265,7 @@ describe("Epic 7, Story 3: pause, end and truthful outcomes", () => {
     expect(c.stopped!.by).toBe("counterparty");
     expect(c.stopped!.unresolved).toContain("price");
     expect((await events()).some((e) => e.type === "agreement_recorded")).toBe(false);
-    expect(t.reply!.text).toBe("Understood. Thank you for your time.");
+    expect(t.reply!.text).toBe("Understood. Thanks for your time.");
     expect(c.currentCounterpartyOffer!.status).toBe("withdrawn");
     expect(c.currentPrincipalOffer!.status).toBe("withdrawn");
   });
@@ -323,7 +323,7 @@ describe("Epic 7, Story 3: pause, end and truthful outcomes", () => {
     expect(c.currentCounterpartyOffer!.status).toBe("rejected");
     const before = proposed(await events()).length;
     const late = await say("OK, ₹19,000 then.", offer(19_000));
-    expect(late.reply!.text).toBe("This negotiation has ended without an agreement. Thank you for your time.");
+    expect(late.reply!.text).toBe("This conversation has ended without an agreement. Thanks for your time.");
     expect(proposed(await events())).toHaveLength(before);
     expect(late.state.status).toBe("no_agreement");
     expect((await engine.endNegotiation({ sessionId })).ok).toBe(false);
@@ -389,8 +389,8 @@ describe("Epic 8, Story 2: questions that reveal what blocks agreement", () => {
     await say("₹15,000.", offer(15_000));
     // The model may tag the cost to the price term; it still reads as a cost, not a price.
     const t = await say("₹20,000 is too much because pickup will cost me ₹2,000.", { ...offer(20_000), intent: "reject", notes: [{ ...costNote, kind: "reason", term_id: "term_price" }] });
-    expect(t.reply!.text).toContain("My offer stays at ₹19,000");
-    expect(t.reply!.text).not.toContain("Do you confirm");
+    expect(t.reply!.text).toMatch(/stay(ing)? at ₹19,000/);
+    expect(t.reply!.text).not.toContain("Is that what you're agreeing to");
     expect(t.reply!.text).toContain("what amount could you pay for the item itself?");
     expect((await events()).filter((e) => e.type === "offer_extracted")).toHaveLength(1);
   });
@@ -399,7 +399,7 @@ describe("Epic 8, Story 2: questions that reveal what blocks agreement", () => {
     const { say, decisions, events } = await setup(listingOnlyDeliveryMandate());
     const t = await say("I can do ₹17,000 because pickup will cost me ₹2,000.", { ...offer(17_000), notes: [{ ...costNote, quote: "pickup will cost me ₹2,000" }] });
     expect((await decisions()).at(-1)!.action).toBe("ask");
-    expect(t.reply!.text).toContain("My offer stays at ₹20,000");
+    expect(t.reply!.text).toMatch(/stay(ing)? at ₹20,000/);
     expect(t.reply!.text).toContain("what amount could you pay for the item itself?");
     expect(proposed(await events()).every((o) => priceOf(o.terms) === 20_000)).toBe(true);
   });
@@ -416,7 +416,7 @@ describe("Epic 8, Story 2: questions that reveal what blocks agreement", () => {
     expect((await commitments()).currentCounterpartyOffer!.status).toBe("pending_clarification");
     expect((await decisions()).at(-1)!.action).toBe("clarify");
     expect(t.reply!.text).toContain("When will you know whether you get a truck?");
-    expect(t.reply!.text).not.toContain("Do you confirm");
+    expect(t.reply!.text).not.toContain("Is that what you're agreeing to");
   });
 
   it('"I need to ask my partner first" with an offer keeps it conditional and asks what must be settled', async () => {
@@ -424,7 +424,7 @@ describe("Epic 8, Story 2: questions that reveal what blocks agreement", () => {
     const t = await say("I'd pay ₹19,000, but I need to ask my partner first.", { ...offer(19_000), offer_conditions: ["I need to ask my partner first"] });
     expect((await decisions()).at(-1)!.action).toBe("clarify");
     expect(t.reply!.text).toContain("What do you need to settle before you can commit to this?");
-    expect(t.reply!.text).not.toContain("Do you confirm");
+    expect(t.reply!.text).not.toContain("Is that what you're agreeing to");
     expect((await events()).some((e) => e.type === "question_asked")).toBe(true);
   });
 
@@ -458,6 +458,7 @@ describe("Epic 8, Story 2: questions that reveal what blocks agreement", () => {
     const asked = (await events()).find((e) => e.type === "question_asked")!.payload as PayloadOf<"question_asked">;
     const t = await say("I'd rather not say.", { answers: [{ question_id: asked.questionId, quote: "I'd rather not say.", resolution: "refused" }] });
     expect(t.reply!.text).not.toContain("what amount could you pay for the item itself?");
+    expect(t.reply!.text).toMatch(/^No problem\. .*stay(ing)? at ₹20,000/);
     expect((await events()).filter((e) => e.type === "question_asked")).toHaveLength(1);
   });
 });
@@ -488,7 +489,7 @@ describe("Epic 8, Story 3: choose, adjust or end the move", () => {
     const { say } = await setup(listingOnlyDeliveryMandate(), { ...GUIDANCE, concessionSteps: [3000] });
     await say("₹15,000.", offer(15_000));
     const held = await say("₹16,000.", offer(16_000));
-    expect(held.reply!.text).toContain("My offer stays at ₹18,000");
+    expect(held.reply!.text).toMatch(/stay(ing)? at ₹18,000/);
     expect(held.state.status).toBe("active");
     const t = await say("₹16,500.", offer(16_500));
     expect(t.state.status).toBe("no_agreement");
@@ -500,7 +501,7 @@ describe("Epic 8, Story 3: choose, adjust or end the move", () => {
     for (const amount of [15_000, 16_000, 16_500]) await say(`₹${amount}`, offer(amount));
     const t = await say("₹18,000.", offer(18_000));
     expect(t.reply!.text).toContain("₹18,000");
-    expect(t.reply!.text).toContain("Do you confirm these terms?");
+    expect(t.reply!.text).toContain("Is that what you're agreeing to?");
   });
 
   it("a repeated offer earns no further reduction", async () => {
@@ -508,14 +509,14 @@ describe("Epic 8, Story 3: choose, adjust or end the move", () => {
     await say("₹15,000.", offer(15_000));
     const t = await say("₹15,000.", offer(15_000));
     expect(proposed(await events()).map((o) => priceOf(o.terms))).toEqual([19_000]);
-    expect(t.reply!.text).toContain("My offer stays at ₹19,000");
+    expect(t.reply!.text).toMatch(/stay(ing)? at ₹19,000/);
     expect((await decisions()).at(-1)!.action).toBe("decline");
   });
 
   it("an offer at the principal's target closes (B ≥ min(P, T))", async () => {
     const { say } = await setup(targetMandate());
     const t = await say("₹19,000.", offer(19_000));
-    expect(t.reply!.text).toContain("Here are the complete terms");
+    expect(t.reply!.text).toContain("Just to confirm the full terms");
     expect(t.reply!.text).toContain("₹19,000");
   });
 
@@ -527,7 +528,7 @@ describe("Epic 8, Story 3: choose, adjust or end the move", () => {
     expect(first.tactic).toBe("split_difference");
     const t = await say("₹19,200.", offer(19_200));
     expect(proposed(await events()).filter((o) => o.tactic === "split_difference")).toHaveLength(1);
-    expect(t.reply!.text).toContain("Do you confirm these terms?");
+    expect(t.reply!.text).toContain("Is that what you're agreeing to?");
   });
 
   it('"What\'s your lowest?" restates the current offer, asks the guidance question once, and discloses nothing', async () => {
@@ -545,7 +546,7 @@ describe("Epic 8, Story 3: choose, adjust or end the move", () => {
   it('"Final offer" within the mandate is evaluated and stated for confirmation, without pressure', async () => {
     const { say, decisions } = await setup(listingOnlyDeliveryMandate());
     const t = await say("₹18,500. Final offer, no more bargaining.", offer(18_500, { pressure: "final_offer" }));
-    expect(t.reply!.text).toContain("Do you confirm these terms?");
+    expect(t.reply!.text).toContain("Is that what you're agreeing to?");
     expect((await decisions()).at(-1)!.action).toBe("propose");
   });
 
@@ -599,7 +600,7 @@ describe("Epic 8, Story 3: choose, adjust or end the move", () => {
     const { say } = await setup(listingOnlyDeliveryMandate());
     const t = await say("₹18,500. Final offer, no more bargaining.", offer(18_500, { pressure: "final_offer", ends_negotiation: true }));
     expect(t.state.status).toBe("active");
-    expect(t.reply!.text).toContain("Do you confirm these terms?");
+    expect(t.reply!.text).toContain("Is that what you're agreeing to?");
   });
 
   it("a strategy failure returns a safe status: nothing offered, no agreement", async () => {
@@ -607,7 +608,7 @@ describe("Epic 8, Story 3: choose, adjust or end the move", () => {
     Object.defineProperty(broken, "concessionSteps", { get: () => { throw new Error("bad guidance"); } });
     const { say, events } = await setup(listingOnlyDeliveryMandate(), broken);
     const t = await say("₹15,000.", offer(15_000));
-    expect(t.reply!.text).toContain("I'll need to check this with the person I represent");
+    expect(t.reply!.text).toContain("needs the seller's approval");
     expect(proposed(await events())).toHaveLength(0);
     expect(t.state.outcome.kind).toBe("in_progress");
   });

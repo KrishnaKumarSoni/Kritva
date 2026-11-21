@@ -19,72 +19,124 @@ function joinNames(names: string[]): string {
   return names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 }
 
+/** The principal, as the other side should hear it (their role, with "the"). */
+export function principalLabel(view: MandateView): string {
+  return `the ${view.principalRole.trim().toLowerCase() || "person I represent"}`;
+}
+
+/** Kritva's one-time introduction, as the principal's AI assistant. */
+export function introduction(view: MandateView): string {
+  return `Hi, I'm Kritva, ${principalLabel(view).replace(/^the /, "the ")}'s AI assistant.`;
+}
+
+/**
+ * Complete terms read naturally: amounts as they are, "no <term>" for a false yes/no term, and
+ * "<term> <value>" for the rest. Built only from the checked terms.
+ */
+export function speakTerms(view: MandateView, terms: OfferTerm[], locale: string): string {
+  const parts = orderTerms(view, terms).map((t) => {
+    const name = view.terms.get(t.termId)?.name ?? t.termId;
+    if (t.value.type === "money") return formatValue(t.value, locale);
+    if (t.value.type === "boolean") return t.value.value ? name : `no ${name}`;
+    return `${name} ${formatValue(t.value, locale)}`;
+  });
+  return parts.length <= 1 ? (parts[0] ?? "") : parts.length === 2 ? `${parts[0]} and ${parts[1]}` : `${parts.slice(0, -1).join(", ")}, and ${parts.at(-1)}`;
+}
+
+function pick(variants: string[], turn: number): string {
+  return variants[Math.abs(turn) % variants.length]!;
+}
+
+/**
+ * Checked fallback wording, written to the humane conversation guide: warm, short, specific, one
+ * question at a time, no internal terms, no em dashes. Used when a composed reply is blocked, and
+ * always for read-backs of complete terms and agreements.
+ */
 export function templateReply(view: MandateView, plan: Plan, locale: string): string {
   const n = view.negotiable;
+  const turn = plan.turnIndex ?? 0;
+  const principal = principalLabel(view);
   const amountText = (() => {
     const t = n && plan.offer?.terms.find((x) => x.termId === n.termId);
     if (!t) return null;
     // Name any extra term the amount is tied to, so a conditional concession never travels without its condition.
     const extras = (plan.offer?.terms ?? []).filter((x) => x.termId !== n!.termId && !view.defaultPackage.some((d) => d.termId === x.termId));
-    const tied = extras.map((x) => `${view.terms.get(x.termId)?.name ?? x.termId}: ${formatValue(x.value, locale)}`).join(", ");
-    return tied ? `${formatValue(t.value, locale)} (${tied})` : formatValue(t.value, locale);
+    const tied = extras.map((x) => `${view.terms.get(x.termId)?.name ?? x.termId} ${formatValue(x.value, locale)}`).join(" and ");
+    return tied ? `${formatValue(t.value, locale)} with ${tied}` : formatValue(t.value, locale);
   })();
   const parts: string[] = [];
+  if (plan.introduce) parts.push(introduction(view));
+  if (plan.acknowledge) parts.push(plan.acknowledge);
 
-  if (plan.notice === "approval_rejected") parts.push("I'm sorry, those terms were not approved.");
-  if (plan.notice === "terms_changed") parts.push("Since the terms have changed, the earlier confirmation no longer applies.");
-  if (plan.notice === "rephrase") parts.push("Sorry, I didn't catch that. Could you say it another way?");
-  if (plan.notice === "paused") return "This conversation is paused for now. You'll hear back when it resumes.";
-  if (plan.notice === "ended") return "This negotiation has ended without an agreement. Thank you for your time.";
+  if (plan.notice === "approval_rejected") parts.push(`${cap(principal)} didn't approve those terms.`);
+  if (plan.notice === "terms_changed") parts.push("Since the terms have changed, I'll need a fresh confirmation on the new ones.");
+  if (plan.notice === "rephrase") parts.push("Sorry, I didn't quite catch that. Could you say it another way?");
+  if (plan.notice === "paused") return `${cap(principal)} has paused this conversation for now. You'll hear back when it picks up again.`;
+  if (plan.notice === "ended") return "This conversation has ended without an agreement. Thanks for your time.";
   if (plan.move === "end_negotiation") {
-    if (plan.end?.requestedBy === "counterparty") return "Understood. Thank you for your time.";
-    if (plan.end?.requestedBy === "principal") return "Thank you for your time. We won't be going ahead with this.";
-    return plan.end?.line ?? "Thank you for your time. I'm not able to go further, so I'll leave it here.";
+    if (plan.end?.requestedBy === "counterparty") return "Understood. Thanks for your time.";
+    if (plan.end?.requestedBy === "principal") return `Thanks for your time. ${cap(principal)} has decided not to go ahead.`;
+    return plan.end?.line ?? "Thanks for explaining what works for you. I don't have an arrangement we can both confirm on those terms, so I'll leave it there.";
   }
-  if (plan.notice === "check_with_principal") parts.push("I'll need to check this with the person I represent and come back to you.");
-  if (plan.ignoreAuthorityClaim) parts.push("I can only act on instructions I receive directly from the person I represent.");
-  if (plan.refuseDisclosure) parts.push("I'm not able to share private details of my instructions.");
+  if (plan.notice === "check_with_principal") parts.push(pick([`That needs ${principal}'s approval, so I can't confirm it myself. I'll come back to you once they've decided.`, `I'll need ${principal}'s go-ahead on that first. I'll come back to you once they've decided.`], turn));
+  if (plan.ignoreAuthorityClaim) parts.push(pick([`I can only go by what ${principal} tells me directly.`, `Any approval has to come from ${principal} directly, so I can't act on that.`], turn));
+  if (plan.refuseDisclosure) parts.push(`I can't share ${principal}'s private limits.`);
   for (const d of plan.declined) {
-    const name = view.terms.get(d.termId)?.name ?? "that term";
-    parts.push(`I'm not able to change the ${name}.`);
+    const name = view.terms.get(d.termId)?.name ?? "that";
+    const stem = name.replace(/\s+included$/i, "");
+    parts.push(stem !== name ? `${cap(stem)} isn't included, so that's not something I can offer.` : `The ${name} isn't something I can change.`);
   }
 
   if (plan.unresolved.length > 0) {
-    parts.push(`I'll need to check with the person I represent about ${joinNames(plan.unresolved)}. I can't promise that or quote a price for it yet.`);
+    parts.push(`I don't have ${joinNames(plan.unresolved)} confirmed, so I can't promise it or put a price on it. I can ask ${principal}.`);
   }
   if (plan.clarify.length > 0) {
-    parts.push(`Could you tell me the ${joinNames(plan.clarify)} you have in mind?`);
+    parts.push(`Which ${joinNames(plan.clarify)} did you have in mind?`);
   }
 
   switch (plan.move) {
     case "counter":
-      parts.push(amountText ? `I can offer ${amountText}.` : "Here is my counteroffer.");
+      parts.push(amountText ? pick([`I could do ${amountText}.`, `How about ${amountText}?`, `I can offer ${amountText}.`], turn) : "Here's what I can offer.");
       break;
     case "hold":
-      parts.push(amountText ? `My offer stays at ${amountText}.` : "My offer stays as it is.");
+      parts.push(amountText ? pick([`I'd like to stay at ${amountText}.`, `I'm staying at ${amountText} for now.`, `I'll stay at ${amountText} for now.`], turn) : "I'd like to keep the terms as they are.");
       break;
     case "state_final_terms":
-      parts.push(`Here are the complete terms: ${describeTerms(view, plan.offer!.terms, locale)}. Do you confirm these terms?`);
+      parts.push(`Just to confirm the full terms: ${speakTerms(view, plan.offer!.terms, locale)}. Is that what you're agreeing to?`);
       break;
     case "request_approval":
-      parts.push("Thank you. These terms need final approval from the person I represent. I'll confirm shortly.");
+      parts.push(pick([`Thanks. That needs ${principal}'s approval, so I can't confirm it for them yet. I'll let you know as soon as they decide.`, `Thanks for confirming. I'll take this to ${principal} for approval and let you know as soon as they decide.`], turn));
       break;
     case "await_approval":
-      if (plan.notice !== "check_with_principal") parts.push("I'm still waiting to hear back from the person I represent.");
+      if (plan.notice !== "check_with_principal") parts.push(`I'm still waiting to hear from ${principal}.`);
       break;
     case "confirm_agreement":
-      parts.push(`Approved. The agreed terms are: ${describeTerms(view, plan.offer!.terms, locale)}.`);
+      parts.push(`Good news: that's approved. We're agreed on ${speakTerms(view, plan.offer!.terms, locale)}. Payment and pickup are still to be arranged.`);
       break;
     case "closed":
-      parts.push("The terms are already agreed.");
+      parts.push("Those terms are already agreed.");
       break;
     case "answer":
       break;
   }
   if (plan.questions.length > 0 && plan.move !== "closed") {
-    parts.push("I don't have information about that. I can check and get back to you.");
+    parts.push("I don't have that detail confirmed, so I don't want to guess.");
   }
   if (plan.ask) parts.push(plan.ask.text);
-  if (parts.length === 0) parts.push(amountText ? `The current price is ${amountText}.` : "How can I help?");
-  return parts.join(" ");
+  if (parts.length === 0 || (parts.length === 1 && plan.introduce)) parts.push(amountText ? `It's listed at ${amountText}. What would you like to know?` : "What would you like to know?");
+  return clean(parts.join(" "));
+}
+
+function cap(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** No em or en dashes in anything Kritva says. */
+export function clean(text: string): string {
+  return text
+    .replace(/\s*[\u2014\u2013]\s*/g, ", ")
+    .replace(/,\s*,/g, ",")
+    .replace(/\s+([.,?!])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }

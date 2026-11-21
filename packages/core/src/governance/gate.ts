@@ -128,7 +128,7 @@ export function gateTerms(state: NegotiationState, plan: Plan, preparedRevision:
 /** Phase 2: the words must say exactly what was checked, reveal nothing private, and claim nothing unsupported. */
 export function gateWording(state: NegotiationState, plan: Plan, text: string): GateResult {
   const reasons: GateReason[] = [];
-  for (const v of checkReply(text, { view: state.view, plan, counterpartyAmounts: state.counterpartyAmounts })) reasons.push({ rule: v.rule, detail: v.detail });
+  for (const v of checkReply(text, { view: state.view, plan, counterpartyAmounts: [...new Set([...state.counterpartyAmounts, ...state.counterpartySaidAmounts])] })) reasons.push({ rule: v.rule, detail: v.detail });
   const termNames = new Map(state.space.terms.map((t) => [t.termId, t.name]));
   const counterpartyRole = state.view.mandate.parties.find((p) => p.id === state.view.counterpartyId)?.role ?? null;
   for (const v of checkClaims(text, { offerTerms: plan.offer?.terms ?? null, termNames, counterpartyRole })) reasons.push({ rule: v.rule, detail: v.detail });

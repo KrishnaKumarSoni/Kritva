@@ -1,0 +1,23 @@
+{
+  "name": "humane-fixed-price",
+  "description": "Conversation quality: the buyer insists on a fixed price inside the mandate. Kritva stops pushing and states the complete terms.",
+  "turns": [
+    {
+      "buyer": "₹18,500 and that's my fixed price. I won't negotiate any further."
+    },
+    {
+      "buyer": "Yes, I confirm."
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "pending_approval",
+      "agreement",
+      "in_progress"
+    ],
+    "agentMustNotSay": [
+      "you (must|need to|should) (improve|increase|raise)",
+      "best (price|offer) (i|we) can"
+    ]
+  }
+}

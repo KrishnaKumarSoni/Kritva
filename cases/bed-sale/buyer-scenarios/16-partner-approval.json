@@ -14,9 +14,6 @@
       "\\b(deal|agreed)\\b",
       "Do you confirm"
     ],
-    "decisionActions": [
-      "clarify"
-    ],
     "agentMustSay": [
       "\\?"
     ]

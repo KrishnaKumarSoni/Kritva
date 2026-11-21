@@ -171,5 +171,12 @@
     "counterpartyRole": "buyer",
     "publicSource": "listing",
     "privateSource": "demo-instructions"
+  },
+  "listing": {
+    "title": "King-size bed, 1 year old",
+    "location": "Koramangala, Bangalore",
+    "mandateFile": "bed-sale/demo",
+    "libraryId": "man_bed-sale-listing",
+    "libraryTitle": "King-size bed sale (listing)"
   }
 }

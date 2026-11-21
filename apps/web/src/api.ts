@@ -92,7 +92,9 @@ export interface OperatorState {
   status: string;
   mandateRevision: number;
   outcome: { kind: OutcomeKind; terms: TermView[] | null };
-  pendingApproval: { requestId: string; purpose: "acceptance" | "exception"; requestedAction: string; breachedRules: string[]; terms: TermView[] | null } | null;
+  pendingApproval: { requestId: string; offerId: string; mandateRevision: number; purpose: "acceptance" | "exception"; requestedAction: string; breachedRules: string[]; terms: TermView[] | null } | null;
+  /** The last reply was cut off mid-speech and the buyer hasn't spoken since. */
+  voiceInterrupted?: boolean;
   paused: boolean;
   negotiable: {
     name: string;
@@ -220,6 +222,16 @@ export interface LibraryDetailView {
 
 export type LibraryCorrection = { recordId: string; value: string } | { recordId: string; mode: string } | { recordId: string; remove: true };
 
+export interface ListingView {
+  caseId: string;
+  title: string;
+  location: string;
+  price: string | null;
+  terms: TermView[];
+  facts: string[];
+  sellerRole: string;
+}
+
 export interface MandateOption {
   id: string;
   title: string;
@@ -236,9 +248,11 @@ export interface SessionRow {
 
 export class ApiError extends Error {
   readonly status: number;
-  constructor(status: number, message: string) {
+  readonly code: string | null;
+  constructor(status: number, message: string, code: string | null = null) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -264,8 +278,8 @@ export const api = {
   startSession: (mandateId: string, previousSessionId: string | null) =>
     call<{ session: SessionRow }>("POST", "/api/operator/sessions", { mandateId, previousSessionId }),
   operatorView: (id: string) => call<OperatorView>("GET", `/api/operator/sessions/${id}`),
-  respond: (id: string, requestId: string, decision: "approved" | "rejected") =>
-    call<unknown>("POST", `/api/operator/sessions/${id}/approvals/${requestId}`, { decision }),
+  respond: (id: string, requestId: string, decision: "approved" | "rejected", offerId: string, mandateRevision: number) =>
+    call<unknown>("POST", `/api/operator/sessions/${id}/approvals/${requestId}`, { decision, offerId, mandateRevision }),
   buyerView: (id: string) => call<BuyerView>("GET", `/api/buyer/sessions/${id}`),
   send: (id: string, text: string, clientMessageId: string) =>
     call<{ reply: { messageId: string; text: string } | null; outcome: BuyerView["outcome"] }>("POST", `/api/buyer/sessions/${id}/messages`, {
@@ -273,6 +287,23 @@ export const api = {
       clientMessageId,
     }),
   reportDelivered: (id: string, messageId: string) => call<unknown>("POST", `/api/buyer/sessions/${id}/deliveries`, { messageId }),
+  reportVoiceDelivery: (id: string, messageId: string, status: "delivered" | "interrupted", deliveredText: string | null, audioStartMs: number | null) =>
+    call<unknown>("POST", `/api/buyer/sessions/${id}/deliveries`, { messageId, channel: "voice", status, deliveredText, audioStartMs }),
+  voiceStart: (id: string) => call<{ reply: { messageId: string; text: string } | null }>("POST", `/api/buyer/sessions/${id}/voice/start`),
+  voiceUtterance: async (id: string, clientMessageId: string, wav: Blob) => {
+    let res: Response;
+    try {
+      res = await fetch(`/api/buyer/sessions/${id}/voice/utterances?clientMessageId=${encodeURIComponent(clientMessageId)}`, { method: "POST", headers: { "content-type": "audio/wav" }, body: wav });
+    } catch {
+      throw new ApiError(0, "Unable to reach the Kritva server. Nothing was sent.");
+    }
+    const json = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
+    if (!res.ok) throw new ApiError(res.status, json.message ?? "That didn't go through. Nothing was sent.", json.error);
+    return json as { transcript: string; reply: { messageId: string; text: string } | null; timings: { transcribeMs: number; turnMs: number; serverMs: number } };
+  },
+  speechUrl: (id: string, messageId: string) => `/api/buyer/sessions/${id}/voice/speech/${encodeURIComponent(messageId)}`,
+  listing: (caseId: string) => call<ListingView>("GET", `/api/public/listings/${caseId}`),
+  callSeller: (caseId: string, clientCallId: string, previousSessionId: string | null) => call<{ sessionId: string; mandateRevision: number }>("POST", `/api/public/listings/${caseId}/call`, { clientCallId, previousSessionId }),
   endNegotiation: (id: string, reason: string) => call<unknown>("POST", `/api/operator/sessions/${id}/end`, { reason }),
   library: {
     list: () => call<LibrarySummary[]>("GET", "/api/operator/library"),

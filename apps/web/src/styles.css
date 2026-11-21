@@ -1618,3 +1618,154 @@ input {
     min-width: 0;
   }
 }
+
+/* ---------- Seller console (Epic 12) ---------- */
+
+.console-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+.console-outcome {
+  margin: 0 var(--space-5) var(--space-4);
+}
+
+/* ---------- Voice (Epic 13) ---------- */
+
+.voice-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-block-start: 1px solid var(--color-border);
+  background: var(--color-bg-surface);
+}
+.voice-bar.is-active {
+  background: var(--color-bg-subtle);
+}
+.voice-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+  font-size: var(--text-ui);
+}
+.voice-label {
+  font-weight: 600;
+}
+.voice-heard {
+  flex-basis: 100%;
+  font-size: var(--text-caption);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+.voice-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+.voice-error {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.voice-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--color-border-strong);
+  flex: none;
+}
+.voice-dot-listening,
+.voice-dot-hearing {
+  background: var(--color-neutral-solid);
+}
+.voice-dot-speaking {
+  background: var(--color-accent-brand);
+}
+.voice-dot-thinking,
+.voice-dot-connecting {
+  background: var(--color-text-tertiary);
+}
+.voice-dot-error {
+  background: var(--color-text-primary);
+  box-shadow: 0 0 0 2px var(--color-bg-surface), 0 0 0 3px var(--color-text-primary);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .voice-dot-hearing,
+  .voice-dot-speaking {
+    animation: voice-pulse 1200ms var(--ease-out) infinite;
+  }
+}
+@keyframes voice-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+.composer[aria-disabled="true"] textarea {
+  background: var(--color-bg-subtle);
+  cursor: not-allowed;
+}
+
+/* ---------- Demo listing (Epic 14) ---------- */
+
+.listing-card {
+  margin: var(--space-4) var(--space-5) 0;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 0 0 1px var(--color-border);
+  background: var(--color-bg-surface);
+  display: grid;
+  gap: var(--space-3);
+}
+.listing-card-loading {
+  min-height: 140px;
+  background: var(--color-bg-subtle);
+}
+.listing-badge {
+  margin: 0;
+  width: fit-content;
+  padding: 2px var(--space-2);
+  border-radius: 999px;
+  background: var(--color-bg-subtle);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+.listing-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.listing-title {
+  font-size: var(--text-title);
+  line-height: 1.2;
+}
+.listing-price {
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-serif);
+  font-size: var(--text-display);
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+.listing-location {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-ui);
+  color: var(--color-text-secondary);
+}
+.listing-call {
+  min-height: 44px;
+  padding-inline: var(--space-5);
+}
+.listing-details {
+  margin: 0;
+}
+.listing-note {
+  margin: 0;
+  font-size: var(--text-caption);
+  color: var(--color-text-secondary);
+  text-wrap: pretty;
+}

@@ -214,7 +214,7 @@ describe("negotiation turns on the shared record", () => {
     const rejected = await engine.respondToApproval({ sessionId, requestId: accepted.state.pendingApproval!.requestId, decision: "rejected" });
     if (!rejected.ok) throw new Error(rejected.message);
     expect(rejected.state.outcome.kind).toBe("in_progress");
-    expect(rejected.reply!.text).toMatch(/not approved/i);
+    expect(rejected.reply!.text).toMatch(/didn't approve/i);
     expect(rejected.reply!.text).toContain("₹19,500");
   });
 

@@ -5,7 +5,7 @@ import { BuyerPanel } from "./BuyerPanel.tsx";
 import { CommitmentsPanel } from "./CommitmentsPanel.tsx";
 import { DealSpace } from "./DealSpace.tsx";
 import { MandatePanel } from "./MandatePanel.tsx";
-import { LockIcon, ShieldIcon } from "./icons.tsx";
+import { CheckIcon, ClockIcon, LockIcon, ShieldIcon } from "./icons.tsx";
 
 const spring = { type: "spring", duration: 0.35, bounce: 0 } as const;
 
@@ -54,9 +54,11 @@ interface RecordPanelProps {
   onRespond: (requestId: string, decision: "approved" | "rejected") => void;
   onPause: (paused: boolean) => void;
   onChanged: () => void;
+  /** Epic 12: pause and open the saved mandate in the mandate library. Null when the session uses a prepared file. */
+  onChangeInstructions?: (() => void) | null;
 }
 
-export function RecordPanel({ view, responding, onRespond, onPause, onChanged }: RecordPanelProps) {
+export function RecordPanel({ view, responding, onRespond, onPause, onChanged, onChangeInstructions = null }: RecordPanelProps) {
   const [filter, setFilter] = useState<Filter>("all");
   const [tab, setTab] = useState<Tab>("record");
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -88,17 +90,24 @@ export function RecordPanel({ view, responding, onRespond, onPause, onChanged }:
           <p className="panel-subtitle">Operator view of the shared record. Private items never reach the buyer.</p>
         </div>
         {view && !["agreed", "no_agreement", "ended"].includes(view.state.status) && (
-          <button type="button" className={`button ${view.state.paused ? "button-neutral" : "button-secondary"}`} onClick={() => onPause(!view.state.paused)} aria-pressed={view.state.paused}>
-            {view.state.paused ? "Resume" : "Pause"}
-          </button>
+          <div className="console-actions">
+            {onChangeInstructions && (
+              <button type="button" className="button button-secondary" onClick={onChangeInstructions}>
+                Change instructions
+              </button>
+            )}
+            <button type="button" className={`button ${view.state.paused ? "button-neutral" : "button-secondary"}`} onClick={() => onPause(!view.state.paused)} aria-pressed={view.state.paused}>
+              {view.state.paused ? "Resume" : "Pause"}
+            </button>
+          </div>
         )}
       </header>
 
       {state && (
         <dl className="summary">
-          <Stat label="Status" value={STATUS_LABEL[state.status] ?? state.status} />
-          <Stat label="Current ask" value={n?.currentAsk ?? "—"} />
-          <Stat label="Asking price" value={n?.opening ?? "—"} />
+          <Stat label="Status" value={`${STATUS_LABEL[state.status] ?? state.status}${state.voiceInterrupted ? " · voice reply cut off" : ""}`} />
+          <Stat label="Current ask" value={n?.currentAsk ?? "Not set"} />
+          <Stat label="Asking price" value={n?.opening ?? "Not set"} />
           <Stat label={n?.limitKind === "maximum" ? "Maximum" : "Minimum"} value={n?.limit ?? "Not set"} isPrivate />
           <Stat label="Buyer offers" value={state.counterpartyOffers.length > 0 ? state.counterpartyOffers.join(", ") : "None yet"} />
           <Stat label="Accepting" value={state.acceptRequiresApproval ? "Needs your approval" : "Kritva may accept"} isPrivate />
@@ -113,6 +122,8 @@ export function RecordPanel({ view, responding, onRespond, onPause, onChanged }:
           )}
         </dl>
       )}
+
+      {view && <OutcomeStrip view={view} />}
 
       <AnimatePresence initial={false}>
         {state?.pendingApproval && (
@@ -190,7 +201,7 @@ export function RecordPanel({ view, responding, onRespond, onPause, onChanged }:
       )}
       {tab === "mandate" && view && (
         <div role="tabpanel" id="panel-mandate" aria-labelledby="tab-mandate" className="tabpanel">
-          <MandatePanel sessionId={view.session.id} principal={view.principal} drafts={view.drafts} onChanged={onChanged} />
+          <MandatePanel principal={view.principal} onChangeInstructions={onChangeInstructions} />
         </div>
       )}
 
@@ -237,6 +248,7 @@ export function RecordPanel({ view, responding, onRespond, onPause, onChanged }:
                 {e.summary && <p className="event-summary">{e.summary}</p>}
                 <div className="event-tags">
                   <span className="chip">{ACTOR_LABEL[e.actor]}</span>
+                  {offerStatus(view, e) && <span className="chip chip-strong">{offerStatus(view, e)}</span>}
                   {e.channel && <span className="chip">{e.channel === "voice" ? "Voice" : "Text"}</span>}
                   {e.visibility === "private" && (
                     <span className="chip chip-strong">
@@ -277,4 +289,61 @@ function Stat({ label, value, isPrivate = false }: { label: string; value: strin
       </dd>
     </div>
   );
+}
+
+/** A seller offer in the record, labelled with its current status so an unsent offer never looks delivered. */
+function offerStatus(view: OperatorView | null, e: RecordEvent): string | null {
+  if (!view || (e.type !== "offer_proposed" && e.type !== "offer_extracted")) return null;
+  const o = view.commitments.offers.find((x) => x.offerId === e.id);
+  if (!o) return null;
+  return o.blocked ? "Held back, never sent" : o.statusLabel;
+}
+
+/** Epic 12: the outcome at a glance, from the saved offer and approval records. */
+function OutcomeStrip({ view }: { view: OperatorView }) {
+  const c = view.commitments;
+  if (c.outcome === "agreement" && c.agreement) {
+    return (
+      <section className="outcome outcome-agreement console-outcome" aria-labelledby="console-outcome-title">
+        <div className="outcome-head">
+          <span className="outcome-icon">
+            <CheckIcon />
+          </span>
+          <h3 id="console-outcome-title">Agreement reached</h3>
+        </div>
+        <ul className="offer-terms">
+          {c.agreement.terms.map((t) => (
+            <li key={t}>{t}</li>
+          ))}
+        </ul>
+        <div className="outcome-todo">
+          <p className="outcome-todo-title">Still to do</p>
+          <ul>
+            {c.agreement.obligations.map((o) => (
+              <li key={o}>
+                <ClockIcon width={14} height={14} />
+                <span>{o}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p className="outcome-note">{c.agreement.approved ? "You approved these exact terms." : "Your mandate let Kritva accept these terms."} Payment and pickup stay pending until they actually happen.</p>
+      </section>
+    );
+  }
+  if (c.outcome === "no_agreement") {
+    const by = c.stopped?.by === "counterparty" ? "the buyer" : c.stopped?.by === "principal" ? "you" : c.stopped?.by === "agent" ? "Kritva" : "an unknown party";
+    return (
+      <section className="outcome outcome-pending console-outcome" aria-labelledby="console-outcome-title">
+        <div className="outcome-head">
+          <h3 id="console-outcome-title">No agreement</h3>
+        </div>
+        <p className="outcome-note">
+          Ended by {by}
+          {c.stopped?.reason ? `: ${c.stopped.reason}` : "."}
+        </p>
+      </section>
+    );
+  }
+  return null;
 }

@@ -17,13 +17,15 @@ const EMPTY: LibraryInput = { title: "", principalRole: "", counterpartyRole: ""
 interface Props {
   /** Selects a saved mandate for the next negotiation (it does not start one). */
   onUse: (mandateOptionId: string) => void;
+  /** Open this saved mandate first (for example from the console's "Change instructions"). */
+  initialId?: string | null;
 }
 
 /**
  * Epic 11: the principal's mandate library. Plain-language input, a generic review of what Kritva
  * understood, direct corrections, and an explicit confirmation of the exact draft shown.
  */
-export function MandatesPage({ onUse }: Props) {
+export function MandatesPage({ onUse, initialId = null }: Props) {
   const [list, setList] = useState<LibrarySummary[]>([]);
   const [examples, setExamples] = useState<LibraryExample[]>([]);
   const [selected, setSelected] = useState<string | "new">("new");
@@ -46,6 +48,11 @@ export function MandatesPage({ onUse }: Props) {
     loadList();
     api.library.examples().then(setExamples).catch(() => undefined);
   }, [loadList]);
+
+  useEffect(() => {
+    if (initialId) open(initialId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialId]);
 
   const open = async (id: string | "new") => {
     setSelected(id);
