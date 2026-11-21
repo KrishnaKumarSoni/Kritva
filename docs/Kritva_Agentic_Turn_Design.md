@@ -146,7 +146,9 @@ Running the agent against the live scenarios showed where it needed more than a 
 - **A repeated sentence goes back to the writer.** `send_reply` rejects a draft that repeats a sentence of four or more words Kritva already said in the conversation, and the fallback wording avoids repeats too.
 - **Suggested questions are drafts.** The writer keeps a suggested question's intent but words it for the conversation and the case, so a guidance question never asks about a detail the case does not have.
 - **The reviewer blocks only clear violations.** Each concern carries a reason and a severity; a "doubt" is not a broken rule. Ordinary acknowledgements, a held public ask and answers from public facts are never violations. A paused or ended notice may carry no amount or question, enforced in code.
-- **Public facts are always in the brief**, so a question about what is offered gets an answer even when the move is about something else.
+- **Public facts and the current public terms are always in the brief**, so a question about what is offered gets an answer even when the move is about something else.
+- **The brief carries the channel and their number.** Chat replies are warm, complete sentences; on a voice call the agent is friendlier and fuller. A counter acknowledges their number first, and a reply that is only a bare amount goes back for a complete sentence.
+- **A selected question may be skipped** when their latest message already answers it; `send_reply` takes the reason, and the question stays unasked.
 - **Reading grounding.** A value question needs question or value wording; a note that only says the other party will do their own fulfillment is dropped; an amount cited as an alternative's price is never their offer; "<amount> works" is a commitment claim outside an agreement confirmation.
 
 ## 8. Risks and how they are contained

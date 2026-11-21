@@ -1,8 +1,8 @@
 {
   "scenario": "collect-myself-agreement",
   "mandate": "bed-sale/demo",
-  "recordedAt": "2026-11-21T21:24:50.128Z",
-  "commit": "ebfa6bd + uncommitted changes",
+  "recordedAt": "2026-11-21T22:32:46.473Z",
+  "commit": "eb74d4f + uncommitted changes",
   "model": "gpt-5.4-mini",
   "turns": [
     {
@@ -59,7 +59,7 @@
   "observed": [
     {
       "turn": "Any chance you’d take ₹18,500 if I collect it myself?",
-      "reply": "Hi, I’m Kritva, Krishna’s assistant. It’s at ₹20,000.",
+      "reply": "Hi, I’m Kritva, Krishna’s assistant. Thanks for the offer, but the asking price is ₹20,000.",
       "offerAmount": null,
       "decision": {
         "kind": "answer_enquiry",
@@ -69,7 +69,7 @@
     },
     {
       "turn": "I’ll pay ₹19,500 and collect it myself.",
-      "reply": "I can do ₹19,800.",
+      "reply": "Thanks for the offer. I can do ₹19,800 if you collect it yourself.",
       "offerAmount": 19800,
       "decision": {
         "kind": "counter",
@@ -79,27 +79,27 @@
     },
     {
       "turn": "Okay, I’ll go with the price you just quoted and collect it from you.",
-      "reply": "King-size bed, ₹19,800, pickup location Koramangala, Bangalore, and no delivery included. Please confirm the complete package.",
+      "reply": "Glad we’ve got there. King-size bed, ₹19,800, pickup location Koramangala, Bangalore, and no delivery included. Could you confirm the complete package?",
       "offerAmount": 19800,
       "decision": {
         "kind": "state_final_terms",
         "action": "propose"
       },
-      "blocked": 1
+      "blocked": 0
     },
     {
       "turn": "Yes, I confirm the full package you just read back.",
-      "reply": "Thanks for confirming. I'll take this to the seller for approval and let you know as soon as they decide.",
+      "reply": "Thanks. I’ll need the seller’s approval before I can confirm it here, so I can’t call it finalized yet.",
       "offerAmount": null,
       "decision": {
         "kind": "request_approval",
         "action": "accept"
       },
-      "blocked": 2
+      "blocked": 0
     },
     {
       "turn": "(seller approved)",
-      "reply": "We’re agreed on the full package, King-size bed, ₹19,800, pickup location Koramangala, Bangalore, and no delivery included.",
+      "reply": "Thank you, we’re agreed. King-size bed, ₹19,800, pickup location Koramangala, Bangalore, and no delivery included. I’ll coordinate the payment and handover with you next, and we can sort the exact timing together.",
       "offerAmount": null,
       "decision": {
         "kind": "record_agreement",
@@ -152,15 +152,15 @@
           {
             "kind": "constraint",
             "quote": "if I collect it myself",
-            "summary": "Buyer will collect the bed themselves",
-            "term_id": "term_t_pickup_location",
+            "summary": "Buyer will pick up the bed themselves",
+            "term_id": "term_t_delivery_included",
             "value": {
-              "type": "text",
+              "type": "boolean",
               "amount": null,
               "currency": null,
               "unit": null,
-              "text": "self pickup",
-              "boolean": null
+              "text": null,
+              "boolean": false
             },
             "condition": null,
             "basis": "stated"
@@ -175,14 +175,22 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Hi, I’m Kritva, Krishna’s assistant. It’s at ₹20,000.",
-        "question": null
+        "text": "Hi, I’m Kritva, Krishna’s assistant. Thanks for the offer, but the asking price is ₹20,000.",
+        "question": null,
+        "skip_question_because": null
       }
     },
     {
       "purpose": "language_check",
       "json": {
-        "concerns": []
+        "concerns": [
+          {
+            "type": "action_mismatch",
+            "quote": "Thanks for the offer, but the asking price is ₹20,000.",
+            "reason": "The action is answer_enquiry to a request about lowering the price; stating the current public asking price is allowed, but the wording does not address whether ₹18,500 could be accepted and reads like a fresh assertion of the price rather than a direct answer to the enquiry. This is at most a mild mismatch.",
+            "severity": "doubt"
+          }
+        ]
       }
     },
     {
@@ -200,28 +208,6 @@
               "text": null,
               "boolean": null
             }
-          },
-          {
-            "term_id": "term_t_delivery_included",
-            "value": {
-              "type": "boolean",
-              "amount": null,
-              "currency": null,
-              "unit": null,
-              "text": null,
-              "boolean": false
-            }
-          },
-          {
-            "term_id": "term_t_pickup_location",
-            "value": {
-              "type": "text",
-              "amount": null,
-              "currency": null,
-              "unit": null,
-              "text": "I’ll collect it myself",
-              "boolean": null
-            }
           }
         ],
         "accepts_stated_terms": false,
@@ -235,56 +221,20 @@
         "ends_negotiation": false,
         "corrects_previous": false,
         "pressure": "none",
-        "notes": [],
-        "answers": [],
-        "new_terms": [],
-        "questions": [],
-        "public_term_questions": []
-      }
-    },
-    {
-      "purpose": "compose_reply",
-      "json": {
-        "text": "I can do ₹19,800.",
-        "question": null
-      }
-    },
-    {
-      "purpose": "language_check",
-      "json": {
-        "concerns": [
-          {
-            "type": "action_mismatch",
-            "quote": "I can do ₹19,800.",
-            "reason": "The move is counter, and the quoted amount matches checked_terms as the authorized offer, so this is fine as a counter; however if intended as acceptance or a final agreed price it would be a mismatch. Here I’m not flagging it as a clear violation.",
-            "severity": "doubt"
-          }
-        ]
-      }
-    },
-    {
-      "purpose": "interpret_counterparty",
-      "json": {
-        "intent": "accept_stated_terms",
-        "offer_terms": [],
-        "accepts_stated_terms": true,
-        "asks_if_open": false,
-        "considering": false,
-        "asks_private_info": false,
-        "claims_authority": false,
-        "offer_kind": "none",
-        "price_concern": null,
-        "offer_conditions": [],
-        "ends_negotiation": false,
-        "corrects_previous": false,
-        "pressure": "none",
         "notes": [
           {
             "kind": "final_position",
-            "quote": "Okay, I’ll go with the price you just quoted and collect it from you.",
-            "summary": "Accepts the quoted price and says they will collect it.",
-            "term_id": null,
-            "value": null,
+            "quote": "I’ll pay ₹19,500 and collect it myself.",
+            "summary": "Makes a firm offer of ₹19,500 and says they will collect it themselves.",
+            "term_id": "term_t_price",
+            "value": {
+              "type": "money",
+              "amount": 19500,
+              "currency": "INR",
+              "unit": null,
+              "text": null,
+              "boolean": null
+            },
             "condition": null,
             "basis": "stated"
           }
@@ -298,8 +248,46 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "[[TERMS]]. Can you confirm the complete package?",
-        "question": null
+        "text": "Thanks for the offer. I can do ₹19,800 if you collect it yourself.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "accept_stated_terms",
+        "offer_terms": [],
+        "accepts_stated_terms": true,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Glad we’ve got there. [[TERMS]]. Could you confirm the complete package?",
+        "question": null,
+        "skip_question_because": null
       }
     },
     {
@@ -308,28 +296,8 @@
         "concerns": [
           {
             "type": "action_mismatch",
-            "quote": "Can you confirm the complete package?",
-            "reason": "For state_final_terms, the reply should ask the other party to confirm the full package; here it asks a generic confirmation of the package instead of the complete package terms being confirmed as required.",
-            "severity": "violation"
-          }
-        ]
-      }
-    },
-    {
-      "purpose": "compose_reply",
-      "json": {
-        "text": "[[TERMS]]. Please confirm the complete package.",
-        "question": null
-      }
-    },
-    {
-      "purpose": "language_check",
-      "json": {
-        "concerns": [
-          {
-            "type": "turn_mismatch",
-            "quote": "Please confirm the complete package.",
-            "reason": "For state_final_terms, the reply must ask the other party to confirm the full package. This wording asks for confirmation but the package marker is not expanded here; however, the main issue is that the action requires a full-package confirmation rather than a bare ask to confirm unspecified terms. This is at most a doubt, not a clear violation.",
+            "quote": "Glad we’ve got there. [[TERMS]]. Could you confirm the complete package?",
+            "reason": "For state_final_terms, the reply should present the full package for confirmation. Asking for confirmation is allowed, but saying \"we’ve got there\" can imply the deal is already settled rather than awaiting confirmation.",
             "severity": "doubt"
           }
         ]
@@ -361,22 +329,30 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Thanks, Krishna has approved it. We’re set.",
-        "question": null
+        "text": "Thanks. I’ll need the seller’s approval before I can confirm it here, so I can’t call it finalized yet.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "turn_mismatch",
+            "quote": "I’ll need the seller’s approval before I can confirm it here, so I can’t call it finalized yet.",
+            "reason": "The current message is the counterparty’s confirmation of the full package; under request_approval, the reply should reflect that approval is needed, but this wording also says the speaker 'can’t call it finalized yet,' which is fine. No clear mismatch.",
+            "severity": "doubt"
+          }
+        ]
       }
     },
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Thanks, it’s agreed. [[TERMS]]",
-        "question": null
-      }
-    },
-    {
-      "purpose": "compose_reply",
-      "json": {
-        "text": "We’re agreed on the full package, [[TERMS]].",
-        "question": null
+        "text": "Thank you, we’re agreed. [[TERMS]] I’ll coordinate the payment and handover with you next, and we can sort the exact timing together.",
+        "question": null,
+        "skip_question_because": null
       }
     },
     {
@@ -385,8 +361,14 @@
         "concerns": [
           {
             "type": "action_mismatch",
-            "quote": "We’re agreed on the full package, [[TERMS]].",
-            "reason": "For confirm_agreement, explicit approval may be announced only when approvalGranted is true, but the wording should reflect the current approved terms without implying a broader agreement than the checked terms if any part is not yet inserted; this is a potential action framing issue.",
+            "quote": "Thank you, we’re agreed.",
+            "reason": "This confirms agreement, which matches the action only if approval has been granted; however the quoted wording is acceptable here, so no issue in isolation. The concern is the next sentence about future coordination, not the agreement wording.",
+            "severity": "doubt"
+          },
+          {
+            "type": "promise_outside_terms",
+            "quote": "I’ll coordinate the payment and handover with you next, and we can sort the exact timing together.",
+            "reason": "This promises coordination of payment and handover beyond the checked terms; while permitted facts mention these are remaining steps to be arranged, saying 'I’ll coordinate' is a commitment to handle the arrangement rather than merely noting it remains to be arranged.",
             "severity": "doubt"
           }
         ]

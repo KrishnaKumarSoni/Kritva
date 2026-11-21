@@ -370,7 +370,7 @@ export class NegotiationEngine {
 
     if (plan.move === "confirm_agreement" && plan.acceptanceOf) plan.approvalGranted = Boolean(approvedFor(state, plan.acceptanceOf.termsHash));
     const offerIds = await this.#recordCommitments(writes, state, plan, ctx.inboundId, ctx.agent);
-    return { plan, state, prepared, offerIds, exception: false, drafting: this.#drafting(state, plan, ctx.conversation, ctx.currentMessage) };
+    return { plan, state, prepared, offerIds, exception: false, drafting: this.#drafting(state, plan, ctx.conversation, ctx.currentMessage, ctx.channel) };
   }
 
   /**
@@ -449,7 +449,7 @@ export class NegotiationEngine {
     await writes.put({ id: newEventId(), type: "decision", channel: null, payload: { kind: "request_approval", reason: "The terms cross a limit the principal may approve an exception to; asking before offering.", relatedEventIds: [...ctx.related, offerId] } }, ctx.agent);
     const holding = basePlan("await_approval", { kind: "request_approval", reason: "Waiting for the principal's exception decision." }, null);
     holding.notice = "check_with_principal";
-    return { plan: holding, state, prepared: state.mandateRevision, offerIds: [], exception: true, drafting: this.#drafting(state, holding, ctx.conversation, ctx.currentMessage) };
+    return { plan: holding, state, prepared: state.mandateRevision, offerIds: [], exception: true, drafting: this.#drafting(state, holding, ctx.conversation, ctx.currentMessage, ctx.channel) };
   }
 
   /** Records what the counterparty said and answered, then prepares questions from the updated context. */
@@ -542,12 +542,12 @@ export class NegotiationEngine {
   }
 
   /** Everything one reply's wording depends on: the plan, public content and the brief the agent reads. */
-  #drafting(state: NegotiationState, plan: Plan, conversation: Conversation, currentMessage: string | null = null): Drafting {
+  #drafting(state: NegotiationState, plan: Plan, conversation: Conversation, currentMessage: string | null = null, channel: Channel = "text"): Drafting {
     const subject = this.publicSubject(state.view);
     const publicPrincipalName = this.#listingDetails.get(state.view.mandate.caseId)?.publicPrincipalName?.trim();
     const publicTerms = publicDealTerms(state);
     const offerInvitedRecently = invitedOfferRecently(conversation);
-    const brief = composeBrief({ view: state.view, plan, publicTerms, publicPrincipalName, conversation, theirMessage: currentMessage, locale: this.#locale, outcome: state.outcome.kind, offerInvitedRecently });
+    const brief = composeBrief({ view: state.view, plan, publicTerms, publicPrincipalName, conversation, theirMessage: currentMessage, locale: this.#locale, outcome: state.outcome.kind, offerInvitedRecently, channel: channel === "voice" ? "voice" : "text" });
     return {
       state, plan, conversation, currentMessage, subject, publicPrincipalName, publicTerms, offerInvitedRecently, brief,
       previousReply: [...conversation].reverse().find((c) => c.speaker === "agent")?.text ?? null,
@@ -594,7 +594,7 @@ export class NegotiationEngine {
    * send_reply: check the agent's draft. Accepted wording ends the turn; a rejected draft goes back
    * with the reasons; after two rejected drafts the checked fallback is used. Nothing is relaxed.
    */
-  async #review(writes: Writer, d: Drafting, draft: { text: string; question: string | null }, agent: Actor): Promise<SendOutcome> {
+  async #review(writes: Writer, d: Drafting, draft: { text: string; question: string | null; skipQuestionBecause?: string | null }, agent: Actor): Promise<SendOutcome> {
     d.attempts += 1;
     const checked = await this.#checkDraft(writes, d, draft, agent);
     if (checked.ok) return { status: "accepted", text: checked.text, question: checked.question };
@@ -612,7 +612,7 @@ export class NegotiationEngine {
   }
 
   /** The code checks and the reviewer on one draft. Every block is recorded. */
-  async #checkDraft(writes: Writer, d: Drafting, composed: { text: string; question: string | null }, agent: Actor): Promise<{ ok: true; text: string; question: string | null } | { ok: false; violations: Array<{ rule: string; detail: string }>; draft: string }> {
+  async #checkDraft(writes: Writer, d: Drafting, composed: { text: string; question: string | null; skipQuestionBecause?: string | null }, agent: Actor): Promise<{ ok: true; text: string; question: string | null } | { ok: false; violations: Array<{ rule: string; detail: string }>; draft: string }> {
     const { state, plan, conversation, currentMessage, subject, publicPrincipalName, publicTerms, offerInvitedRecently, previousReply } = d;
     const fail = async (text: string, violations: Array<{ rule: ReplyViolation["rule"]; detail: string }>, record = true) => {
       if (record) await this.#block(writes, text, violations, agent);
@@ -629,6 +629,8 @@ export class NegotiationEngine {
       const separate = composed.question ? clean(composed.question) : null;
       const phrased = embedded ?? separate;
       if (phrased && /^[^?]+\?$/.test(phrased) && phrased.length <= 500 && (embedded || !draft.includes("?"))) question = phrased;
+      // The writer may leave out a selected question the conversation already answers, saying why; it stays unasked.
+      else if (!phrased && !draft.includes("?") && composed.skipQuestionBecause) question = null;
       else if (plan.ask.purpose || phrased || draft.includes("?")) return fail(draft, [{ rule: "action_mismatch", detail: "The reply did not ask exactly one question for the selected objective." }]);
     }
     if (question) draft = dropDuplicateInvitation(draft, question);
@@ -637,16 +639,20 @@ export class NegotiationEngine {
     if ((plan.notice === "paused" || plan.notice === "ended") && (findAmounts(draft).length > 0 || draft.includes("?"))) {
       return fail(draft, [{ rule: "action_mismatch", detail: `The conversation is ${plan.notice}: mention no amount, offer or question.` }]);
     }
-    const repeated = repeatedSentence(draft, conversation);
-    if (repeated) return fail(draft, [{ rule: "action_mismatch", detail: `You already said "${repeated}". Say it in new words or leave it out.` }], false);
     const exactTerms = plan.move === "state_final_terms" || plan.move === "confirm_agreement";
     const framing = draft.split(EXACT_TERMS_SLOT);
     if (exactTerms && plan.offer && framing.length === 2 && !findAmounts(framing.join(" ")).length && (plan.move !== "state_final_terms" || framing[1]!.includes("?") || /\bconfirm\b/i.test(framing[1]!))) {
       const terms = speakTerms(state.view, plan.offer.terms, this.#locale);
-      insertedTerms = clean(subject ? `${subject}, ${terms}` : terms);
       const [before, after] = framing as [string, string];
-      const ending = plan.move === "state_final_terms" && !/^\s*[.!?]/.test(after) ? `. ${after.trimStart().replace(/^[,:;]\s*/, "")}` : after;
+      // Inside a sentence ("The agreed terms are ...") the subject is not capitalised.
+      const midSentence = before.trim().length > 0 && !/[.!?:]\s*$/.test(before);
+      const lead = subject && midSentence ? subject.charAt(0).toLowerCase() + subject.slice(1) : subject;
+      insertedTerms = clean(lead ? `${lead}, ${terms}` : terms);
+      // A comma continues the sentence; any other words after the terms start a new, capitalised one.
+      const rest = after.trimStart();
+      const ending = !rest || /^[.!?,;:]/.test(rest) ? after : `. ${rest.charAt(0).toUpperCase()}${rest.slice(1)}`;
       draft = clean(before + insertedTerms + ending);
+      if (!/[.!?]["'”’)]?$/.test(draft)) draft = `${draft}.`;
     } else if (exactTerms || framing.length !== 1) {
       return fail(draft, [{ rule: "missing_condition", detail: "The reply did not leave one slot for the complete checked terms." }]);
     }
@@ -654,10 +660,14 @@ export class NegotiationEngine {
       if (draft.includes("?")) return fail(draft, [{ rule: "action_mismatch", detail: "The reply asked a different question from the selected move." }]);
       draft = `${draft} ${question}`;
     }
+    // Checked on the words the other party will read, after the terms are in place.
+    const repeated = repeatedSentence(insertedTerms ? draft.replace(insertedTerms, "") : draft, conversation);
+    if (repeated) return fail(draft, [{ rule: "action_mismatch", detail: `You already said "${repeated}". Say it in new words or leave it out.` }], false);
     // A clarifying question the plan itself needs (a missing detail an offer depends on) is never a new question.
     if (!question && plan.clarify.length === 0 && (plan.action === "decline" || ["answer_public_terms", "explore_objection", "explain_price", "acknowledge_budget", "answer_enquiry", "price_pressure", "compare_terms"].includes(plan.move)) && draft.includes("?")) {
       return fail(draft, [{ rule: "action_mismatch", detail: "This move did not call for a new question." }]);
     }
+    const ownWords = draft;
     if (plan.introduce) {
       const opening = draft.split(/(?<=[.!?])\s+/, 2).join(" ");
       if (!/\bkritva\b/i.test(opening)) draft = `${introduction(state.view, publicPrincipalName)} ${draft}`;
@@ -667,6 +677,10 @@ export class NegotiationEngine {
     }
     const wording = gateWording(state, plan, draft);
     if (wording.decision !== "allow") return fail(draft, wording.reasons.map((r) => ({ rule: r.rule as ReplyViolation["rule"], detail: r.detail })));
+    // Quality, after governance: the writer's own words make a complete, friendly sentence, never a bare amount.
+    if (ownWords.replace(/\p{Sc}?\s?[\d,]+(?:\.\d+)?/gu, " ").split(/\s+/).filter((w) => /\p{L}/u.test(w)).length < 4) {
+      return fail(draft, [{ rule: "action_mismatch", detail: "Reply in a complete, friendly sentence that responds to what they said, not a bare amount or fragment." }], false);
+    }
     const checkedTerms = (plan.offer?.terms ?? []).map((t) => `${state.space.terms.find((x) => x.termId === t.termId)?.name ?? t.termId}: ${formatValue(t.value, this.#locale)}`);
     const permittedFacts = [...state.view.publicFacts];
     // Every current public term is shared with the other party, so restating it is never an invented fact.
@@ -682,6 +696,8 @@ export class NegotiationEngine {
       permittedFacts.push(`${answer.basis === "opening" ? "Originally listed" : "Current public"} ${name}: ${formatValue(answer.value, this.#locale)}`);
     }
     if (plan.openForDiscussion) permittedFacts.push("The current terms are still open for discussion.");
+    if (plan.move === "confirm_agreement") permittedFacts.push("With the agreement recorded, payment and handover are the remaining steps, to be arranged between the parties.");
+    if (plan.move === "end_negotiation" && plan.end?.requestedBy === "principal") permittedFacts.push(`${publicPrincipalName || principalLabel(state.view)} decided not to go ahead; there is no agreement.`);
     if (plan.listingAvailable !== undefined) permittedFacts.push(`The listed subject is ${plan.listingAvailable ? "still available" : "no longer available"}.`);
     if (subject) permittedFacts.push(subject);
     const language = await languageCheck(this.#llm, {
@@ -696,7 +712,7 @@ export class NegotiationEngine {
       counterpartyWords: conversation.filter((c) => c.speaker === "counterparty").map((c) => c.text),
       publicAmounts: state.view.negotiable ? [...new Set(state.askHistory)].map((amount) => formatValue(numericValue(state.view.negotiable!, amount), this.#locale)) : [],
       statedBudget: plan.statedBudget !== undefined && state.view.negotiable ? formatValue(numericValue(state.view.negotiable, plan.statedBudget), this.#locale) : null,
-      questionObjective: plan.ask?.purpose ?? null,
+      questionObjective: question ? (plan.ask?.purpose ?? null) : null,
       selectedQuestion: question,
       action: { move: plan.move, notice: plan.notice, opening: plan.opening === true, approvalGranted: plan.approvalGranted === true, outcome: state.outcome.kind },
     });
@@ -907,7 +923,7 @@ export class NegotiationEngine {
         }
         const conversation = await this.#conversation(input.sessionId, null);
         const event = input.decision === "approved" ? "The person you represent approved the request." : "The person you represent did not approve the request.";
-        const text = (await this.#speak(writes, this.#drafting(after, plan, conversation), agent, event))?.text ?? null;
+        const text = (await this.#speak(writes, this.#drafting(after, plan, conversation, null, channel), agent, event))?.text ?? null;
         const current = projectState(await this.#record.context(input.sessionId));
         let reply: TurnResult["reply"] = null;
         if (text !== null && current.mandateRevision === after.mandateRevision && current.status !== "paused") {
@@ -969,7 +985,7 @@ export class NegotiationEngine {
         await writes.put({ id: newEventId(), type: "decision", channel: null, payload: this.#decisionPayload(plan, state, []) }, agent);
         await writes.put({ id: newEventId(), type: "status_changed", channel: null, payload: { from: state.status, to: "no_agreement", reason, requestedBy: "principal", unresolved: plan.end.unresolved } }, principal);
         const conversation = await this.#conversation(input.sessionId, null);
-        const text = (await this.#speak(writes, this.#drafting(state, plan, conversation), agent, "The person you represent decided to end the negotiation without agreement."))?.text ?? null;
+        const text = (await this.#speak(writes, this.#drafting(state, plan, conversation, null, channel), agent, "The person you represent decided to end the negotiation without agreement."))?.text ?? null;
         let reply: TurnResult["reply"] = null;
         if (text !== null) {
           await this.#recordGate(writes, plan, { decision: "allow", reasons: [], mandateRevision: state.mandateRevision, termsHash: null, breachedRuleIds: [] }, "send", null, agent);
@@ -1008,7 +1024,7 @@ export class NegotiationEngine {
       plan.opening = true;
       const writes = new Writer(this.#record, input.sessionId);
       try {
-        const text = (await this.#speak(writes, this.#drafting(state, plan, []), agent, "A conversation is starting. Nobody has spoken yet."))?.text ?? null;
+        const text = (await this.#speak(writes, this.#drafting(state, plan, [], null, input.channel), agent, "A conversation is starting. Nobody has spoken yet."))?.text ?? null;
         if (text === null) return { ok: false, code: "invalid_event", message: "The greeting did not pass the outgoing check." };
         const current = projectState(await this.#record.context(input.sessionId));
         if (current.status !== "active" || current.mandateRevision !== state.mandateRevision) return { ok: false, code: "not_pending", message: "The negotiation changed before the greeting was ready." };

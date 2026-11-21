@@ -47,3 +47,17 @@ The missed deal (`changed-terms`) is strategy, not wording: the buyer moved from
 - The agent reads messages about as well as the dedicated reader, not better; reading errors are the main source of wrong moves. Each one found here was fixed in the reading rules or grounding, not per case.
 - Median turn time is about 4 seconds in chat. The voice target (1.5 seconds to first audio) is still open.
 - `pickup-cost` and `conditional-truck` remain intermittent on the model's reading.
+
+## Round 2: friendlier replies and channel-aware style (2026-11-22)
+
+Driven by a second reported chat (bare "₹19,000." counter, "What 19000?" answered literally, a re-asked "budget or value?", a fact dump for "what is it made of?", a bare read-back and an unpunctuated agreement line). Every change is general:
+
+- The brief carries the channel and their number. Chat replies are warm, complete sentences; voice replies are friendlier and fuller (two to four spoken sentences, acknowledgement, an open follow-up, no padding or promises). A counter acknowledges their number first.
+- A reply of fewer than four words of its own (a bare amount) goes back for a complete sentence. A repeated sentence is checked on the words the buyer will read, after the terms are inserted.
+- When the value they ask about is our counter, the brief says it is our current offer, down from the original.
+- The writer may leave out a selected question their latest message already answers, with a reason; the strategy no longer asks "budget or value?" once they said it is their budget.
+- Reading grounding: a question with no amount proposes nothing ("for how much?" is not an offer at the ask), a question is never an acceptance, and doing their own fulfillment is never a condition.
+- Read-backs may open with a short acknowledgement. Inserted terms close their sentence and are not capitalised mid-sentence. The reviewer accepts "I don't have that confirmed, I can check", "We're agreed" on a confirmed agreement, and "the seller decided not to go ahead" when the seller ended it.
+- Quoting the buyer's own number back ("Thanks for the ₹15,000 offer") is allowed; putting it forward as ours ("I can do ₹15,000 if you collect it") is still blocked, which also closes an older loophole.
+
+Results: `npm test` core 328, server 79. Live text, final run: [31 of 33](../scenarios/agentic-turn/scenario-results.md), 103 of 115 first drafts sent as written, 6 fallbacks, median turn 4.6s (machine under heavy load during the runs). The two failures are the long-standing intermittent readings (`conditional-truck`, `pickup-cost`). Scenario 33 replays the second reported chat. A voice run of the same chat (engine on the voice channel, real agent) gave replies such as "It's ₹19,000. That's the current offer on the bed, down from the original ₹20,000. Let me know if you want to take it forward."

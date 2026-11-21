@@ -1,8 +1,8 @@
 {
   "scenario": "transport-budget-final",
   "mandate": "bed-sale/demo",
-  "recordedAt": "2026-11-21T21:24:45.728Z",
-  "commit": "ebfa6bd + uncommitted changes",
+  "recordedAt": "2026-11-21T22:32:39.795Z",
+  "commit": "eb74d4f + uncommitted changes",
   "model": "gpt-5.4-mini",
   "turns": [
     {
@@ -48,7 +48,7 @@
   "observed": [
     {
       "turn": "My total budget is ₹19,000 including transport. I don’t know what a truck will cost yet.",
-      "reply": "Hi, I’m Kritva, Krishna’s assistant. You’ve said your budget is ₹19,000, including transport. What amount do you want to keep available just for the bed itself?",
+      "reply": "Hi, I’m Kritva, Krishna’s assistant. You’ve said your total budget is ₹19,000 including transport, so to make sure I’m clear, how much of that is for the bed itself?",
       "offerAmount": null,
       "decision": {
         "kind": "acknowledge_budget",
@@ -58,30 +58,30 @@
     },
     {
       "turn": "The truck quote is ₹1,500, so I can pay ₹17,500 for the bed and collect it myself.",
-      "reply": "I can do ₹18,500. Let me know if you want to proceed.",
+      "reply": "Thanks, ₹17,500 noted. I can do ₹18,500 for the bed, and you can collect it yourself.",
       "offerAmount": 18500,
       "decision": {
         "kind": "counter",
         "action": "counter"
       },
-      "blocked": 1
+      "blocked": 0
     },
     {
       "turn": "₹17,500 is my final offer. I’ll collect it myself.",
-      "reply": "₹18,500. If you’d like to proceed, send your confirmation.",
+      "reply": "Thanks for the clear final offer. The price is ₹18,500, and collection from your side is fine.",
       "offerAmount": 18500,
       "decision": {
         "kind": "hold",
         "action": "decline"
       },
-      "blocked": 1
+      "blocked": 0
     }
   ],
   "calls": [
     {
       "purpose": "interpret_counterparty",
       "json": {
-        "intent": "question",
+        "intent": "other",
         "offer_terms": [],
         "accepts_stated_terms": false,
         "asks_if_open": false,
@@ -98,7 +98,7 @@
           {
             "kind": "budget",
             "quote": "My total budget is ₹19,000 including transport.",
-            "summary": "They can spend up to ₹19,000 total, and transport is included in that budget.",
+            "summary": "Their total budget is ₹19,000 and transport is included in it.",
             "term_id": null,
             "value": {
               "type": "money",
@@ -114,7 +114,7 @@
           {
             "kind": "constraint",
             "quote": "I don’t know what a truck will cost yet.",
-            "summary": "They do not know the transport cost yet.",
+            "summary": "They do not yet know the truck cost.",
             "term_id": null,
             "value": null,
             "condition": null,
@@ -123,23 +123,29 @@
         ],
         "answers": [],
         "new_terms": [],
-        "questions": [
-          "I don’t know what a truck will cost yet."
-        ],
+        "questions": [],
         "public_term_questions": []
       }
     },
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Hi, I’m Kritva, Krishna’s assistant. You’ve said your budget is ₹19,000, including transport. What amount do you want to keep available just for the bed itself?",
-        "question": null
+        "text": "Hi, I’m Kritva, Krishna’s assistant. You’ve said your total budget is ₹19,000 including transport, so to make sure I’m clear, how much of that is for the bed itself?",
+        "question": "how much of that is for the bed itself?",
+        "skip_question_because": null
       }
     },
     {
       "purpose": "language_check",
       "json": {
-        "concerns": []
+        "concerns": [
+          {
+            "type": "counterparty_claim_as_fact",
+            "quote": "You’ve said your total budget is ₹19,000 including transport",
+            "reason": "This attributes the quoted budget as the other party's stated amount, which is permitted context, but 'including transport' is treated as a factual budget breakdown from them. Given the message, this is acceptable, so this is only a possible interpretation concern rather than a clear violation.",
+            "severity": "doubt"
+          }
+        ]
       }
     },
     {
@@ -184,24 +190,8 @@
         "notes": [
           {
             "kind": "budget",
-            "quote": "The truck quote is ₹1,500",
-            "summary": "Their transport cost is ₹1,500",
-            "term_id": null,
-            "value": {
-              "type": "money",
-              "amount": 1500,
-              "currency": "INR",
-              "unit": null,
-              "text": null,
-              "boolean": null
-            },
-            "condition": "including transport",
-            "basis": "stated"
-          },
-          {
-            "kind": "final_position",
-            "quote": "I can pay ₹17,500 for the bed and collect it myself.",
-            "summary": "They are offering ₹17,500 for the bed and will collect it themselves",
+            "quote": "The truck quote is ₹1,500, so I can pay ₹17,500 for the bed",
+            "summary": "Budget for the bed is ₹17,500 after transport.",
             "term_id": "term_t_price",
             "value": {
               "type": "money",
@@ -211,34 +201,44 @@
               "text": null,
               "boolean": null
             },
+            "condition": "including transport",
+            "basis": "stated"
+          },
+          {
+            "kind": "constraint",
+            "quote": "and collect it myself",
+            "summary": "They will pick it up themselves.",
+            "term_id": "term_t_delivery_included",
+            "value": {
+              "type": "boolean",
+              "amount": null,
+              "currency": null,
+              "unit": null,
+              "text": null,
+              "boolean": false
+            },
             "condition": null,
             "basis": "stated"
           }
         ],
-        "answers": [
-          {
-            "question_id": "evt_825aa803-c51f-4d96-aa91-243f6466500c",
-            "quote": "₹17,500 for the bed",
-            "resolution": "answered"
-          }
-        ],
+        "answers": [],
         "new_terms": [],
         "questions": [],
-        "public_term_questions": []
+        "public_term_questions": [
+          {
+            "term_id": "term_t_price",
+            "basis": "current",
+            "quote": "The truck quote is ₹1,500, so I can pay ₹17,500 for the bed and collect it myself."
+          }
+        ]
       }
     },
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "I can do ₹18,500. If that works, we can move ahead with pickup.",
-        "question": null
-      }
-    },
-    {
-      "purpose": "compose_reply",
-      "json": {
-        "text": "I can do ₹18,500. Let me know if you want to proceed.",
-        "question": null
+        "text": "Thanks, ₹17,500 noted. I can do ₹18,500 for the bed, and you can collect it yourself.",
+        "question": null,
+        "skip_question_because": null
       }
     },
     {
@@ -247,8 +247,8 @@
         "concerns": [
           {
             "type": "action_mismatch",
-            "quote": "I can do ₹18,500.",
-            "reason": "The current move is counter, but the available checked terms authorize ₹18,500 as the public asking amount. Stating it as the offer is fine; no concern.",
+            "quote": "I can do ₹18,500 for the bed",
+            "reason": "The move is counter and ₹18,500 is an allowed checked term, so this is not a mismatch. No concern.",
             "severity": "doubt"
           }
         ]
@@ -266,7 +266,7 @@
               "amount": 17500,
               "currency": "INR",
               "unit": null,
-              "text": null,
+              "text": "₹17,500",
               "boolean": null
             }
           }
@@ -286,14 +286,14 @@
           {
             "kind": "final_position",
             "quote": "₹17,500 is my final offer.",
-            "summary": "They are making a final offer of ₹17,500.",
+            "summary": "They state ₹17,500 as their final offer.",
             "term_id": "term_t_price",
             "value": {
               "type": "money",
               "amount": 17500,
               "currency": "INR",
               "unit": null,
-              "text": null,
+              "text": "₹17,500",
               "boolean": null
             },
             "condition": null,
@@ -302,15 +302,15 @@
           {
             "kind": "constraint",
             "quote": "I’ll collect it myself.",
-            "summary": "They will collect it themselves.",
-            "term_id": "term_t_pickup_location",
+            "summary": "They will collect the bed themselves.",
+            "term_id": "term_t_delivery_included",
             "value": {
-              "type": "text",
+              "type": "boolean",
               "amount": null,
               "currency": null,
               "unit": null,
-              "text": "collect it myself",
-              "boolean": null
+              "text": null,
+              "boolean": false
             },
             "condition": null,
             "basis": "stated"
@@ -325,21 +325,22 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "₹18,500. If that works for you, we can go ahead.",
-        "question": null
-      }
-    },
-    {
-      "purpose": "compose_reply",
-      "json": {
-        "text": "₹18,500. If you’d like to proceed, send your confirmation.",
-        "question": null
+        "text": "Thanks for the clear final offer. The price is ₹18,500, and collection from your side is fine.",
+        "question": null,
+        "skip_question_because": null
       }
     },
     {
       "purpose": "language_check",
       "json": {
-        "concerns": []
+        "concerns": [
+          {
+            "type": "counterparty_claim_as_fact",
+            "quote": "Thanks for the clear final offer.",
+            "reason": "The other party said 'my final offer' in this turn, but the reply treats that as an established fact about the negotiation rather than just their claim; this is only a mild issue because it is a paraphrase of their message.",
+            "severity": "doubt"
+          }
+        ]
       }
     }
   ]

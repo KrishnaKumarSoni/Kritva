@@ -176,4 +176,54 @@ describe("Agentic turn: the tool contract", () => {
     expect(brief.must[0]).toMatch(/paused/);
     expect(toolOutputs(model.requests[2]!).find((o) => o.name === "send_reply")!.output).toMatchObject({ status: "rejected" });
   });
+
+  it("the brief carries the channel and their number, and a counter must acknowledge their offer first", async () => {
+    const { model, say } = await setup();
+    await say("₹15,000.",
+      { tool: "read_message", args: reading({ intent: "offer", offer_kind: "offer", offer_terms: [{ term_id: "term_price", value: money(15_000) }] }) },
+      { fail: "stop here" });
+    const brief = toolOutputs(model.requests.at(-1)!).find((o) => o.name === "read_message")!.output;
+    expect(brief).toMatchObject({ channel: "text", move: "counter", their_offer: "₹15,000" });
+    expect(brief.must.join(" ")).toMatch(/Acknowledge their offer of ₹15,000 first/);
+  });
+
+  it("a voice turn gets a voice brief", async () => {
+    const { model, engine, sessionId } = await setup();
+    model.steps.push({ tool: "read_message", args: reading({ intent: "greeting" }) }, { fail: "stop here" });
+    await engine.handleCounterpartyMessage({ sessionId, text: "Hello there", channel: "voice" });
+    const brief = toolOutputs(model.requests.at(-1)!).find((o) => o.name === "read_message")!.output;
+    expect(brief.channel).toBe("voice");
+    expect(model.requests[0]!.systemInstructions).toMatch(/"voice": you are speaking on a call/);
+  });
+
+  it("a selected question the conversation already answers may be skipped, with a reason, and stays unasked", async () => {
+    const { say, events } = await setup();
+    const turn = await say("That's still out of my budget.",
+      { tool: "read_message", args: reading({ intent: "reject", price_concern: "objection" }) },
+      { tool: "send_reply", args: { text: "Hi, I'm Kritva, the seller's assistant. I hear that it's above your budget, and the price is still ₹20,000 for now.", question: null, skip_question_because: "They just said it is their budget." } });
+    expect(turn.ok && turn.reply?.text).toMatch(/budget/);
+    const log = await events();
+    expect(log.some((e) => e.type === "question_asked")).toBe(false);
+    expect(log.some((e) => e.type === "reply_blocked")).toBe(false);
+  });
+
+  it("without a reason, leaving out the selected question is still sent back", async () => {
+    const { say, model } = await setup();
+    await say("That's still out of my budget.",
+      { tool: "read_message", args: reading({ intent: "reject", price_concern: "objection" }) },
+      { tool: "send_reply", args: { text: "Hi, I'm Kritva, the seller's assistant. The price is still ₹20,000.", question: null, skip_question_because: null } },
+      { fail: "stop here" });
+    expect(toolOutputs(model.requests.at(-1)!).find((o) => o.name === "send_reply")!.output).toMatchObject({ status: "rejected" });
+  });
+
+  it("a bare amount is sent back for a complete, friendly sentence", async () => {
+    const { say, model } = await setup();
+    await say("Hi", { tool: "read_message", args: reading({ intent: "greeting" }) }, { tool: "send_reply", args: { text: "Hi, I'm Kritva, the seller's assistant. How can I help?", question: null, skip_question_because: null } });
+    const turn = await say("For how much?",
+      { tool: "read_message", args: reading({ intent: "question", public_term_questions: [{ term_id: "term_price", basis: "current", quote: "For how much?" }] }) },
+      { tool: "send_reply", args: { text: "₹20,000.", question: null, skip_question_because: null } },
+      { tool: "send_reply", args: { text: "It's ₹20,000 for the bed.", question: null, skip_question_because: null } });
+    expect(turn.ok && turn.reply?.text).toBe("It's ₹20,000 for the bed.");
+    expect(toolOutputs(model.requests.at(-1)!).find((o) => o.name === "send_reply")!.output.problems[0]).toMatch(/complete, friendly sentence/);
+  });
 });

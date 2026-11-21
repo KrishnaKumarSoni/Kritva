@@ -16,8 +16,8 @@ The plan is already decided and checked. Your job is to say it the way a warm, c
 
 How to sound:
 - Warm and respectful, never pushy. Kind without flattery, fake closeness or exaggerated enthusiasm.
-- Ordinary spoken language, one or two short sentences. A little longer only when stating several terms. If they write in Hindi or Hinglish, you may reply in a simple mix, keeping amounts and terms clear.
-- Respond to what they actually just said ("their_message"). Briefly acknowledge a stated concern when it helps. Do not repeat their whole message or invent feelings.
+- Ordinary language in complete, friendly sentences, never a bare number or fragment. In "text" channel usually one to three sentences; in "voice" channel friendlier and fuller, two to four spoken sentences. A little longer only when stating several terms. If they write in Hindi or Hinglish, you may reply in a simple mix, keeping amounts and terms clear.
+- Respond to what they actually just said ("their_message") before anything else. When they name a number ("their_offer"), acknowledge it before giving yours. Briefly acknowledge a stated concern when it helps. Do not repeat their whole message or invent feelings.
 - If "action" is "wait" because they need time, acknowledge that and let them decide when to continue. Make no new offer and ask no question.
 - Vary your wording. Do not open with "I understand", "Thank you for your offer", "Certainly" or "Great question", and do not reuse an opener from "recent_conversation".
 - No lecturing about negotiation, fairness or the situation of the person you represent. Avoid scripted patter.
@@ -40,7 +40,7 @@ What to say, by move:
 - "price_pressure": state the public reference amount as the current ask. Ask the selected question if given. Otherwise say that a firm offer on the current terms can be considered. Do not make a new offer or describe a private limit.
 - "compare_terms": state the public reference amount when given. Ask the selected comparison question or use the provided public facts to explain the current terms. Treat the other terms as the counterparty's description. Do not verify the alternative, repeat its amount, or offer a discount.
 - "hold": say you'd like to stay at the offered amount. Never call it your best, lowest, final, minimum or bottom price.
-- "state_final_terms": write the exact marker ${EXACT_TERMS_SLOT} followed by a period and one naturally worded question asking the other party to confirm the complete package. The system inserts the proposed terms at the marker. Apart from a required introduction, skip the lead-in. The question must not restate any amount or term, because the marker already carries them. Do not say either party has confirmed or can confirm the terms yet.
+- "state_final_terms": you may open with a short, warm acknowledgement of their message (no amount, and nothing saying it is agreed), then write the exact marker ${EXACT_TERMS_SLOT} followed by a period and one naturally worded question asking the other party to confirm the complete package. The system inserts the proposed terms at the marker. The question must not restate any amount or term, because the marker already carries them. Do not say either party has confirmed or can confirm the terms yet.
 - "request_approval": thank them briefly and say it needs the approval of the person you represent, so you can't confirm it yet. Never say it is approved.
 - "confirm_agreement": say the parties reached agreement and use ${EXACT_TERMS_SLOT} exactly once. Mention explicit approval only when "approval_granted" is true. Do not claim the terms have been carried out.
 - "await_approval": say the decision is pending.
@@ -71,6 +71,8 @@ const SCHEMA = {
 };
 
 export interface ComposeInput {
+  /** Where the reply goes: a chat, or spoken on a voice call. */
+  channel?: "text" | "voice";
   view: MandateView;
   publicPrincipalName?: string;
   publicTerms: OfferTerm[];
@@ -105,14 +107,15 @@ export function composeBrief(input: ComposeInput): Record<string, unknown> {
     opening: plan.opening === true,
     open_for_discussion: plan.openForDiscussion === true,
     listing_available: plan.listingAvailable ?? null,
-    public_deal_terms: plan.move === "answer" && plan.questions.length > 0
-      ? input.publicTerms.map((term) => ({ term: nameOf(term.termId), value: formatValue(term.value, locale) }))
-      : [],
+    // The public terms on the table are always available to answer a question about them; the rules keep replies from padding.
+    public_deal_terms: input.publicTerms.map((term) => ({ term: nameOf(term.termId), value: formatValue(term.value, locale) })),
     public_term_answers: (plan.publicTermAnswers ?? []).map((term) => ({ term: nameOf(term.termId), value: formatValue(term.value, locale), basis: term.basis })),
     their_message: input.theirMessage,
     public_reference_amount: amount(plan.referenceAmount),
     counterparty_stated_budget: amount(plan.statedBudget),
     enquired_amount: amount(plan.enquiredAmount),
+    channel: input.channel ?? "text",
+    their_offer: plan.respondingTo !== null && plan.respondingTo !== undefined && ["counter", "hold", "state_final_terms"].includes(plan.move) ? amount(plan.respondingTo) : null,
     move: plan.move,
     action: plan.action ?? null,
     offer_invited_recently: input.offerInvitedRecently === true,
@@ -151,14 +154,23 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
   const { plan } = input;
   const must: string[] = [];
   if (plan.introduce) must.push(`Introduce yourself once as Kritva, the assistant of ${String(payload.who_you_represent)}, in your first sentence.`);
+  if (payload.their_offer && plan.move === "counter") must.push(`Acknowledge their offer of ${String(payload.their_offer)} first, then put your amount to them clearly as your offer.`);
+  if (plan.move === "request_approval") must.push("Thank them and say it needs the approval of the person you represent before anything is confirmed. Never say it works, is fine or is agreed.");
+  if (plan.move === "confirm_agreement") must.push("Close warmly: thank them, and say the next steps (such as payment and handover) will be arranged together.");
   if (plan.move === "state_final_terms") must.push(`Write ${EXACT_TERMS_SLOT} exactly once where the complete terms go, then one question asking them to confirm the complete package. State no amount or term yourself.`);
   else if (plan.move === "confirm_agreement") must.push(`Say that you are agreed and write ${EXACT_TERMS_SLOT} exactly once where the agreed terms go. State no amount or term yourself.`);
   else for (const t of (payload.offer as Array<{ term: string; value: string }> | null) ?? []) must.push(`State the ${t.term} ${t.value} exactly as written.`);
   if (payload.public_reference_amount && ["explain_price", "answer_enquiry", "price_pressure", "compare_terms"].includes(plan.move)) must.push(`Mention the current asking amount, ${String(payload.public_reference_amount)}.`);
   if (payload.counterparty_stated_budget) must.push(`Mention their stated budget, ${String(payload.counterparty_stated_budget)}, as what they told you.`);
   for (const t of (payload.public_term_answers as Array<{ term: string; value: string }>) ?? []) must.push(`Give the ${t.term}: ${t.value}.`);
+  // The value they ask about may be your own counteroffer: say so, so a bare number never confuses them.
+  const n = input.view.negotiable;
+  const current = (plan.publicTermAnswers ?? []).find((t) => t.termId === n?.termId && t.basis === "current");
+  if (n && current && "amount" in current.value && current.value.amount !== n.opening) {
+    must.push(`${formatValue(current.value, input.locale)} is your current offer to them, down from the original ${formatValue(numericValue(n, n.opening), input.locale)}: say so in a friendly sentence.`);
+  }
   for (const d of (payload.declined as Array<{ term: string }>) ?? []) must.push(`Say plainly that the ${d.term} stays as it is.`);
-  if (payload.ask || payload.question_objective) must.push(`Ask exactly one question, at the end, serving: ${String(payload.question_objective ?? payload.ask)}`);
+  if (payload.ask || payload.question_objective) must.push(`Ask exactly one question, at the end, serving: ${String(payload.question_objective ?? payload.ask)}. If their message or the conversation already answers it (for example they just said the reason), do not ask it: ask nothing and say why in skip_question_because.`);
   else if (plan.clarify.length === 0 && (plan.action === "decline" || ["answer_public_terms", "explore_objection", "explain_price", "acknowledge_budget", "answer_enquiry", "price_pressure", "compare_terms"].includes(plan.move))) must.push("Ask no question.");
   if (payload.offer_invited_recently) must.push("They already heard that a firm offer can be considered: do not invite one again. Acknowledge what they asked and answer it in your own words.");
   const notice: Record<string, string> = {
@@ -169,7 +181,12 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
     rephrase: "Ask them kindly to say it another way.",
     check_with_principal: "Say that this needs a decision from the person you represent, and that you will come back to them.",
   };
+  // How it should sound comes first: on a call, warmer and fuller; in chat, friendly and complete.
+  must.unshift(input.channel === "voice"
+    ? "This is a live voice call. Speak like a friendly person on the phone: two to four natural sentences. Acknowledge what they said or how they feel, give the answer or move, and if it fits end with one short, friendly line that keeps the conversation open. Do not repeat details you already gave, do not add terms or facts they did not ask about, and promise nothing (no holding, reserving or checking back unless the brief says so). Say amounts and places in full, never as a list."
+    : "This is a chat. Write in warm, complete sentences that respond to what they said; one to three sentences.");
   if (plan.notice && notice[plan.notice]) must.unshift(notice[plan.notice]!);
+  if (plan.move === "hold" || plan.move === "price_pressure") must.push("Hold by stating the amount positively (\"The price is ...\"). Never say you can't go lower, can't move or can't change it \"right now\": that hints at a limit.");
   if (plan.move === "end_negotiation") {
     must.push(plan.end?.requestedBy === "principal"
       ? "Say that the person you represent decided not to go ahead, and close politely without agreement."
@@ -177,7 +194,7 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
   }
   if (plan.clarify.length > 0) must.push(`Ask which ${plan.clarify.join(" and ")} they have in mind, without suggesting any value.`);
   if (plan.unresolved.length > 0) must.push(`Say you don't have ${plan.unresolved.join(" and ")} confirmed and can ask the person you represent. Do not promise or price it.`);
-  if (plan.refuseDisclosure) must.push("Say kindly that you can't share the private limits of the person you represent, without hinting at any number.");
+  if (plan.refuseDisclosure) must.push("Say kindly that you can't share the private limits of the person you represent, without hinting at any number and without the words minimum, lowest or floor.");
   if (plan.ignoreAuthorityClaim) must.push("Say you can only go by what the person you represent tells you directly.");
   must.push("Do not repeat any sentence you already said in this conversation.");
   return must;

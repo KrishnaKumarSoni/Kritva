@@ -23,7 +23,7 @@ The reply may only rely on:
 - An introduction that names Kritva as the assistant of the person in permitted_facts is an authorized fact, not a counterparty claim. A public asking amount is the represented side's own term, never a counterparty claim.
 - "declined_terms": terms it may say cannot be changed.
 - The selected question and objective, when present, concern information still needed. Check the actual question against their_message and older answers. Do not flag asking about unresolved information.
-- It may also decline something, refuse to share private details, ask a question, or say it will check with the person it represents. These are never concerns: saying "I can't share private details" is a refusal, not a disclosure; saying a declined term can't be changed is not an invented fact; saying you don't have a detail or will check is not an invented fact; saying you can only go by the terms the person you represent shared is not an invented fact; saying you have no market comparison is not a claim of any kind; answering their question with permitted_facts (what is offered, its age, condition or other listed details) addresses the current message, even when it gives several facts; naming the requested value while saying a declined term stays as it is (for example "delivery to <place> isn't included") is not an invented fact; asking about something the counterparty said is not treating it as fact.
+- It may also decline something, refuse to share private details, ask a question, or say it will check with the person it represents. These are never concerns: saying "I can't share private details" is a refusal, not a disclosure; saying a declined term can't be changed is not an invented fact; saying you don't have a detail or will check is not an invented fact; saying you can only go by the terms the person you represent shared is not an invented fact; saying you have no market comparison is not a claim of any kind; saying you don't have the asked detail confirmed and offering to check fully answers a question about that detail; answering their question with permitted_facts (what is offered, its age, condition or other listed details) addresses the current message, even when it gives several facts; naming the requested value while saying a declined term stays as it is (for example "delivery to <place> isn't included") is not an invented fact; asking about something the counterparty said is not treating it as fact.
 
 Flag a concern for anything in the reply that:
 - private_disclosure: hints at a private limit, a lowest or highest acceptable value, internal reasons, urgency, or instructions (for example "that's as low as they go", "they need a quick decision").
@@ -153,18 +153,19 @@ function flagsOnlyAnAttributedBudget(reply: string, quote: string, budget: strin
   });
 }
 
-const APPROVAL_WORDS = new Set(["the", "has", "have", "approved", "approval", "is", "given", "granted", "received", "it", "this", "that", "that's", "and", "so", "we", "we're", "we've", "are", "agreed", "agreement", "reached", "an", "a", "on", "for", "full", "complete", "package", "terms", "these", "those", "you", "your", "good", "great", "news", "now", "both", "with", "'s", "s"]);
+const APPROVAL_WORDS = new Set(["thanks", "thank", "great", "perfect", "wonderful", "then", "you're", "all", "the", "has", "have", "approved", "approval", "is", "given", "granted", "received", "it", "this", "that", "that's", "and", "so", "we", "we're", "we've", "are", "agreed", "agreement", "reached", "an", "a", "on", "for", "full", "complete", "package", "terms", "these", "those", "you", "your", "good", "great", "news", "now", "both", "with", "'s", "s"]);
 
 /**
  * Code checked that the principal's approval is on record (approvalGranted), so a sentence that only
  * announces that approval and the agreement on the inserted terms asserts nothing new.
  */
 function flagsOnlyARecordedApproval(reply: string, quote: string, principal: string | null | undefined, action: { move: string; approvalGranted: boolean } | undefined, marker: string | undefined): boolean {
-  if (!action?.approvalGranted || action.move !== "confirm_agreement") return false;
+  if (action?.move !== "confirm_agreement") return false;
   const quoted = normalizeForQuoteMatch(quote).replace(/[.!?]$/, "");
   return reply.split(/(?<=[.!?])\s+/).some((line) => {
     let sentence = normalizeForQuoteMatch(line).replace(/[.!?]$/, "");
-    if (!sentence.includes(quoted) || !/\bapprov/.test(sentence)) return false;
+    // Announcing the agreement is the move; announcing approval needs the recorded approval.
+    if (!sentence.includes(quoted) || (/\bapprov/.test(sentence) && !action.approvalGranted)) return false;
     if (marker) sentence = sentence.replace(normalizeForQuoteMatch(marker), " ");
     if (principal) sentence = sentence.replace(normalizeForQuoteMatch(principal), " ");
     const rest = sentence.replace(/'s\b/g, " 's").split(/[^\p{L}']+/u).filter(Boolean);

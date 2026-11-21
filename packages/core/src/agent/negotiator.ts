@@ -21,12 +21,20 @@ export const AGENT_INSTRUCTIONS = `You are Kritva, an AI assistant that negotiat
 How every turn works
 1. Call read_message once, with your faithful reading of the other party's latest message, read against the whole conversation.
 2. read_message returns the brief: what this reply may say. Code chose the move and every amount and term in it. Never state an amount, term, fact or commitment that the brief does not give you.
-3. Write one reply and call send_reply. Put a question in "question" only when the brief gives "ask" or "question_objective"; otherwise use null and ask nothing.
+3. Write one reply and call send_reply. Put a question in "question" only when the brief gives "ask" or "question_objective"; otherwise use null and ask nothing. Only if their latest message already contains the answer to that question, do not ask it: set "question" to null and say why in "skip_question_because". Never turn a question you skip into a statement that invites the same thing.
 4. If send_reply returns problems, write a better reply that fixes every one and call send_reply again. If a problem looks mistaken, make your point unmistakable rather than dropping what the move requires.
 When the input ends with an event from the system instead of a new message from the other party, there is nothing to read: write the reply that event's brief asks for and call send_reply.
 
+Sound like a person, not a form
+- Every reply responds to what they just said before it does anything else, in complete, friendly sentences. Never reply with a bare number, a bare list of terms or a fragment.
+- Never say their terms "work", "sound good" or are "fine" for you, and never say anything is agreed or approved, unless the brief is confirming an agreement. Acknowledge instead ("Thanks for the offer", "Noted").
+- When they name a number, acknowledge their number before you give yours ("their_offer" in the brief). A counteroffer reads as a reply to them, for example: "Thanks for the offer. I can't do <their amount>, but I can come down to <your amount>." Never present a new amount without saying it is your offer.
+- If they are confused about something you said, explain what you meant in plain words, using the conversation.
+- If they ask for a detail the brief's facts do not contain (material, brand, size, accessories, history), never guess. Say you don't have that confirmed and offer to check with the person you represent; add what you do know only if it helps.
+- Match the channel in the brief. "text": warm and natural, usually one to three sentences. "voice": you are speaking on a call, so be friendlier and fuller, usually two to four spoken sentences with a natural rhythm, a short acknowledgement of how they feel when it fits, and no lists or abbreviations.
+
 Conversation judgement
-- Answer what they actually asked, in context. A short question ("what terms?", "for how much?", "what are you selling?") gets a short, direct answer from the brief's facts and terms, not everything you know.
+- Answer what they actually asked, in context. A short question ("what terms?", "for how much?", "what are you selling?") gets a direct answer from the brief's facts and terms, not everything you know, still as a friendly sentence.
 - Never repeat a sentence, an opener or an invitation you already used in this conversation. If the position has not moved, say so in fresh words, acknowledge what they asked for, and give them a way forward the brief allows, such as making a firm offer.
 - A suggested question ("ask") is a draft: keep its intent, word it for this conversation, and leave out any detail that does not apply to these terms.
 - Do not ask for what they already told you, and do not reopen a settled topic.
@@ -53,8 +61,9 @@ const SEND_REPLY_SCHEMA = {
   properties: {
     text: { type: "string", description: "The reply, without the question when you give one separately." },
     question: { type: ["string", "null"], description: "One question serving the brief's ask or question objective, or null." },
+    skip_question_because: { type: ["string", "null"], description: "Only when the brief selects a question that the conversation already answers: why you are not asking it. Otherwise null." },
   },
-  required: ["text", "question"],
+  required: ["text", "question", "skip_question_because"],
   additionalProperties: false as const,
 };
 
@@ -70,7 +79,7 @@ export interface TurnTools {
     schema: Record<string, unknown>;
     execute: (reading: unknown) => Promise<Record<string, unknown>>;
   };
-  sendReply: (draft: { text: string; question: string | null }) => Promise<SendOutcome>;
+  sendReply: (draft: { text: string; question: string | null; skipQuestionBecause: string | null }) => Promise<SendOutcome>;
 }
 
 /** The conversation as chat history: their messages as user turns, Kritva's as assistant turns. */
@@ -114,8 +123,9 @@ export async function runNegotiator(config: AgentConfig, tools: TurnTools, input
       parameters: SEND_REPLY_SCHEMA as never,
       strict: true,
       execute: async (args: unknown) => {
-        const draft = (typeof args === "string" ? JSON.parse(args) : args) as { text?: unknown; question?: unknown };
-        return JSON.stringify(await tools.sendReply({ text: typeof draft.text === "string" ? draft.text : "", question: typeof draft.question === "string" ? draft.question : null }));
+        const draft = (typeof args === "string" ? JSON.parse(args) : args) as { text?: unknown; question?: unknown; skip_question_because?: unknown };
+        const skip = typeof draft.skip_question_because === "string" && draft.skip_question_because.trim() ? draft.skip_question_because.trim() : null;
+        return JSON.stringify(await tools.sendReply({ text: typeof draft.text === "string" ? draft.text : "", question: typeof draft.question === "string" ? draft.question : null, skipQuestionBecause: skip }));
       },
     }),
   ];
@@ -201,7 +211,7 @@ export class StructuredLlmAgentModel implements Model {
     });
     const { text, question } = (response.json ?? {}) as { text?: unknown; question?: unknown };
     if (typeof text !== "string" || text.trim().length === 0) throw new Error("empty reply");
-    return call("send_reply", { text: text.trim(), question: typeof question === "string" ? question.trim() : null });
+    return call("send_reply", { text: text.trim(), question: typeof question === "string" ? question.trim() : null, skip_question_because: null });
   }
 
   // eslint-disable-next-line require-yield

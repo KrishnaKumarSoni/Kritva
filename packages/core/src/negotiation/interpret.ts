@@ -31,7 +31,7 @@ Extract only what "counterparty_message" says now. Use history to resolve refere
 - asks_if_open: true when they ask if the subject of this negotiation is still available or the negotiation is still open. Use recent conversation to resolve which subject they mean. A question about a different item, service, time, or appointment does not count.
 - considering: true when they say they need time to consider and have not accepted, made an offer, or walked away.
 - questions: exact excerpts from the current message for other factual questions. If it asks multiple things, quote only the parts that are not covered by public_term_questions or asks_if_open. Do not turn a question about a public term into a note about an obstacle, need, or constraint.
-- notes: capture stated needs, constraints, preferences, reasons, decision authority, claims, alternatives, budgets and explicitly final positions. Copy each quote exactly and summarize it separately. An ancillary cost is a constraint with its own value and no term ID, unless it is separately negotiable. A stated total budget and any costs included in it are distinct. Mark statements about facts, other parties or past promises as claims. Use "inferred" only for something not stated outright. Phrase any condition in the second person. A greeting, thanks, acknowledgement or small talk is never a note, and leaves notes empty.
+- notes: capture stated needs, constraints, preferences, reasons, decision authority, claims, alternatives, budgets and explicitly final positions. Copy each quote exactly and summarize it separately. An ancillary cost is a constraint with its own value and no term ID, unless it is separately negotiable. A stated total budget and any costs included in it are distinct. Mark statements about facts, other parties or past promises as claims. Use "inferred" only for something not stated outright. Phrase any condition in the second person. A greeting, thanks, acknowledgement or small talk is never a note, and leaves notes empty. Saying the price is beyond their budget ("it's out of my budget"), with or without an amount, is a "budget" note; the objection alone ("too much", "that's a lot", "too expensive") is not.
 - offer_kind: "offer" for explicit willingness to transact on the proposed terms. Stating what they will pay for the subject and how they will carry out their side is an offer even if they also explain a separate cost. "enquiry" probes whether a possible price or package is acceptable without committing. "budget_ceiling" states what the other party can spend without making an offer. A standalone ceiling goes in a budget note with offer_terms empty. If the message states both a budget and a distinct offer, record both separately. "interest" is interest without proposed terms, and "none" is used otherwise.
 - A budget note's condition must be an exact quoted qualifier in its quote, such as a named additional cost included in the total. A bare ceiling has condition null. Do not add or infer inclusions, including the negotiated price itself.
 - price_concern: "objection" when the other party says the price is too high or too low, "value_question" when they ask you to assess fairness or explain value, otherwise null. A request to verify the amount just stated leaves price_concern null.
@@ -64,7 +64,7 @@ function schemaFor(termIds: string[]): Record<string, unknown> {
       intent: { type: "string", description: "What the latest message mainly does.", enum: ["offer", "accept_stated_terms", "question", "request_change", "reject", "greeting", "other"] },
       offer_terms: {
         type: "array",
-        description: "Values they propose or ask about for these terms. Never the price of an alternative they mention, a separate cost, or an amount they reject.",
+        description: "Values they propose or ask about for these terms. Never a value they only ask you for (\"for how much?\", \"what terms?\"), the price of an alternative they mention, a separate cost, or an amount they reject.",
         items: {
           type: "object",
           properties: { term_id: { type: "string", enum: termIds }, value: VALUE_SCHEMA },
@@ -316,7 +316,9 @@ function bindFulfillment(view: MandateView, interp: Interpretation, message: str
   // Doing their own side of the fulfillment is agreement with the terms, never a need or an obstacle.
   if (self) {
     const ownAction = new RegExp(`\\b(?:${counterpartyAction})\\b`);
-    interp.notes = interp.notes?.filter((note) => !(["need", "constraint", "preference", "reason"].includes(note.kind) && ownAction.test(normalizeForQuoteMatch(note.quote)) && !/\b(?:can't|cannot|won't|unable|no way)\b/.test(normalizeForQuoteMatch(note.quote))));
+    const ownOnly = (text: string) => ownAction.test(normalizeForQuoteMatch(text)) && !/\b(?:can't|cannot|won't|unable|no way|if|only if|unless)\b/.test(normalizeForQuoteMatch(text));
+    interp.notes = interp.notes?.filter((note) => !(["need", "constraint", "preference", "reason"].includes(note.kind) && ownOnly(note.quote)));
+    interp.offerConditions = interp.offerConditions?.filter((condition) => !ownOnly(condition));
   }
   if (self && !/\b(?:from|at|in)\b/.test(words.slice(self.index + self[0].length).split(/[.!?]/, 1)[0]!)) {
     // Agreeing to perform an action supplies no new value for its location.
@@ -360,6 +362,14 @@ function groundTurn(view: MandateView, interpretation: Interpretation, message: 
   if (term && interpretation.offerTerms.length === 0 && !interpretation.acceptsStatedTerms && interpretation.pressure !== "final_offer" && PRICE_FLEXIBILITY.test(words)) {
     if (interpretation.pressure !== "cheaper_elsewhere") interpretation.pressure = "lowest_price";
     interpretation.publicTermQuestions = interpretation.publicTermQuestions?.filter((question) => question.termId !== term.termId);
+  }
+  // A question that names no amount ("for how much?") asks for a value; it cannot propose one.
+  if (view.negotiable && /\?\s*$/.test(words) && findAmounts(message).length === 0) {
+    interpretation.offerTerms = interpretation.offerTerms.filter((t) => t.termId !== view.negotiable!.termId);
+  }
+  // A question that asks for a value or detail ("for how much?") is never an acceptance of the stated terms.
+  if (interpretation.acceptsStatedTerms && /\?\s*$/.test(words) && !/\b(?:yes|yeah|yep|ok|okay|sure|deal|done|confirm(?:ed)?|agree[ds]?|accept(?:ed)?|works|fine|go with|take it)\b/.test(words)) {
+    interpretation.acceptsStatedTerms = false;
   }
   // A value question asks whether the terms are worth it; an acceptance or an offer is not one.
   if (interpretation.priceConcern === "value_question" && !/\?|\b(?:worth|value|fair|reasonable|overpriced|expensive|justify|why)\b/.test(words)) interpretation.priceConcern = null;

@@ -36,6 +36,9 @@ const INTERNAL_TERM = /\b(mandate|governance|zopa|batna|parameter|principal|nego
 /** snake_case identifiers (prompt or record field names) never belong in a reply. */
 const FIELD_NAME = /\b[a-z]+_[a-z_]+\b/;
 const QUOTE_CUE = /\?\s*$|\b(you|your|you're|you've)\b/i;
+/** Their own figure acknowledged as theirs ("Thanks for the X offer", "X is noted"), not put forward as ours. */
+const ACKNOWLEDGED = /\b(thanks|thank you|noted|offer of|the [^.!?]{0,12}offer|mentioned|said|budget)\b/i;
+const OFFERING = /\b(i|we)(?:'ll| will| can| could)? (?:do|offer|accept|take|agree to|go (?:to|down to)|come down to)\b|\bhow about\b|\bworks\b|\bdeal\b/i;
 
 export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
   const violations: ReplyViolation[] = [];
@@ -58,8 +61,11 @@ export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
         violations.push({ rule: "unplanned_amount", detail: "Mentions an amount that is not part of the planned move." });
       }
       const crosses = n ? (n.direction === "up" ? amount < n.limit : amount > n.limit) : false;
-      // Quoting the counterparty's own figure back in a question or "your …" is not offering it.
-      const quotingThem = (ctx.counterpartyAmounts.includes(amount) || plan.statedBudget === amount) && QUOTE_CUE.test(sentence);
+      // Quoting the counterparty's own figure back (in a question, with "your", or acknowledged as theirs) is not offering it.
+      const theirs = ctx.counterpartyAmounts.includes(amount) || plan.statedBudget === amount;
+      const clause = sentence.split(/;\s*|,\s+|\s+but\s+/i).find((part) => findAmounts(part).includes(amount)) ?? sentence;
+      // Putting their figure forward as ours ("I can do X if you collect it") is never quoting them.
+      const quotingThem = theirs && !OFFERING.test(clause) && (QUOTE_CUE.test(sentence) || ACKNOWLEDGED.test(clause));
       if (crosses && !offered.includes(amount) && !citedAmounts.includes(amount) && !DECLINE_CUE.test(sentence) && !quotingThem) {
         violations.push({ rule: "crosses_limit", detail: "States an amount beyond the limit without declining it." });
       }

@@ -1,0 +1,742 @@
+{
+  "scenario": "chat-counter-and-unknown-detail",
+  "mandate": "bed-sale/demo",
+  "recordedAt": "2026-11-21T22:33:06.817Z",
+  "commit": "eb74d4f + uncommitted changes",
+  "model": "gpt-5.4-mini",
+  "turns": [
+    {
+      "buyer": "hi",
+      "expect": {
+        "offer": null,
+        "says": [
+          "Kritva"
+        ]
+      }
+    },
+    {
+      "buyer": "what are you selling?",
+      "expect": {
+        "offer": null,
+        "says": [
+          "bed"
+        ]
+      }
+    },
+    {
+      "buyer": "For how much?",
+      "expect": {
+        "offer": null,
+        "says": [
+          "20,000"
+        ],
+        "neverSays": [
+          "^₹[\\d,]+\\.?$"
+        ]
+      }
+    },
+    {
+      "buyer": "omg that's a lot. can you please give it for something lesser?",
+      "expect": {
+        "offer": null
+      }
+    },
+    {
+      "buyer": "18000",
+      "expect": {
+        "decision": "counter",
+        "offer": 19000,
+        "says": [
+          "19,000",
+          "18,000|your offer|thanks|thank you"
+        ],
+        "neverSays": [
+          "^₹[\\d,]+\\.?$"
+        ]
+      }
+    },
+    {
+      "buyer": "What 19000?",
+      "expect": {
+        "offer": null,
+        "says": [
+          "19,000",
+          "offer|counter|can do|down|bed|quot|let it go|mean"
+        ]
+      }
+    },
+    {
+      "buyer": "That's still out of my budget. Anyways, where do I need to pick it from?",
+      "expect": {
+        "says": [
+          "Koramangala"
+        ],
+        "neverSays": [
+          "budget, or",
+          "your budget or"
+        ]
+      }
+    },
+    {
+      "buyer": "Yeah - what is the bed made out of?",
+      "expect": {
+        "offer": null,
+        "says": [
+          "confirm|check"
+        ],
+        "neverSays": [
+          "wood|metal|made of (solid|teak|oak|pine|steel)",
+          "^The item for sale"
+        ]
+      }
+    },
+    {
+      "buyer": "Since you don't know all things, gimme some concession! Can you do it for 18500?",
+      "expect": {
+        "neverSays": [
+          "^King-size bed, ₹"
+        ]
+      }
+    },
+    {
+      "buyer": "Yep. That works. For you?",
+      "expect": {
+        "neverSays": [
+          "works for",
+          "\\bagreed\\b",
+          "approved"
+        ]
+      }
+    }
+  ],
+  "observed": [
+    {
+      "turn": "hi",
+      "reply": "Hi, I’m Kritva, Krishna’s assistant. How can I help you with the king-size bed?",
+      "offerAmount": null,
+      "decision": {
+        "kind": "answer",
+        "action": "answer"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "what are you selling?",
+      "reply": "It’s a king-size bed for sale, and it’s one year old in good condition.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "answer",
+        "action": "answer"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "For how much?",
+      "reply": "It’s priced at ₹20,000 for the king-size bed.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "answer",
+        "action": "answer"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "omg that's a lot. can you please give it for something lesser?",
+      "reply": "The price is ₹20,000 for the king-size bed. What would you be prepared to offer for it?",
+      "offerAmount": null,
+      "decision": {
+        "kind": "hold",
+        "action": "ask"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "18000",
+      "reply": "Thanks for the offer. I can do ₹19,000 for the king-size bed.",
+      "offerAmount": 19000,
+      "decision": {
+        "kind": "counter",
+        "action": "counter"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "What 19000?",
+      "reply": "It refers to the price for the king-size bed. My current offer is ₹19,000, down from the original ₹20,000.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "answer",
+        "action": "answer"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "That's still out of my budget. Anyways, where do I need to pick it from?",
+      "reply": "The pickup location is Koramangala, Bangalore. I can share the exact handover details if you need them.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "explore_objection",
+        "action": "answer"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "Yeah - what is the bed made out of?",
+      "reply": "I don’t have the material confirmed here. If you’d like, I can check with the seller and get back to you.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "answer",
+        "action": "answer"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "Since you don't know all things, gimme some concession! Can you do it for 18500?",
+      "reply": "I’ve noted your offer. King-size bed, ₹18,500, pickup location Koramangala, Bangalore, and no delivery included. Could you please confirm the complete package?",
+      "offerAmount": 18500,
+      "decision": {
+        "kind": "state_final_terms",
+        "action": "propose"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "Yep. That works. For you?",
+      "reply": "Thanks, I’ll need the seller’s approval before I can confirm it.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "request_approval",
+        "action": "accept"
+      },
+      "blocked": 0
+    }
+  ],
+  "calls": [
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "greeting",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Hi, I’m Kritva, Krishna’s assistant. How can I help you with the king-size bed?",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "question",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [],
+        "answers": [],
+        "new_terms": [],
+        "questions": [
+          "what are you selling?"
+        ],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "It’s a king-size bed for sale, and it’s one year old in good condition.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "question",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": [
+          {
+            "term_id": "term_t_price",
+            "basis": "current",
+            "quote": "For how much?"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "It’s priced at ₹20,000.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "It’s priced at ₹20,000 for the king-size bed.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "request_change",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": "objection",
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "lowest_price",
+        "notes": [
+          {
+            "kind": "constraint",
+            "quote": "omg that's a lot.",
+            "summary": "says the price feels high",
+            "term_id": null,
+            "value": null,
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [],
+        "new_terms": [],
+        "questions": [
+          "can you please give it for something lesser?"
+        ],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "The price is ₹20,000 for the king-size bed. What would you be prepared to offer for it?",
+        "question": null,
+        "skip_question_because": "The current ask is already known from the conversation, so there is no new information to request."
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "offer",
+        "offer_terms": [
+          {
+            "term_id": "term_t_price",
+            "value": {
+              "type": "money",
+              "amount": 18000,
+              "currency": "INR",
+              "unit": null,
+              "text": null,
+              "boolean": null
+            }
+          }
+        ],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "offer",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [
+          {
+            "kind": "final_position",
+            "quote": "18000",
+            "summary": "They offer ₹18,000.",
+            "term_id": "term_t_price",
+            "value": {
+              "type": "money",
+              "amount": 18000,
+              "currency": "INR",
+              "unit": null,
+              "text": null,
+              "boolean": null
+            },
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Thanks for the offer. I can do ₹19,000 for the king-size bed.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "action_mismatch",
+            "quote": "I can do ₹19,000",
+            "reason": "For a counter, the reply may offer the checked price, but here the checked_terms list only authorizes the public asking terms, not a new lower concession; this reads as a new offer rather than holding the current public price or inviting a firm offer.",
+            "severity": "violation"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "question",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [
+          {
+            "kind": "final_position",
+            "quote": "What 19000?",
+            "summary": "Asks what the 19000 refers to.",
+            "term_id": null,
+            "value": null,
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [],
+        "new_terms": [],
+        "questions": [
+          "What 19000?"
+        ],
+        "public_term_questions": [
+          {
+            "term_id": "term_t_price",
+            "basis": "current",
+            "quote": "What 19000?"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "It refers to the price for the king-size bed. My current offer is ₹19,000, down from the original ₹20,000.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "question",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": "objection",
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [
+          {
+            "kind": "budget",
+            "quote": "That's still out of my budget.",
+            "summary": "The price exceeds their budget.",
+            "term_id": "term_t_price",
+            "value": null,
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [],
+        "new_terms": [],
+        "questions": [
+          "where do I need to pick it from?"
+        ],
+        "public_term_questions": [
+          {
+            "term_id": "term_t_pickup_location",
+            "basis": "current",
+            "quote": "where do I need to pick it from?"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "The pickup location is Koramangala, Bangalore. I can share the exact handover details if you need them.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "question",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [
+          {
+            "kind": "need",
+            "quote": "what is the bed made out of?",
+            "summary": "Asks for the bed's material",
+            "term_id": null,
+            "value": null,
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [],
+        "new_terms": [],
+        "questions": [
+          "what is the bed made out of?"
+        ],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "I don’t have the material confirmed here. If you’d like, I can check with the seller and get back to you.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "turn_mismatch",
+            "quote": "I don’t have the material confirmed here.",
+            "reason": "The current message asks what the bed is made out of, but the reply does not answer with any permitted fact and instead says it lacks confirmation, which sidesteps the direct question when a confirmed material is not provided.",
+            "severity": "doubt"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "offer",
+        "offer_terms": [
+          {
+            "term_id": "term_t_price",
+            "value": {
+              "type": "money",
+              "amount": 18500,
+              "currency": "INR",
+              "unit": null,
+              "text": null,
+              "boolean": null
+            }
+          }
+        ],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "offer",
+        "price_concern": "objection",
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [
+          {
+            "kind": "final_position",
+            "quote": "Since you don't know all things, gimme some concession!",
+            "summary": "They are pushing for a concession.",
+            "term_id": null,
+            "value": null,
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "I’ve noted your offer. [[TERMS]] Could you please confirm the complete package?",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "counterparty_claim_as_fact",
+            "quote": "I’ve noted your offer.",
+            "reason": "The current message asks for a concession at 18500; calling it 'your offer' treats the counterparty's requested price as an offer/accepted term rather than addressing it as a request. This is a mild attribution issue.",
+            "severity": "doubt"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "accept_stated_terms",
+        "offer_terms": [],
+        "accepts_stated_terms": true,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [],
+        "answers": [
+          {
+            "question_id": "evt_a9a183f2-e1fe-4863-bf29-8ae0e3928c54",
+            "quote": "Yep. That works.",
+            "resolution": "answered"
+          }
+        ],
+        "new_terms": [],
+        "questions": [
+          "For you?"
+        ],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Thanks, I’ll need the seller’s approval before I can confirm it.",
+        "question": "For you?",
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    }
+  ]
+}

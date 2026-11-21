@@ -70,3 +70,13 @@ describe("Reviewer severity", () => {
     expect(violation.ok && violation.concerns).toHaveLength(1);
   });
 });
+
+describe("Agreement confirmation wording", () => {
+  it("\"We're agreed.\" on a confirmed agreement is the move itself, with or without a recorded approval", async () => {
+    const reply = "We're agreed. [[TERMS]]. Thanks, and we'll sort out payment and pickup next.";
+    for (const approvalGranted of [true, false]) {
+      const result = await languageCheck(reviewer([{ type: "action_mismatch", quote: "We're agreed." }]), { ...base, reply, validatedTermsMarker: "[[TERMS]]", action: { ...agreement, approvalGranted } });
+      expect(result).toEqual({ ok: true, concerns: [] });
+    }
+  });
+});

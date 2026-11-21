@@ -1,8 +1,8 @@
 {
   "scenario": "cheaper-elsewhere",
   "mandate": "bed-sale/demo",
-  "recordedAt": "2026-11-21T21:24:44.291Z",
-  "commit": "ebfa6bd + uncommitted changes",
+  "recordedAt": "2026-11-21T22:32:38.275Z",
+  "commit": "eb74d4f + uncommitted changes",
   "model": "gpt-5.4-mini",
   "turns": [
     {
@@ -46,7 +46,7 @@
   "observed": [
     {
       "turn": "I found a similar one for ₹16,000. Can you do better?",
-      "reply": "Hi, I’m Kritva, Krishna’s assistant. The asking amount is ₹20,000, and I can look at a similar listing too, but was it the same kind of deal on pickup and delivery?",
+      "reply": "Hi, I’m Kritva, Krishna’s assistant. The current asking amount is ₹20,000, and I’d need to know whether the other one is comparable in condition, age, and pickup details before I can compare them properly. Is it comparable on condition, age, and pickup details?",
       "offerAmount": null,
       "decision": {
         "kind": "answer",
@@ -56,7 +56,7 @@
     },
     {
       "turn": "The other one is older and I’d have to collect that too. Is yours really worth the asking price?",
-      "reply": "It’s a one-year-old king-size bed, in good condition, so the ₹20,000 asking price reflects that. If you’d like, I can keep considering a firm offer on the current terms.",
+      "reply": "Thanks, that helps. This is a one-year-old king-size bed in good condition, and the asking amount is ₹20,000.",
       "offerAmount": null,
       "decision": {
         "kind": "explain_price",
@@ -66,7 +66,7 @@
     },
     {
       "turn": "Okay, I’ll think it over. I haven’t decided.",
-      "reply": "Take your time, no rush. If you want to come back to it, I’m here.",
+      "reply": "Take your time. Let me know if you'd like to continue.",
       "offerAmount": null,
       "decision": {
         "kind": "hold",
@@ -96,8 +96,8 @@
           {
             "kind": "alternative",
             "quote": "I found a similar one for ₹16,000.",
-            "summary": "They found a similar bed for ₹16,000.",
-            "term_id": null,
+            "summary": "They cite a cheaper similar alternative at ₹16,000.",
+            "term_id": "term_t_price",
             "value": {
               "type": "money",
               "amount": 16000,
@@ -121,21 +121,15 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Hi, I’m Kritva, Krishna’s assistant. The asking amount is ₹20,000, and I can look at a similar listing too, but was it the same kind of deal on pickup and delivery?",
-        "question": null
+        "text": "Hi, I’m Kritva, Krishna’s assistant. The current asking amount is ₹20,000, and I’d need to know whether the other one is comparable in condition, age, and pickup details before I can compare them properly.",
+        "question": "Is it comparable on condition, age, and pickup details?",
+        "skip_question_because": null
       }
     },
     {
       "purpose": "language_check",
       "json": {
-        "concerns": [
-          {
-            "type": "counterparty_claim_as_fact",
-            "quote": "I can look at a similar listing too",
-            "reason": "For a compare_terms reply, this introduces a similar listing as if it exists in the shared facts. The other party mentioned a similar one, but this wording risks treating an unverified comparison as fact rather than keeping it as their claim.",
-            "severity": "doubt"
-          }
-        ]
+        "concerns": []
       }
     },
     {
@@ -148,7 +142,7 @@
         "considering": false,
         "asks_private_info": false,
         "claims_authority": false,
-        "offer_kind": "none",
+        "offer_kind": "enquiry",
         "price_concern": "value_question",
         "offer_conditions": [],
         "ends_negotiation": false,
@@ -158,14 +152,20 @@
           {
             "kind": "alternative",
             "quote": "The other one is older and I’d have to collect that too.",
-            "summary": "They say the alternative is older and requires pickup as well.",
+            "summary": "They describe a worse alternative because it is older and requires collection.",
             "term_id": null,
             "value": null,
             "condition": null,
             "basis": "stated"
           }
         ],
-        "answers": [],
+        "answers": [
+          {
+            "question_id": "evt_4ad7c3e5-0c11-4d06-bfa9-d7b742b130e3",
+            "quote": "The other one is older and I’d have to collect that too.",
+            "resolution": "answered"
+          }
+        ],
         "new_terms": [],
         "questions": [],
         "public_term_questions": [
@@ -180,14 +180,28 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "It’s a one-year-old king-size bed, in good condition, so the ₹20,000 asking price reflects that. If you’d like, I can keep considering a firm offer on the current terms.",
-        "question": null
+        "text": "Thanks, that helps. This is a one-year-old king-size bed in good condition, and the asking amount is ₹20,000.",
+        "question": null,
+        "skip_question_because": null
       }
     },
     {
       "purpose": "language_check",
       "json": {
-        "concerns": []
+        "concerns": [
+          {
+            "type": "invented_fact",
+            "quote": "This is a one-year-old king-size bed in good condition",
+            "reason": "The reply states permitted facts as a direct description; this is allowed, but it also uses 'This is' without issue. No concern.",
+            "severity": "doubt"
+          },
+          {
+            "type": "action_mismatch",
+            "quote": "the asking amount is ₹20,000",
+            "reason": "For explain_price, restating the current public asking amount is allowed and does not change the action. No concern.",
+            "severity": "doubt"
+          }
+        ]
       }
     },
     {
@@ -226,13 +240,7 @@
             "basis": "stated"
           }
         ],
-        "answers": [
-          {
-            "question_id": "evt_25ca8a5b-a363-4d2d-87fe-175d67ac9864",
-            "quote": "Okay, I’ll think it over. I haven’t decided.",
-            "resolution": "partial"
-          }
-        ],
+        "answers": [],
         "new_terms": [],
         "questions": [],
         "public_term_questions": []
@@ -241,8 +249,9 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Take your time, no rush. If you want to come back to it, I’m here.",
-        "question": null
+        "text": "Take your time. Let me know if you'd like to continue.",
+        "question": null,
+        "skip_question_because": null
       }
     },
     {

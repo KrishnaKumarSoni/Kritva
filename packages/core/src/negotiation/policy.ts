@@ -495,6 +495,14 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
   if (interp.priceConcern === "objection" && referenceAmount !== undefined && interp.pressure !== "cheaper_elsewhere") {
     const question = context.freshQuestions.find((q) => q.kind === "budget_scope" || q.kind === "obstacle");
     const hasBudget = context.counterparty?.estimates.some((entry) => entry.statedMaximum !== null) === true;
+    // They already said it is about their budget: asking whether it is budget or value would repeat them.
+    const reasonGiven = (interp.notes ?? []).some((note) => note.basis === "stated" && note.kind === "budget");
+    if (reasonGiven && !context.freshQuestions.some((q) => q.kind === "budget_scope")) {
+      return {
+        ...plan, move: "explore_objection", action: "answer", referenceAmount, questions: [], ask: null,
+        decision: { kind: "explore_objection", reason: "They gave the reason for the objection; acknowledge it and keep the current terms without asking again." },
+      };
+    }
     return {
       ...plan, move: "explore_objection", action: "ask", referenceAmount, questions: [], ask: question ?? null,
       strategyQuestion: question ? undefined : {

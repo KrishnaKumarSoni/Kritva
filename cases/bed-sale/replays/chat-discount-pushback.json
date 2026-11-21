@@ -1,8 +1,8 @@
 {
   "scenario": "chat-discount-pushback",
   "mandate": "bed-sale/demo",
-  "recordedAt": "2026-11-21T21:24:56.280Z",
-  "commit": "ebfa6bd + uncommitted changes",
+  "recordedAt": "2026-11-21T22:32:57.493Z",
+  "commit": "eb74d4f + uncommitted changes",
   "model": "gpt-5.4-mini",
   "turns": [
     {
@@ -80,7 +80,7 @@
   "observed": [
     {
       "turn": "Hi",
-      "reply": "Hi, I’m Kritva, Krishna’s assistant. What can I help you with?",
+      "reply": "Hi, I’m Kritva, Krishna’s assistant. The king-size bed is available, and I’m here if you’d like the details or want to make an offer.",
       "offerAmount": null,
       "decision": {
         "kind": "answer",
@@ -100,7 +100,7 @@
     },
     {
       "turn": "for how much?",
-      "reply": "₹20,000.",
+      "reply": "The price is ₹20,000 for the king-size bed.",
       "offerAmount": null,
       "decision": {
         "kind": "answer",
@@ -110,7 +110,7 @@
     },
     {
       "turn": "Wow! That's a lot. Can you give a discount? Something lesser?",
-      "reply": "I’m at ₹20,000. What amount are you prepared to offer?",
+      "reply": "If you'd like something lower, the price is ₹20,000 for the king-size bed. What price and terms would you like to offer?",
       "offerAmount": null,
       "decision": {
         "kind": "hold",
@@ -120,7 +120,7 @@
     },
     {
       "turn": "My budget is only 18000.",
-      "reply": "You said your budget is ₹18,000. Would you like to make a firm offer on the bed at that amount?",
+      "reply": "Noted, your budget is ₹18,000. Would you like to make a firm offer on the bed at the current terms?",
       "offerAmount": null,
       "decision": {
         "kind": "acknowledge_budget",
@@ -130,7 +130,7 @@
     },
     {
       "turn": "What terms?",
-      "reply": "The terms are ₹20,000, pickup from Koramangala, Bangalore, and delivery is not included.",
+      "reply": "Here are the current terms for the bed: the price is ₹20,000, pickup is from Koramangala, Bangalore, and delivery is not included.",
       "offerAmount": null,
       "decision": {
         "kind": "answer",
@@ -140,7 +140,7 @@
     },
     {
       "turn": "No bro. Please come down a little.",
-      "reply": "I’m staying at ₹20,000 for now. If that doesn’t work, we may need to leave it here.",
+      "reply": "I can keep it at ₹20,000 for the king-size bed. I’ve noted that you’d like a lower figure.",
       "offerAmount": null,
       "decision": {
         "kind": "hold",
@@ -176,8 +176,9 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Hi, I’m Kritva, Krishna’s assistant. What can I help you with?",
-        "question": null
+        "text": "Hi, I’m Kritva, Krishna’s assistant. The king-size bed is available, and I’m here if you’d like the details or want to make an offer.",
+        "question": null,
+        "skip_question_because": null
       }
     },
     {
@@ -215,20 +216,14 @@
       "purpose": "compose_reply",
       "json": {
         "text": "It’s a king-size bed, one year old and in good condition.",
-        "question": null
+        "question": null,
+        "skip_question_because": null
       }
     },
     {
       "purpose": "language_check",
       "json": {
-        "concerns": [
-          {
-            "type": "invented_fact",
-            "quote": "one year old and in good condition",
-            "reason": "These details are allowed by permitted_facts, but the reply omits the actual item being sold as a direct answer to the question? No, this is not a concern; only if unsupported. However the item itself is supported. No issue.",
-            "severity": "doubt"
-          }
-        ]
+        "concerns": []
       }
     },
     {
@@ -263,8 +258,9 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "₹20,000.",
-        "question": null
+        "text": "The price is ₹20,000 for the king-size bed.",
+        "question": null,
+        "skip_question_because": null
       }
     },
     {
@@ -276,14 +272,14 @@
     {
       "purpose": "interpret_counterparty",
       "json": {
-        "intent": "question",
+        "intent": "request_change",
         "offer_terms": [],
         "accepts_stated_terms": false,
         "asks_if_open": false,
         "considering": false,
         "asks_private_info": false,
         "claims_authority": false,
-        "offer_kind": "enquiry",
+        "offer_kind": "none",
         "price_concern": "objection",
         "offer_conditions": [],
         "ends_negotiation": false,
@@ -291,9 +287,9 @@
         "pressure": "lowest_price",
         "notes": [
           {
-            "kind": "reason",
+            "kind": "constraint",
             "quote": "Wow! That's a lot.",
-            "summary": "They think the price is high.",
+            "summary": "Price feels high",
             "term_id": null,
             "value": null,
             "condition": null,
@@ -303,45 +299,43 @@
         "answers": [],
         "new_terms": [],
         "questions": [],
-        "public_term_questions": [
-          {
-            "term_id": "term_t_price",
-            "basis": "current",
-            "quote": "Can you give a discount? Something lesser?"
-          }
-        ]
+        "public_term_questions": []
       }
     },
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "I’m at ₹20,000. What amount are you prepared to offer?",
-        "question": "What amount are you prepared to offer?"
+        "text": "The price is ₹20,000 for the king-size bed. What price and terms would you like to offer?",
+        "question": null,
+        "skip_question_because": "The conversation does not already answer what price and terms the counterparty is prepared to offer."
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "If you'd like something lower, the price is ₹20,000 for the king-size bed. What price and terms would you like to offer?",
+        "question": null,
+        "skip_question_because": "The conversation does not already answer what price and terms the counterparty is prepared to offer."
       }
     },
     {
       "purpose": "language_check",
       "json": {
-        "concerns": []
+        "concerns": [
+          {
+            "type": "turn_mismatch",
+            "quote": "If you'd like something lower, the price is ₹20,000 for the king-size bed.",
+            "reason": "The current message asks for a discount, but this reply only restates the current public price instead of addressing the request for a lower price/terms as a price-pressure response.",
+            "severity": "doubt"
+          }
+        ]
       }
     },
     {
       "purpose": "interpret_counterparty",
       "json": {
-        "intent": "question",
-        "offer_terms": [
-          {
-            "term_id": "term_t_price",
-            "value": {
-              "type": "money",
-              "amount": 18000,
-              "currency": "INR",
-              "unit": null,
-              "text": null,
-              "boolean": null
-            }
-          }
-        ],
+        "intent": "other",
+        "offer_terms": [],
         "accepts_stated_terms": false,
         "asks_if_open": false,
         "considering": false,
@@ -357,8 +351,8 @@
           {
             "kind": "budget",
             "quote": "My budget is only 18000.",
-            "summary": "States a budget ceiling of ₹18,000.",
-            "term_id": null,
+            "summary": "They can spend only ₹18,000.",
+            "term_id": "term_t_price",
             "value": {
               "type": "money",
               "amount": 18000,
@@ -380,8 +374,9 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "You said your budget is ₹18,000. Would you like to make a firm offer on the bed at that amount?",
-        "question": null
+        "text": "Noted, your budget is ₹18,000. Would you like to make a firm offer on the bed at the current terms?",
+        "question": null,
+        "skip_question_because": "The question objective asks to find out whether they will make a firm offer, but this message already gives their budget and does not state a firm offer."
       }
     },
     {
@@ -406,17 +401,7 @@
         "ends_negotiation": false,
         "corrects_previous": false,
         "pressure": "none",
-        "notes": [
-          {
-            "kind": "need",
-            "quote": "What terms?",
-            "summary": "Asks for the terms of the deal",
-            "term_id": null,
-            "value": null,
-            "condition": null,
-            "basis": "stated"
-          }
-        ],
+        "notes": [],
         "answers": [],
         "new_terms": [],
         "questions": [],
@@ -442,8 +427,9 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "The terms are ₹20,000, pickup from Koramangala, Bangalore, and delivery is not included.",
-        "question": null
+        "text": "Here are the current terms for the bed: the price is ₹20,000, pickup is from Koramangala, Bangalore, and delivery is not included.",
+        "question": null,
+        "skip_question_because": null
       }
     },
     {
@@ -462,7 +448,7 @@
         "considering": false,
         "asks_private_info": false,
         "claims_authority": false,
-        "offer_kind": "enquiry",
+        "offer_kind": "none",
         "price_concern": "objection",
         "offer_conditions": [],
         "ends_negotiation": false,
@@ -471,16 +457,7 @@
         "notes": [
           {
             "kind": "constraint",
-            "quote": "No bro.",
-            "summary": "They are rejecting the current price.",
-            "term_id": null,
-            "value": null,
-            "condition": null,
-            "basis": "stated"
-          },
-          {
-            "kind": "reason",
-            "quote": "Please come down a little.",
+            "quote": "No bro. Please come down a little.",
             "summary": "They are asking for a lower price.",
             "term_id": null,
             "value": null,
@@ -491,14 +468,29 @@
         "answers": [],
         "new_terms": [],
         "questions": [],
-        "public_term_questions": []
+        "public_term_questions": [
+          {
+            "term_id": "term_t_price",
+            "basis": "current",
+            "quote": "Please come down a little."
+          }
+        ]
       }
     },
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "I’m staying at ₹20,000 for now. If that doesn’t work, we may need to leave it here.",
-        "question": null
+        "text": "The price is ₹20,000 for the king-size bed. I’ve noted that you want it lower, and that’s the current asking amount for it.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "I can keep it at ₹20,000 for the king-size bed. I’ve noted that you’d like a lower figure.",
+        "question": null,
+        "skip_question_because": null
       }
     },
     {

@@ -160,7 +160,7 @@ describe("Epic 13: voice uses the text core and the shared record", () => {
     const pending = op.state.pendingApproval;
     llm.compositions.push("The seller approved the terms. We're agreed on [[TERMS]].");
     const approved = await call("POST", `/api/operator/sessions/${id}/approvals/${pending.requestId}`, { decision: "approved", offerId: pending.offerId, mandateRevision: pending.mandateRevision });
-    expect(approved.json.reply.text).toMatch(/^The seller approved the terms\. We're agreed on King-size bed, ₹19,500/);
+    expect(approved.json.reply.text).toMatch(/^The seller approved the terms\. We're agreed on king-size bed, ₹19,500/);
     await hear(id, approved.json.reply.messageId);
     expect(speech.spoken).toContain(approved.json.reply.text);
   });

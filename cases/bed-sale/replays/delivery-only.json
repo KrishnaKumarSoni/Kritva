@@ -1,8 +1,8 @@
 {
   "scenario": "delivery-only",
   "mandate": "bed-sale/demo",
-  "recordedAt": "2026-11-21T21:24:42.337Z",
-  "commit": "ebfa6bd + uncommitted changes",
+  "recordedAt": "2026-11-21T22:32:38.471Z",
+  "commit": "eb74d4f + uncommitted changes",
   "model": "gpt-5.4-mini",
   "turns": [
     {
@@ -39,7 +39,7 @@
   "observed": [
     {
       "turn": "I’ll pay the full ₹20,000 if you deliver to Indiranagar.",
-      "reply": "Hi, I’m Kritva, Krishna’s assistant. Delivery isn’t included, so it stays as it is.",
+      "reply": "I’m Kritva, Krishna’s assistant. Thanks for the offer, but delivery stays as it is, so it’s pick-up from Koramangala rather than delivery to Indiranagar.",
       "offerAmount": null,
       "decision": {
         "kind": "decline_request",
@@ -49,7 +49,7 @@
     },
     {
       "turn": "I can’t collect it myself. I can only buy it if delivery is included.",
-      "reply": "Delivery isn’t included with the bed, so that stays unchanged.",
+      "reply": "Delivery isn’t included, so it stays as pick-up from Koramangala. If that doesn’t work for you, I understand.",
       "offerAmount": null,
       "decision": {
         "kind": "decline_request",
@@ -59,7 +59,7 @@
     },
     {
       "turn": "I’ll pass then. Thanks anyway.",
-      "reply": "No problem, thanks for getting back to me.",
+      "reply": "No problem, and thanks for letting me know. Wishing you the best with your search.",
       "offerAmount": null,
       "decision": {
         "kind": "end",
@@ -84,28 +84,6 @@
               "text": null,
               "boolean": null
             }
-          },
-          {
-            "term_id": "term_t_pickup_location",
-            "value": {
-              "type": "text",
-              "amount": null,
-              "currency": null,
-              "unit": null,
-              "text": "Indiranagar",
-              "boolean": null
-            }
-          },
-          {
-            "term_id": "term_t_delivery_included",
-            "value": {
-              "type": "boolean",
-              "amount": null,
-              "currency": null,
-              "unit": null,
-              "text": null,
-              "boolean": true
-            }
           }
         ],
         "accepts_stated_terms": false,
@@ -115,22 +93,24 @@
         "claims_authority": false,
         "offer_kind": "offer",
         "price_concern": null,
-        "offer_conditions": [],
+        "offer_conditions": [
+          "if you deliver to Indiranagar"
+        ],
         "ends_negotiation": false,
         "corrects_previous": false,
         "pressure": "none",
         "notes": [
           {
-            "kind": "final_position",
-            "quote": "I’ll pay the full ₹20,000 if you deliver to Indiranagar.",
-            "summary": "Makes an offer contingent on delivery to Indiranagar.",
-            "term_id": "term_t_price",
+            "kind": "constraint",
+            "quote": "if you deliver to Indiranagar",
+            "summary": "Their offer depends on delivery to Indiranagar.",
+            "term_id": "term_t_pickup_location",
             "value": {
-              "type": "money",
-              "amount": 20000,
-              "currency": "INR",
+              "type": "text",
+              "amount": null,
+              "currency": null,
               "unit": null,
-              "text": null,
+              "text": "Indiranagar",
               "boolean": null
             },
             "condition": "if you deliver to Indiranagar",
@@ -146,14 +126,28 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Hi, I’m Kritva, Krishna’s assistant. Delivery isn’t included, so it stays as it is.",
-        "question": null
+        "text": "I’m Kritva, Krishna’s assistant. Thanks for the offer, but delivery stays as it is, so it’s pick-up from Koramangala rather than delivery to Indiranagar.",
+        "question": null,
+        "skip_question_because": null
       }
     },
     {
       "purpose": "language_check",
       "json": {
-        "concerns": []
+        "concerns": [
+          {
+            "type": "counterparty_claim_as_fact",
+            "quote": "Thanks for the offer",
+            "reason": "The other party said they would pay ₹20,000 if delivery is included; calling that a settled 'offer' is slightly interpretive, though likely acceptable as a response to their message.",
+            "severity": "doubt"
+          },
+          {
+            "type": "invented_fact",
+            "quote": "delivery stays as it is, so it’s pick-up from Koramangala rather than delivery to Indiranagar",
+            "reason": "The pickup location Koramangala is permitted, and delivery is declined; however 'rather than delivery to Indiranagar' repeats a location not confirmed in permitted_facts. It is probably fine as a response to their message, but the Indiranagar detail is not independently permitted.",
+            "severity": "doubt"
+          }
+        ]
       }
     },
     {
@@ -197,7 +191,7 @@
           {
             "kind": "constraint",
             "quote": "I can only buy it if delivery is included.",
-            "summary": "They will only buy if delivery is included.",
+            "summary": "Delivery must be included for them to buy it.",
             "term_id": "term_t_delivery_included",
             "value": {
               "type": "boolean",
@@ -214,20 +208,15 @@
         "answers": [],
         "new_terms": [],
         "questions": [],
-        "public_term_questions": [
-          {
-            "term_id": "term_t_delivery_included",
-            "basis": "current",
-            "quote": "delivery is included"
-          }
-        ]
+        "public_term_questions": []
       }
     },
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Delivery isn’t included with the bed, so that stays unchanged.",
-        "question": null
+        "text": "Delivery isn’t included, so it stays as pick-up from Koramangala. If that doesn’t work for you, I understand.",
+        "question": null,
+        "skip_question_because": null
       }
     },
     {
@@ -261,22 +250,6 @@
             "value": null,
             "condition": null,
             "basis": "stated"
-          },
-          {
-            "kind": "reason",
-            "quote": "I can only buy it if delivery is included.",
-            "summary": "Delivery is essential for them to buy.",
-            "term_id": "term_t_delivery_included",
-            "value": {
-              "type": "boolean",
-              "amount": null,
-              "currency": null,
-              "unit": null,
-              "text": null,
-              "boolean": true
-            },
-            "condition": null,
-            "basis": "stated"
           }
         ],
         "answers": [],
@@ -288,8 +261,9 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "No problem, thanks for getting back to me.",
-        "question": null
+        "text": "No problem, and thanks for letting me know. Wishing you the best with your search.",
+        "question": null,
+        "skip_question_because": null
       }
     },
     {

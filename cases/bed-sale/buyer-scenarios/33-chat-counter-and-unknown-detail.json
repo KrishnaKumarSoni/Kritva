@@ -1,0 +1,122 @@
+{
+  "name": "chat-counter-and-unknown-detail",
+  "description": "The second reported chat: a discount request, a bare \"18000\", confusion about the counter, a pickup question with a budget remark, an unknown detail (material), a concession request at ₹18,500, acceptance. Kritva acknowledges their number before countering, explains its counter when they are confused, does not re-ask what they just said, never guesses an unknown detail, and closes warmly.",
+  "replay": true,
+  "turns": [
+    {
+      "buyer": "hi",
+      "expect": {
+        "offer": null,
+        "says": [
+          "Kritva"
+        ]
+      }
+    },
+    {
+      "buyer": "what are you selling?",
+      "expect": {
+        "offer": null,
+        "says": [
+          "bed"
+        ]
+      }
+    },
+    {
+      "buyer": "For how much?",
+      "expect": {
+        "offer": null,
+        "says": [
+          "20,000"
+        ],
+        "neverSays": [
+          "^₹[\\d,]+\\.?$"
+        ]
+      }
+    },
+    {
+      "buyer": "omg that's a lot. can you please give it for something lesser?",
+      "expect": {
+        "offer": null
+      }
+    },
+    {
+      "buyer": "18000",
+      "expect": {
+        "decision": "counter",
+        "offer": 19000,
+        "says": [
+          "19,000",
+          "18,000|your offer|thanks|thank you"
+        ],
+        "neverSays": [
+          "^₹[\\d,]+\\.?$"
+        ]
+      }
+    },
+    {
+      "buyer": "What 19000?",
+      "expect": {
+        "offer": null,
+        "says": [
+          "19,000",
+          "offer|counter|can do|down|bed|quot|let it go|mean"
+        ]
+      }
+    },
+    {
+      "buyer": "That's still out of my budget. Anyways, where do I need to pick it from?",
+      "expect": {
+        "says": [
+          "Koramangala"
+        ],
+        "neverSays": [
+          "budget, or",
+          "your budget or"
+        ]
+      }
+    },
+    {
+      "buyer": "Yeah - what is the bed made out of?",
+      "expect": {
+        "offer": null,
+        "says": [
+          "confirm|check"
+        ],
+        "neverSays": [
+          "wood|metal|made of (solid|teak|oak|pine|steel)",
+          "^The item for sale"
+        ]
+      }
+    },
+    {
+      "buyer": "Since you don't know all things, gimme some concession! Can you do it for 18500?",
+      "expect": {
+        "neverSays": [
+          "^King-size bed, ₹"
+        ]
+      }
+    },
+    {
+      "buyer": "Yep. That works. For you?",
+      "expect": {
+        "neverSays": [
+          "works for",
+          "\\bagreed\\b",
+          "approved"
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "in_progress",
+      "pending_approval",
+      "agreement"
+    ],
+    "agentMustNotSay": [
+      "lowest|minimum|bottom line|floor",
+      "other (buyers|people) (are )?interested",
+      "\\b(deadline|today only)\\b"
+    ]
+  }
+}
