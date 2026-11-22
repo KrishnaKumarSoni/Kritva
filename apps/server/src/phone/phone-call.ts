@@ -110,6 +110,11 @@ export class PhoneCall {
     this.#playback = new ServerPlayback({ textOf: (id) => this.#call.textOf(id), report: (r) => this.#report(r), clock: deps.clock ?? realClock });
   }
 
+  /** The call controller, for the live-call registry (breaking in when the deal goes to another counterparty). */
+  get realtime(): RealtimeCall {
+    return this.#call;
+  }
+
   get ended(): boolean {
     return this.#ended !== null;
   }

@@ -19,7 +19,7 @@ import { appendFileSync } from "node:fs";
 import type { Hono } from "hono";
 import type { ConfirmedMandate, MandateLibrary, NegotiationEngine, NegotiationRecord } from "@kritva/core";
 import type { ListingConfig } from "../main-helpers.ts";
-import { OpenAIRealtimeConnector, realtimeSession, RealtimeCallError, type RealtimeCallControl, type RealtimeConnector, type RealtimeSettings } from "../realtime-voice.ts";
+import { OpenAIRealtimeConnector, realtimeSession, RealtimeCallError, type RealtimeCall, type RealtimeCallControl, type RealtimeConnector, type RealtimeSettings } from "../realtime-voice.ts";
 import { resolveListing } from "../voice-routes.ts";
 import { outboundFromEnv, phoneSettingsFromEnv, sipUri, type PhoneSettings, type PhoneTarget } from "./config.ts";
 import { OutboundDialer, type OutboundSettings } from "./outbound.ts";
@@ -52,6 +52,21 @@ export interface PhoneDeps {
   hangUpOnExit?: boolean;
   /** Outbound calls through Vobiz (outbound.ts). Off when absent. */
   outbound?: { telephony: OutboundTelephony; settings: OutboundSettings } | null;
+  /** An outbound dialer built by the host (main.ts), shared with other routes; used instead of building one from `outbound`. */
+  dialer?: OutboundDialer | null;
+  /** Calls connected now, with the counterparty's number while each lasts (the multiple-counterparties live-call registry). */
+  liveCalls?: LiveCallRegistry | null;
+}
+
+/** What the phone routes tell the live-call registry: a call connected for a session, and when it ends. */
+export interface LiveCallRegistry {
+  register(sessionId: string, call: RealtimeCall, contact: string | null): void;
+  unregister(sessionId: string, call: RealtimeCall): void;
+}
+
+/** The outbound dialer for the running server, built once in main.ts and passed to createApp as `dialer`. */
+export function outboundDialer(phone: { outbound: PhoneDeps["outbound"]; log?: (entry: Record<string, unknown>) => void } | null, engine: NegotiationEngine): OutboundDialer | null {
+  return phone?.outbound ? new OutboundDialer({ engine, telephony: phone.outbound.telephony, settings: phone.outbound.settings, log: phone.log }) : null;
 }
 
 /**
@@ -85,7 +100,12 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
   const { record, engine, settings } = deps;
   const log = (entry: Record<string, unknown>) => deps.log?.(entry);
   const calls = new Map<string, PhoneCall>();
-  const dialer = deps.outbound ? new OutboundDialer({ engine, telephony: deps.outbound.telephony, settings: deps.outbound.settings, log }) : null;
+  const dialer = deps.dialer ?? (deps.outbound ? new OutboundDialer({ engine, telephony: deps.outbound.telephony, settings: deps.outbound.settings, log }) : null);
+  /**
+   * The counterparty's number per call, in memory only while the call is set up and connected: the
+   * caller for an inbound call, the dialled number for Kritva's own. Never written to the record.
+   */
+  const callers = new Map<string, string | null>();
   /** Webhooks being handled, by call ID: a retry while one is in flight waits for the same result. */
   const inFlight = new Map<string, Promise<{ status: 200 | 500; body: Record<string, unknown> }>>();
   /** Calls already answered or declined (kept an hour), so a retried webhook does nothing twice. */
@@ -129,6 +149,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
   };
 
   const reject = async (callId: string, sip: number, reason: string) => {
+    callers.delete(callId);
     log({ kind: "phone_rejected", callId, sip, reason });
     await deps.connector.reject(callId, sip).catch((error) => log({ kind: "phone_reject_failed", callId, error: String(error) }));
     return { status: 200 as const, body: { ok: true, rejected: sip, reason } };
@@ -150,12 +171,15 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
         return;
       }
       const afterSeq = (await record.context(sessionId)).events.at(-1)?.seq ?? 0;
-      const onEnded = (_: PhoneCall, reason: EndReason) => {
+      const onEnded = (ended: PhoneCall, reason: EndReason) => {
         calls.delete(callId);
+        callers.delete(callId);
+        deps.liveCalls?.unregister(sessionId, ended.realtime);
         if (outboundCallId) dialer?.realtimeEnded(outboundCallId, reason);
       };
       const call = new PhoneCall({ engine, record, sessionId, callId, link, control: deps.connector, settings, afterSeq, log, pollMs: deps.pollMs, sessionUpdate, trace: settings.trace, direction, onEnded });
       calls.set(callId, call);
+      deps.liveCalls?.register(sessionId, call.realtime, callers.get(callId) ?? null);
       if (outboundCallId) dialer?.connected(outboundCallId, callId);
       await call.start().catch(async (error) => {
         log({ kind: "phone_start_failed", callId, sessionId, error: String(error) });
@@ -176,6 +200,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
       log({ kind: accepted.gone ? "phone_gone" : "phone_accept_failed", callId, sessionId, error: accepted.error });
       // If an accept went through unseen (a timeout), hanging up keeps the caller from an unsupervised voice.
       await deps.connector.hangup(callId).catch(() => undefined);
+      callers.delete(callId);
       if (outboundCallId) dialer?.realtimeEnded(outboundCallId, "error");
       // Acknowledged either way: a retried webhook would come after the caller stopped waiting.
       return { status: 200, body: { ok: false, error: accepted.gone ? "call_gone" : "accept_failed" } };
@@ -191,8 +216,10 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
     const outbound = dialer?.match(headers) ?? null;
     if (outbound) {
       log({ kind: "phone_outbound_bridged", callId, outboundCallId: outbound.callId, sessionId: outbound.sessionId, matchedBy: outbound.how, mediaSecurity: mediaSecurity ?? null, headerNames: headers.map((h) => h.name) });
+      callers.set(callId, dialer?.dialledNumber(outbound.callId) ?? null);
       return answerInto(callId, outbound.sessionId, outbound.callId, { kind: "outbound" });
     }
+    callers.set(callId, callerNumber(headers, settings.countryCode));
     const { route, dialled } = routeFor(headers, settings.routes, settings.countryCode);
     // Header names (not values) show which headers the provider sends; the caller's number is masked.
     log({ kind: "phone_incoming", callId, dialled, caller: maskNumber(callerNumber(headers, settings.countryCode)), mediaSecurity: mediaSecurity ?? null, headerNames: headers.map((h) => h.name), route: route ? { number: route.number, target: route.target } : null });

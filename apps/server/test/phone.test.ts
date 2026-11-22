@@ -21,12 +21,13 @@ import {
 import { createApp } from "../src/app.ts";
 import { loadConfirmedMandates, loadExamples, loadListings } from "../src/main-helpers.ts";
 import { GLOBAL_SIP_HOST, normalizeNumber, outboundFromEnv, parseRoutes, phoneSettingsFromEnv, sipUri, type PhoneSettings } from "../src/phone/config.ts";
-import type { OutboundSettings } from "../src/phone/outbound.ts";
+import { OutboundDialer, type OutboundSettings } from "../src/phone/outbound.ts";
+import type { LiveCallRegistry } from "../src/phone/routes.ts";
 import type { OutboundTelephony, PlaceCall } from "../src/phone/vobiz.ts";
 import { heardPart, ServerPlayback, type Clock, type PlaybackReport } from "../src/phone/playback.ts";
 import { callerNumber, dialledNumbers, maskNumber, routeFor } from "../src/phone/sip-headers.ts";
 import { signWebhook, verifyWebhook, WebhookSignatureError } from "../src/phone/webhook-signature.ts";
-import { RealtimeCallError, realtimeSettingsFromEnv, type RealtimeCallControl, type RealtimeConnector, type RealtimeEvent, type RealtimeLink } from "../src/realtime-voice.ts";
+import { RealtimeCallError, realtimeSettingsFromEnv, type RealtimeCall, type RealtimeCallControl, type RealtimeConnector, type RealtimeEvent, type RealtimeLink } from "../src/realtime-voice.ts";
 
 const CASES = resolve(import.meta.dirname, "../../../cases");
 const SECRET = `whsec_${Buffer.from("kritva-phone-test-secret-0123456").toString("base64")}`;
@@ -369,7 +370,18 @@ class FakeTelephony implements OutboundTelephony {
 
 const COUNTERPARTY = "+919812345678";
 
-function setup(options: { library?: boolean; settings?: Partial<PhoneSettings>; outbound?: Partial<OutboundSettings> } = {}) {
+/** Records what the phone routes tell the live-call registry. */
+class FakeLiveCalls implements LiveCallRegistry {
+  readonly events: Array<{ kind: "register" | "unregister"; sessionId: string; contact?: string | null }> = [];
+  register(sessionId: string, _call: RealtimeCall, contact: string | null) {
+    this.events.push({ kind: "register", sessionId, contact });
+  }
+  unregister(sessionId: string) {
+    this.events.push({ kind: "unregister", sessionId });
+  }
+}
+
+function setup(options: { library?: boolean; settings?: Partial<PhoneSettings>; outbound?: Partial<OutboundSettings>; injectDialer?: boolean } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "kritva-phone-"));
   const db = join(dir, "db.sqlite");
   const record = new NegotiationRecord(new SqliteRecordBackend(db));
@@ -381,6 +393,8 @@ function setup(options: { library?: boolean; settings?: Partial<PhoneSettings>; 
   const engine = new NegotiationEngine({ record, llm, locale: "en-IN", subjectFacts: new Map([["bed-sale", "fact_f_item"]]), listingDetails: new Map(listings.map((l) => [l.caseId, l])) });
   const connector = new FakeConnector();
   const telephony = new FakeTelephony();
+  const liveCalls = new FakeLiveCalls();
+  let injected: OutboundDialer | null = null;
   const outboundSettings: OutboundSettings = { callerId: "918064264194", publicUrl: "https://kritva.example.test", bridgeUri: "sip:proj_test@sip.api.openai.com:5061;transport=tls", allow: [normalizeNumber(COUNTERPARTY)], maxCalls: 5, timeLimitSeconds: 900, countryCode: "91", ...options.outbound };
   const settings: PhoneSettings = { webhookSecret: SECRET, projectId: "proj_test", sipHost: GLOBAL_SIP_HOST, routes: parseRoutes(`${NUMBER}=bed-sale`).routes, countryCode: "91", noiseReduction: "near_field", idleMs: 60_000, maxCallMs: 600_000, maxCalls: 5, acceptMode: "minimal", trace: false, ...options.settings };
   const logs: Array<Record<string, unknown>> = [];
@@ -394,7 +408,9 @@ function setup(options: { library?: boolean; settings?: Partial<PhoneSettings>; 
     examples,
     listings,
     realtime: { connector, settings: realtimeSettingsFromEnv({}) },
-    phone: { settings, connector, log: (e) => logs.push(e), pollMs: 40, acceptBackoffMs: [0, 0, 0], outbound: options.outbound ? { telephony, settings: outboundSettings } : null },
+    phone: { settings, connector, log: (e) => logs.push(e), pollMs: 40, acceptBackoffMs: [0, 0, 0], outbound: options.outbound && !options.injectDialer ? { telephony, settings: outboundSettings } : null },
+    dialer: options.injectDialer ? (injected = new OutboundDialer({ engine, telephony, settings: outboundSettings })) : null,
+    liveCalls,
   });
   let n = 0;
   /** OpenAI's webhook for an incoming call, signed with the project's secret. */
@@ -451,7 +467,7 @@ function setup(options: { library?: boolean; settings?: Partial<PhoneSettings>; 
     if (!started.ok) throw new Error(started.error.message);
     return started.session.id;
   };
-  return { app, record, engine, llm, library, connector, telephony, link, logs, ring, bridge, vobiz, placeCall, getCall, newSession, sessions, events, messages, deliveries, connections, play, offer };
+  return { app, record, engine, llm, library, connector, telephony, liveCalls, injected: () => injected, link, logs, ring, bridge, vobiz, placeCall, getCall, newSession, sessions, events, messages, deliveries, connections, play, offer };
 }
 
 describe("Phone: incoming calls", () => {
@@ -798,6 +814,33 @@ describe("Phone: outbound calls (Kritva dials the counterparty)", () => {
     expect(t.telephony.placed[1]!.to).toBe("+919800000002");
     expect((await t.getCall(second.callId)).state).toBe("dialling");
     expect(t.telephony.hungUp).toEqual([]);
+  });
+
+  it("the live-call registry gets each connected call with the counterparty's number: the caller's inbound, the dialled one outbound", async () => {
+    const t = setup({ outbound: {}, settings: { routes: parseRoutes("*=bed-sale").routes } });
+    const inbound = (await t.ring("rtc_reg_in")).json.sessionId;
+    await until(() => t.liveCalls.events.length === 1);
+    expect(t.liveCalls.events[0]).toEqual({ kind: "register", sessionId: inbound, contact: "919876543210" });
+    t.link.hangUp();
+    await until(() => t.liveCalls.events.length === 2);
+    expect(t.liveCalls.events[1]).toEqual({ kind: "unregister", sessionId: inbound });
+    const outbound = await t.newSession();
+    const { callId } = (await t.placeCall(outbound)).json;
+    const token = t.telephony.placed[0]!.answerUrl.split("/").at(-2)!;
+    await t.vobiz(t.telephony.placed[0]!.answerUrl);
+    await t.bridge("rtc_reg_out", [{ name: "X-VH-kritva_call", value: token }]);
+    await until(() => t.liveCalls.events.length === 3);
+    expect(t.liveCalls.events[2]).toEqual({ kind: "register", sessionId: outbound, contact: "919812345678" });
+    expect((await t.getCall(callId)).state).toBe("connected");
+  });
+
+  it("a dialer built by the host (main.ts) is the one the phone routes use", async () => {
+    const t = setup({ outbound: {}, injectDialer: true });
+    const sessionId = await t.newSession();
+    const viaRoute = (await t.placeCall(sessionId)).json;
+    expect(t.injected()!.get(viaRoute.callId)).toMatchObject({ sessionId, state: "dialling" });
+    await t.vobiz(t.telephony.placed[0]!.answerUrl);
+    expect((await t.bridge("rtc_inj", [])).json.sessionId).toBe(sessionId);
   });
 
   it("the setup view shows Kritva's number and the masked allowlist", async () => {

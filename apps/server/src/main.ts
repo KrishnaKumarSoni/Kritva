@@ -6,7 +6,7 @@ import { serve } from "@hono/node-server";
 import { createAgentFromEnv, createIntakeAgentFromEnv, createMappingLlmFromEnv, createSpeechFromEnv, createTurnLlmFromEnv, IntakeService, SqliteIntakeStore, MandateLibrary, MandateRevisions, NegotiationEngine, NegotiationRecord, SqliteLibraryBackend, SqliteRecordBackend } from "@kritva/core";
 import { createApp } from "./app.ts";
 import { OpenAIRealtimeConnector, realtimeSettingsFromEnv } from "./realtime-voice.ts";
-import { phoneFromEnv } from "./phone/routes.ts";
+import { outboundDialer, phoneFromEnv } from "./phone/routes.ts";
 import { loadCaseRuntime } from "./main-helpers.ts";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
@@ -29,6 +29,8 @@ const revisions = new MandateRevisions({ record, engine, mappingLlm });
 const intake = new IntakeService({ store: new SqliteIntakeStore(join(dataDir, "kritva.sqlite")), agent: createIntakeAgentFromEnv(), library, defaultCurrency: process.env.KRITVA_DEFAULT_CURRENCY ?? "Indian rupees (₹)" });
 const configuredKey = process.env.KRITVA_OPERATOR_KEY?.trim();
 const operatorKey = configuredKey || randomBytes(24).toString("base64url");
+// Phone calls (docs/Kritva_Phone_Calls.md), and Kritva's outbound dialer, shared by the phone routes and the counterparties' board.
+const phone = phoneFromEnv();
 const app = createApp({
   record,
   engine,
@@ -47,8 +49,9 @@ const app = createApp({
     process.env.OPENAI_API_KEY && (process.env.KRITVA_VOICE_MODE ?? "realtime") === "realtime"
       ? { connector: new OpenAIRealtimeConnector(process.env.OPENAI_API_KEY), settings: realtimeSettingsFromEnv(), log: (entry) => console.log("[voice]", JSON.stringify(entry)) }
       : null,
-  // Phone calls (docs/Kritva_Phone_Calls.md): on when OPENAI_WEBHOOK_SECRET and KRITVA_PHONE_ROUTES are set.
-  phone: phoneFromEnv(),
+  // Phone calls: on when OPENAI_WEBHOOK_SECRET and KRITVA_PHONE_ROUTES are set; outbound when Vobiz is configured too.
+  phone,
+  dialer: outboundDialer(phone, engine),
 });
 const port = Number(process.env.PORT ?? 8787);
 
