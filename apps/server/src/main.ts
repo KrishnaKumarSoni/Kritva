@@ -13,6 +13,7 @@ import { LiveCalls } from "./live-calls.ts";
 import { hangUpPending } from "./group-routes.ts";
 import { FollowUpCalls, followUpSettingsFromEnv } from "./phone/follow-up.ts";
 import { sipUri } from "./phone/config.ts";
+import { AuthStore, authFromEnv } from "./auth.ts";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
 
@@ -69,7 +70,10 @@ const followUpConfig = followUpSettingsFromEnv(process.env, phone ? sipUri(phone
 const followUps = phone && followUpConfig.settings ? new FollowUpCalls({ record, engine, settings: followUpConfig.settings, log: (entry) => console.log("[follow-up]", JSON.stringify(entry)) }) : null;
 console.log(followUps ? "Call-backs: on (Vobiz)." : `Call-backs: off${phone ? `. ${followUpConfig.problems.join(" ")}` : " (phone calls are off)"}. Follow-ups go to the buyer's chat.`);
 const configuredKey = process.env.KRITVA_OPERATOR_KEY?.trim();
+// The access key is for scripts and tools; people sign in to the console with an emailed link.
 const operatorKey = configuredKey || randomBytes(24).toString("base64url");
+const signIn = authFromEnv();
+for (const note of signIn.notes) console.log(note);
 const app = createApp({
   record,
   engine,
@@ -82,6 +86,7 @@ const app = createApp({
   speech: createSpeechFromEnv(),
   listings,
   operatorKey,
+  auth: { store: new AuthStore(join(dataDir, "kritva.sqlite")), settings: signIn.settings, log: (entry) => console.log("[sign-in]", JSON.stringify(entry)) },
   transcriptionPrompt: process.env.KRITVA_TRANSCRIPTION_PROMPT,
   // Live voice by default; KRITVA_VOICE_MODE=turns keeps the turn-based pipeline.
   realtime:
@@ -103,5 +108,6 @@ const port = Number(process.env.PORT ?? 8787);
 
 serve({ fetch: app.fetch, port, hostname: process.env.KRITVA_HOST ?? "127.0.0.1" }, (info) => {
   console.log(`Kritva slice server listening on http://localhost:${info.port}`);
-  if (!configuredKey) console.log(`Seller access key for this run: ${operatorKey}`);
+  console.log(`Console: sign in at ${signIn.settings.webUrl ?? "http://localhost:5173"} with your email.`);
+  if (!configuredKey) console.log(`Access key for scripts this run: ${operatorKey}`);
 });

@@ -7,7 +7,7 @@
  * The buyer chat and the scenario script call the same engine path.
  */
 import { Hono } from "hono";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { registerAuthRoutes, signedIn, type AuthSettings, type AuthStore } from "./auth.ts";
 import { registerIntakeRoutes } from "./intake-routes.ts";
 import { registerLibraryRoutes, type LibraryDeps } from "./library-routes.ts";
 import type { ListingConfig } from "./main-helpers.ts";
@@ -92,8 +92,10 @@ export interface AppDeps {
   dialer?: OutboundDialer | null;
   /** Voice calls connected now (browser and phone), with the counterparty's number while each lasts; the engine's break-in uses it too. */
   liveCalls?: (LiveCallRegistry & Partial<Pick<LiveCalls, "sessions">>) | null;
-  /** Required by the network server. In-process tools can call the app as the operator. */
+  /** The access key for scripts and tools (Authorization: Bearer ...). In-process tools can call the app as the operator. */
   operatorKey?: string;
+  /** Signing in with an emailed link (auth.ts). The console's way in; required by the network server. */
+  auth?: { store: AuthStore; settings: AuthSettings; log?: (entry: Record<string, unknown>) => void } | null;
   /** Several counterparties per saved mandate (docs/Kritva_Multiple_Counterparties.md). Off when absent. */
   groups?: DealGroups | null;
   /** Whether the deal board may place calls (KRITVA_BOARD_CALLS=on). Off by default. */
@@ -113,13 +115,14 @@ export function createApp(deps: AppDeps): Hono {
 
   // ---------- Operator (principal) ----------
 
-  if (deps.operatorKey) {
-    const hash = (value: string) => createHash("sha256").update(value).digest();
-    const expected = hash(`Bearer ${deps.operatorKey}`);
+  // The console is for the signed-in principal (an emailed sign-in link, auth.ts). Scripts and tools
+  // may still use the access key (Authorization: Bearer ...).
+  if (deps.auth) registerAuthRoutes(app, { store: deps.auth.store, settings: deps.auth.settings, operatorKey: deps.operatorKey, log: deps.auth.log });
+  if (deps.operatorKey || deps.auth) {
     app.use("/api/operator/*", async (c, next) => {
       c.header("Cache-Control", "no-store");
-      if (!timingSafeEqual(hash(c.req.header("Authorization") ?? ""), expected)) {
-        return c.json({ error: "seller_access_required", message: "Enter the seller access key to open the console." }, 401);
+      if (!signedIn(c, { store: deps.auth?.store ?? null, operatorKey: deps.operatorKey })) {
+        return c.json({ error: "signed_out", message: "Sign in to open the console." }, 401);
       }
       await next();
     });

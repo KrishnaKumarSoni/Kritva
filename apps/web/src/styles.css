@@ -231,24 +231,304 @@ input {
   margin-inline-start: auto;
 }
 
-.seller-key {
-  width: min(42vw, 14rem);
-  min-height: var(--control-h);
-  padding: 0 var(--space-3);
-  border: 0;
+/* ---------- The stage: the jet-black curtain the console sits behind ---------- */
+.stage {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: var(--space-6) var(--space-4);
+  background: var(--stone-950);
+  color: var(--stone-0);
+  overflow: hidden;
+  will-change: transform;
+}
+.stage-inner {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-6);
+  width: min(100%, 26rem);
+}
+.stage-wordmark {
+  margin: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.06em;
+  font-family: var(--font-serif);
+  font-size: clamp(3rem, 2rem + 6vw, 5.5rem);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.035em;
+}
+.stage-dot {
+  display: inline-block;
+  width: 0.14em;
+  height: 0.14em;
   border-radius: 999px;
-  box-shadow: inset 0 0 0 1px var(--color-border-strong);
-  background: var(--color-bg-surface);
-  color: inherit;
-  font: inherit;
-  font-size: var(--text-input);
+  background: var(--orange-600);
+}
+.stage-signin {
+  width: 100%;
+}
+.stage-form,
+.stage-sent {
+  display: grid;
+  gap: var(--space-3);
+  text-align: center;
+}
+.stage-title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--text-title);
+  font-weight: 500;
+}
+.stage-text {
+  margin: 0;
+  font-size: var(--text-body);
+  line-height: 1.5;
+  color: rgb(255 255 255 / 0.72);
+  text-wrap: pretty;
+}
+.stage-field {
+  display: flex;
+  gap: var(--space-2);
+  padding: 4px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.06);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.14);
   transition-property: box-shadow;
   transition-duration: 150ms;
   transition-timing-function: var(--ease-out);
 }
-.seller-key:focus-visible {
+.stage-field:focus-within {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.5);
+}
+.stage-input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--control-h);
+  padding: 0 var(--space-3);
+  border: 0;
+  background: transparent;
+  color: var(--stone-0);
+  font: inherit;
+  font-size: max(16px, var(--text-input)); /* 16px keeps iOS from zooming in */
   outline: none;
-  box-shadow: inset 0 0 0 2px var(--color-focus-ring);
+}
+.stage-input::placeholder {
+  color: rgb(255 255 255 / 0.4);
+}
+.stage-submit {
+  flex: none;
+}
+.stage-submit:focus-visible,
+.stage-link:focus-visible {
+  outline: 2px solid var(--stone-0);
+  outline-offset: 2px;
+}
+.stage-error {
+  margin: 0;
+  font-size: var(--text-ui);
+  color: var(--orange-200);
+}
+.stage-link {
+  justify-self: center;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: rgb(255 255 255 / 0.72);
+  font: inherit;
+  font-size: var(--text-ui);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .stage-link:hover {
+    color: var(--stone-0);
+  }
+}
+@media (max-width: 30rem) {
+  .stage-field {
+    flex-direction: column;
+    border-radius: var(--radius-lg);
+  }
+  .stage-submit {
+    width: 100%;
+  }
+}
+
+/* ---------- The go-live moment: Kritva is live, and this is how to reach it ---------- */
+.golive {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: var(--space-6) var(--space-4);
+  background: var(--stone-950);
+  color: var(--stone-0);
+  overflow-y: auto;
+}
+.golive-inner {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-4);
+  width: min(100%, 34rem);
+  text-align: center;
+}
+.golive-kicker {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-ui);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--orange-200);
+}
+.golive-pulse {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--orange-600);
+}
+.golive-pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--orange-600);
+  animation: golive-ping 1.6s var(--ease-out) infinite;
+}
+@keyframes golive-ping {
+  from {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  to {
+    transform: scale(3);
+    opacity: 0;
+  }
+}
+.golive-title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: clamp(2.5rem, 1.75rem + 4.5vw, 4.5rem);
+  font-weight: 500;
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+.golive-what {
+  margin: 0;
+  font-size: var(--text-heading);
+  color: rgb(255 255 255 / 0.72);
+  text-wrap: balance;
+}
+.golive-line {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  margin-block-start: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-xl);
+  background: rgb(255 255 255 / 0.05);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1);
+}
+.golive-number {
+  margin: 0;
+  font-size: var(--text-heading);
+  color: rgb(255 255 255 / 0.85);
+}
+.golive-number .tabular {
+  font-weight: 600;
+  color: var(--stone-0);
+}
+.golive-code {
+  margin: 0;
+  display: flex;
+  gap: 0.18em;
+  font-family: var(--font-mono);
+  font-size: clamp(2.75rem, 2rem + 4vw, 4rem);
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.golive-digit {
+  display: inline-block;
+  min-width: 0.9em;
+  padding: 0.04em 0.06em;
+  border-radius: var(--radius-md);
+  background: rgb(204 85 0 / 0.16);
+  box-shadow: inset 0 0 0 1px rgb(204 85 0 / 0.45);
+  text-align: center;
+}
+.golive-hint {
+  margin: 0;
+  font-size: var(--text-ui);
+  color: rgb(255 255 255 / 0.6);
+  text-wrap: balance;
+}
+.golive-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  margin-block-start: var(--space-4);
+}
+.golive-done {
+  background: rgb(255 255 255 / 0.1);
+  color: var(--stone-0);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.18);
+}
+@media (hover: hover) {
+  .golive-done:hover:not(:disabled) {
+    background: rgb(255 255 255 / 0.16);
+  }
+}
+.golive .button:focus-visible {
+  outline: 2px solid var(--stone-0);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .golive-pulse::after {
+    animation: none;
+  }
+}
+
+/* The account at the end of the top bar: who is signed in, and signing out. */
+.account-avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--color-neutral-solid);
+  color: var(--color-text-on-solid);
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+.menu-header {
+  padding: var(--space-2) 10px;
+  border-block-end: 1px solid var(--color-border);
+  margin-block-end: 2px;
+}
+.account-email {
+  display: block;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-caption);
+  color: var(--color-text-secondary);
+}
+.console-error {
+  margin: var(--space-4) var(--space-5);
 }
 
 .layout {
@@ -1456,11 +1736,6 @@ input {
 }
 .side > .composer-error {
   margin: 0;
-}
-.unlock {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
 }
 .button-ghost {
   background: transparent;
