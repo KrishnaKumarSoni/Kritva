@@ -45,7 +45,9 @@ const QUOTE_CUE = /\?\s*$|\b(you|your|you're|you've)\b/i;
 const ACKNOWLEDGED = /\b(thanks|thank you|noted|offer of|the [^.!?]{0,12}offer|mentioned|said|budget)\b/i;
 const OFFERING = /\b(i|we)(?:'ll| will| can| could)? (?:do|offer|accept|take|agree to|go (?:to|down to)|come down to)\b|\bhow about\b|\bworks\b|\bdeal\b/i;
 
-export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
+export function checkReply(reply: string, ctx: CheckContext): ReplyViolation[] {
+  // Writers use curly apostrophes as often as straight ones: "can’t" declines and "we’re agreed" claims alike.
+  const text = straightApostrophes(reply);
   const violations: ReplyViolation[] = [];
   if (INTERNAL_TERM.test(text) || FIELD_NAME.test(text)) violations.push({ rule: "internal_term", detail: "Uses internal vocabulary or a field name the other party should never see." });
   const { view, plan } = ctx;
@@ -111,6 +113,11 @@ export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
     }
   }
   return dedupe(violations);
+}
+
+/** Curly and other look-alike apostrophes as "'", so every pattern reads "can’t" as "can't". */
+export function straightApostrophes(text: string): string {
+  return text.replace(/[‘’‚‛′ʼ]/g, "'");
 }
 
 function plannedAmounts(plan: Plan): number[] {

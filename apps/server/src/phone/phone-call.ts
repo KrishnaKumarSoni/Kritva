@@ -35,12 +35,22 @@ export interface PhoneCallDeps {
   /** Timers for delivery; tests pass a manual clock. Silence and the time limit use real timers. */
   clock?: Clock;
   pollMs?: number;
-  onEnded?: (call: PhoneCall) => void;
+  /** The session to apply over the sideband before anything is said (when the accept carried only the basics). */
+  sessionUpdate?: Record<string, unknown> | null;
+  /** Log each sideband event (type and ids, never audio) for diagnosing a call. */
+  trace?: boolean;
+  /** Who placed the call: the counterparty ("inbound", the default) or Kritva ("outbound"). Recorded on the connection events. */
+  direction?: "inbound" | "outbound";
+  onEnded?: (call: PhoneCall, reason: EndReason) => void;
   /** A call-back opens with the principal's decision instead of a greeting. */
   opening?: "greet" | "follow_up";
   /** The caller's number, used only if they agree to be called back on it. */
   contactNumber?: string | null;
 }
+
+/** Events too frequent to trace one by one; they are only counted. */
+const NOISY = new Set(["response.output_audio.delta", "response.output_audio_transcript.delta", "conversation.item.input_audio_transcription.delta", "response.function_call_arguments.delta", "rate_limits.updated"]);
+const TRACE_LIMIT = 400;
 
 /**
  * Lines the phone call says itself, by language (others fall back to English). They state no
@@ -88,6 +98,9 @@ export class PhoneCall {
   #idleStage: 0 | 1 = 0;
   #closing = false;
   #ended: Promise<void> | null = null;
+  /** How many of each event type the sideband sent: logged when the call ends. */
+  readonly #counts = new Map<string, number>();
+  #traced = 0;
 
   constructor(deps: PhoneCallDeps) {
     this.#d = deps;
@@ -105,6 +118,7 @@ export class PhoneCall {
       afterSeq: deps.afterSeq,
       log: deps.log,
       pollMs: deps.pollMs,
+      outbound: deps.direction === "outbound",
       opening: deps.opening ?? "greet",
       contactNumber: deps.contactNumber ?? null,
       // After the wrap-up's closing line (or the agreement on a call-back) is heard, Kritva hangs up.
@@ -113,15 +127,22 @@ export class PhoneCall {
     this.#playback = new ServerPlayback({ textOf: (id) => this.#call.textOf(id), report: (r) => this.#report(r), clock: deps.clock ?? realClock });
   }
 
+  /** The call controller, for the live-call registry (breaking in when the deal goes to another counterparty). */
+  get realtime(): RealtimeCall {
+    return this.#call;
+  }
+
   get ended(): boolean {
     return this.#ended !== null;
   }
 
   /** Records the connection, starts the silence and time-limit timers, and greets. */
   async start(): Promise<void> {
-    await this.#d.record.append(this.sessionId, { id: eventId("voice", this.callId), type: "voice_connection", channel: "voice", payload: { status: "connected", transport: "phone" } }, { kind: "system", partyId: null });
+    await this.#d.record.append(this.sessionId, { id: eventId("voice", this.callId), type: "voice_connection", channel: "voice", payload: { status: "connected", transport: "phone", direction: this.#d.direction ?? "inbound" } }, { kind: "system", partyId: null });
     this.#maxTimer = setTimeout(() => void this.#wrapUp("max_duration"), this.#d.settings.maxCallMs);
     this.#armIdle();
+    // The full session goes first, so the greeting is said with the instructions, tools and turn-taking in place.
+    if (this.#d.sessionUpdate) this.#d.link.send({ type: "session.update", session: this.#d.sessionUpdate });
     await this.#call.start();
   }
 
@@ -142,14 +163,15 @@ export class PhoneCall {
     for (const resolve of this.#waiters.values()) resolve();
     this.#waiters.clear();
     await this.#d.control.hangup(this.callId).catch((error) => {
-      if (!(error instanceof RealtimeCallError && error.gone)) this.#log({ kind: "phone_hangup_failed", error: String(error) });
+      // After the caller hung up, OpenAI answers a hangup slowly or not at all (a timeout on the first live call): expected, not a failure.
+      if (reason !== "hung_up" && !(error instanceof RealtimeCallError && error.gone)) this.#log({ kind: "phone_hangup_failed", error: String(error) });
     });
     this.#call.close();
     await this.#writes;
-    const recorded = await this.#d.record.append(this.sessionId, { id: eventId("voice_end", this.callId), type: "voice_connection", channel: "voice", payload: { status: "ended", transport: "phone", reason } }, { kind: "system", partyId: null });
+    const recorded = await this.#d.record.append(this.sessionId, { id: eventId("voice_end", this.callId), type: "voice_connection", channel: "voice", payload: { status: "ended", transport: "phone", reason, direction: this.#d.direction ?? "inbound" } }, { kind: "system", partyId: null });
     if (!recorded.ok) this.#log({ kind: "phone_end_not_recorded", error: recorded.error.message });
-    this.#log({ kind: "phone_ended", reason, durationMs: Date.now() - this.startedAt.getTime(), deliveryFrom: this.#playback.usesPlaybackEvents ? "playback_events" : "estimate" });
-    this.#d.onEnded?.(this);
+    this.#log({ kind: "phone_ended", reason, durationMs: Date.now() - this.startedAt.getTime(), deliveryFrom: this.#playback.usesPlaybackEvents ? "playback_events" : "estimate", events: Object.fromEntries(this.#counts) });
+    this.#d.onEnded?.(this, reason);
   }
 
   #log(entry: Record<string, unknown>) {
@@ -157,6 +179,11 @@ export class PhoneCall {
   }
 
   #observe(e: RealtimeEvent) {
+    this.#counts.set(e.type, (this.#counts.get(e.type) ?? 0) + 1);
+    if (this.#d.trace && !NOISY.has(e.type) && this.#traced < TRACE_LIMIT) {
+      this.#traced += 1;
+      this.#log({ kind: "phone_trace", ms: Date.now() - this.startedAt.getTime(), type: e.type, responseId: e.response_id ?? e.response?.id, itemId: e.item_id ?? e.item?.id, status: e.response?.status, error: e.error });
+    }
     if (this.#ended) return;
     this.#playback.observe(e);
     if (CALLER_ACTIVITY.has(e.type)) {

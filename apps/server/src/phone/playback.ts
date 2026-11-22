@@ -23,7 +23,11 @@
  *    than speech (about 14 a second), so the window outlasts the real audio:
  *    - the caller starts speaking (`input_audio_buffer.speech_started`) inside the window:
  *      INTERRUPTED;
- *    - the window passes with no speech and the response completed: DELIVERED.
+ *    - the window passes with no speech and the response completed: DELIVERED, but only once the
+ *      caller has been heard at least once on the call, which proves the audio path works. Until
+ *      then the reply waits: the caller's first speech makes it DELIVERED, and the call ending
+ *      first makes it INTERRUPTED with nothing heard ("no_caller_audio"). A call whose audio
+ *      never connected therefore never counts a reply as heard.
  * 3. The call ending (hang-up, silence, time limit) while a reply is playing or queued: INTERRUPTED.
  *
  * HEARD TEXT for an interruption: OpenAI trims unplayed audio itself on WebRTC and SIP calls and
@@ -89,6 +93,8 @@ interface Playback {
   truncatedMs: number | null;
   /** A cut is waiting a moment for the truncation report. */
   cut: { source: PlaybackReport["source"]; reason: string } | null;
+  /** Fallback: its window passed, but the caller has not been heard yet, so the audio path is unproven. */
+  awaitingProof: boolean;
   timer: unknown;
   settled: boolean;
 }
@@ -109,6 +115,8 @@ export class ServerPlayback {
   /** This call has sent at least one output_audio_buffer event, so those events decide. */
   #playbackEvents = false;
   #speechStoppedAt: number | null = null;
+  /** The caller has been heard at least once, so audio reaches the model. */
+  #callerHeard = false;
   #ended = false;
 
   constructor(deps: PlaybackDeps) {
@@ -116,9 +124,9 @@ export class ServerPlayback {
     this.#clock = deps.clock ?? realClock;
   }
 
-  /** A reply of ours is queued, playing or waiting for its result. */
+  /** A reply of ours is queued, playing or waiting for its result (not one only waiting for proof of audio). */
   get busy(): boolean {
-    return [...this.#playing.values()].some((p) => !p.settled);
+    return [...this.#playing.values()].some((p) => !p.settled && !p.awaitingProof);
   }
 
   /** Whether the call's playback events decide delivery (false until the first one arrives). */
@@ -139,7 +147,7 @@ export class ServerPlayback {
         const r = e.response ?? {};
         const messageId = r.metadata?.kritva === "say" ? r.metadata?.message_id : null;
         if (typeof r.id !== "string" || typeof messageId !== "string") return;
-        this.#playing.set(r.id, { responseId: r.id, messageId, createdAt: now, audioAt: null, startedAt: null, audioStartMs: null, truncatedMs: null, cut: null, timer: null, settled: false });
+        this.#playing.set(r.id, { responseId: r.id, messageId, createdAt: now, audioAt: null, startedAt: null, audioStartMs: null, truncatedMs: null, cut: null, awaitingProof: false, timer: null, settled: false });
         return;
       }
       case "response.output_item.added":
@@ -194,7 +202,7 @@ export class ServerPlayback {
   /** The call ended: anything still playing or queued was not heard in full. */
   end(): void {
     if (this.#ended) return;
-    for (const p of this.#playing.values()) this.#finish(p, "interrupted", this.#playbackEvents ? "playback_events" : "estimate", "call_ended");
+    for (const p of this.#playing.values()) this.#finish(p, "interrupted", this.#playbackEvents ? "playback_events" : "estimate", p.awaitingProof ? "no_caller_audio" : "call_ended");
     this.#ended = true;
   }
 
@@ -222,21 +230,29 @@ export class ServerPlayback {
       this.#arm(p, this.#windowMs(p) * 2 + 10_000, () => this.#finish(p, "interrupted", "playback_events", "no_end_event"));
       return;
     }
-    // Fallback: delivered once the window has passed with no speech from them.
+    // Fallback: delivered once the window has passed with no speech from them, and the caller has been heard on this call.
     const begin = p.audioAt ?? p.createdAt;
     this.#arm(p, Math.max(0, begin + this.#windowMs(p) - this.#clock.now()), () => {
-      if (p.startedAt === null) this.#finish(p, "delivered", "estimate", "window_passed");
+      if (p.startedAt !== null) return;
+      if (this.#callerHeard) this.#finish(p, "delivered", "estimate", "window_passed");
+      else p.awaitingProof = true;
     });
   }
 
   #onSpeech() {
     for (const p of this.#playing.values()) {
+      // Their first words prove the audio path: a reply whose window had already passed was heard.
+      if (p.awaitingProof) {
+        this.#finish(p, "delivered", "estimate", "window_passed");
+        continue;
+      }
       if (p.settled || p.cut) continue;
       // With playback events, OpenAI reports a cut itself (cleared); speech after the audio ended is a normal reply.
       if (this.#playbackEvents || p.startedAt !== null) continue;
       // Fallback: speech inside a reply's window cuts it. A reply with no audio yet is cancelled by OpenAI (response.done).
       if (p.audioAt !== null) this.#cut(p, "estimate", "speech");
     }
+    this.#callerHeard = true;
   }
 
   /** Cut off: wait a moment for OpenAI's report of how much played, then report the interruption. */
@@ -261,7 +277,7 @@ export class ServerPlayback {
   }
 
   #heard(p: Playback): string {
-    if (p.audioAt === null && p.startedAt === null) return "";
+    if (p.awaitingProof || (p.audioAt === null && p.startedAt === null)) return "";
     const text = this.#d.textOf(p.messageId) ?? "";
     const ms = p.truncatedMs ?? this.#clock.now() - (p.startedAt ?? p.audioAt!);
     return heardPart(text, ((ms / 1000) * SPEAKING_RATE) / Math.max(1, text.length));

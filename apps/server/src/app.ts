@@ -14,7 +14,8 @@ import type { ListingConfig } from "./main-helpers.ts";
 import { registerVoiceRoutes } from "./voice-routes.ts";
 import { registerRealtimeRoutes, realtimeSettingsFromEnv, type RealtimeCallControl, type RealtimeConnector, type RealtimeSettings } from "./realtime-voice.ts";
 import type { PhoneSettings } from "./phone/config.ts";
-import { registerPhoneRoutes } from "./phone/routes.ts";
+import { registerPhoneRoutes, type LiveCallRegistry, type PhoneDeps } from "./phone/routes.ts";
+import type { OutboundDialer } from "./phone/outbound.ts";
 import type { FollowUpCalls } from "./phone/follow-up.ts";
 import { maskNumber } from "./phone/sip-headers.ts";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -76,13 +77,17 @@ export interface AppDeps {
   /** Realtime voice (docs/Kritva_Realtime_Voice.md). Without a connector the browser uses turn-based voice. */
   realtime?: { connector: RealtimeConnector | null; settings?: RealtimeSettings; log?: (entry: Record<string, unknown>) => void } | null;
   /** Phone calls through a SIP trunk into OpenAI (docs/Kritva_Phone_Calls.md). Off when absent. */
-  phone?: { settings: PhoneSettings; connector: RealtimeConnector & RealtimeCallControl; log?: (entry: Record<string, unknown>) => void; pollMs?: number; acceptBackoffMs?: number[] } | null;
+  phone?: { settings: PhoneSettings; connector: RealtimeConnector & RealtimeCallControl; log?: (entry: Record<string, unknown>) => void; pollMs?: number; acceptBackoffMs?: number[]; hangUpOnExit?: boolean; outbound?: PhoneDeps["outbound"] } | null;
   /** Call-backs after the principal decides, through Vobiz. Off when absent: follow-ups then go to the chat. */
   followUps?: FollowUpCalls | null;
   /** Where browser call recordings are kept. Off when absent. */
   recordingsDir?: string | null;
   /** Vobiz credentials, to play a call-back's recording through the console. */
   vobizAuth?: { authId: string; authToken: string } | null;
+  /** Kritva's outbound dialer (phone/outbound.ts), built in main.ts with outboundDialer() and shared by the phone routes and the counterparties' board. */
+  dialer?: OutboundDialer | null;
+  /** Voice calls connected now, with the counterparty's number while each lasts (the multiple-counterparties registry). */
+  liveCalls?: LiveCallRegistry | null;
   /** Required by the network server. In-process tools can call the app as the operator. */
   operatorKey?: string;
 }
@@ -130,7 +135,7 @@ export function createApp(deps: AppDeps): Hono {
 
   registerRealtimeRoutes(app, { record, engine, connector: deps.realtime?.connector ?? null, settings: deps.realtime?.settings ?? realtimeSettingsFromEnv(), log: deps.realtime?.log });
   if (deps.phone) {
-    registerPhoneRoutes(app, { record, engine, library: deps.library ?? null, listings: deps.listings ?? [], connector: deps.phone.connector, settings: deps.phone.settings, realtime: deps.realtime?.settings ?? realtimeSettingsFromEnv(), log: deps.phone.log, pollMs: deps.phone.pollMs, acceptBackoffMs: deps.phone.acceptBackoffMs, followUps: deps.followUps ?? null });
+    registerPhoneRoutes(app, { record, engine, library: deps.library ?? null, listings: deps.listings ?? [], connector: deps.phone.connector, settings: deps.phone.settings, realtime: deps.realtime?.settings ?? realtimeSettingsFromEnv(), log: deps.phone.log, pollMs: deps.phone.pollMs, acceptBackoffMs: deps.phone.acceptBackoffMs, hangUpOnExit: deps.phone.hangUpOnExit, outbound: deps.phone.outbound ?? null, dialer: deps.dialer ?? null, liveCalls: deps.liveCalls ?? null, followUps: deps.followUps ?? null });
   }
   deps.followUps?.register(app);
 
@@ -817,7 +822,8 @@ function describeEvent(e: RecordedEvent, view: MandateView, locale: string) {
       break;
     case "voice_connection": {
       const phone = p.transport === "phone";
-      title = p.status === "interrupted" ? "Voice connection interrupted" : p.status === "ended" ? (phone ? "Phone call ended" : "Voice call ended") : phone ? "Phone call connected" : "Voice connected";
+      const call = p.direction === "outbound" ? "Kritva's call" : "Phone call";
+      title = p.status === "interrupted" ? "Voice connection interrupted" : p.status === "ended" ? (phone ? `${call} ended` : "Voice call ended") : phone ? `${call} connected` : "Voice connected";
       if (p.status === "ended") summary = CALL_END_LABEL[String(p.reason)] ?? "";
       break;
     }

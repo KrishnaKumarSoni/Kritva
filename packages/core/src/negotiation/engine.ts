@@ -776,10 +776,7 @@ export class NegotiationEngine {
     // Checked on the words the other party will read, after the terms are in place.
     const repeated = repeatedSentence(insertedTerms ? draft.replace(insertedTerms, "") : draft, conversation);
     if (repeated) styleRule(`You already said "${repeated}". Say it in new words or leave it out.`);
-    // A clarifying question the plan itself needs (a missing detail an offer depends on) is never a new question.
-    if (!question && plan.clarify.length === 0 && (plan.action === "decline" || ["answer_public_terms", "explore_objection", "explain_price", "acknowledge_budget", "answer_enquiry", "price_pressure", "compare_terms"].includes(plan.move)) && draft.includes("?")) {
-      styleRule("This move did not call for a new question.");
-    }
+    // A closing invitation that hands the turn back is the guide's "way forward", not a new question to block.
     const ownWords = draft;
     if (plan.introduce) {
       const opening = draft.split(/(?<=[.!?])\s+/, 2).join(" ");
@@ -821,6 +818,8 @@ export class NegotiationEngine {
     const arrangement = fulfillmentFact(state, publicTerms, this.#listingDetails.get(state.view.mandate.caseId)?.fulfillment, this.#locale);
     if (arrangement) permittedFacts.push(arrangement);
     permittedFacts.push(`Kritva is the assistant of ${publicPrincipalName || principalLabel(state.view)}.`);
+    // True of every negotiation: the person represented set the terms, so a hold may say so without inventing anything.
+    permittedFacts.push(`${publicPrincipalName || principalLabel(state.view)} set the price and terms, and Kritva works within them.`);
     for (const answer of plan.publicTermAnswers ?? []) {
       const name = state.view.terms.get(answer.termId)!.name;
       permittedFacts.push(`${answer.basis === "opening" ? "Originally listed" : "Current public"} ${name}: ${formatValue(answer.value, this.#locale)}`);

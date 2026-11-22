@@ -8,7 +8,7 @@ The turn pipeline was measured at about 7 to 8 seconds of silence before each re
 
 - Listening, turn-taking and barge-in are handled by OpenAI's realtime model on a live audio stream.
 - The model hears audio directly, so Hindi, Tamil, English and mixed speech are understood in their own script.
-- The same call controller serves the browser (WebRTC) and phone calls (a Vobiz SIP trunk into OpenAI's SIP endpoint, on the India edge `sip-in.api.openai.com`; see `docs/Kritva_Phone_Calls.md`).
+- The same call controller serves the browser (WebRTC) and phone calls (a Vobiz SIP trunk into OpenAI's SIP endpoint `sip.api.openai.com`, routed by location; see `docs/Kritva_Phone_Calls.md`).
 
 ## 2. What stays exactly as it is
 
@@ -55,6 +55,16 @@ The model's own words (conversation turns and acknowledgements) never carry an a
 - A dropped connection or closed tab is reported as an interruption.
 - A phone call has no browser, so the server decides the same reports from the call's events (`docs/Kritva_Phone_Calls.md`, section 6).
 
+## 6a. No silence during a wait
+
+Silence on a call sounds like a dropped line. The agent decides how to keep the call alive; code only reports what the model cannot sense itself.
+
+- **What code does:** while a reply is being worked out, or while the decision of the person represented is pending, it reports a quiet stretch (3 seconds or more since anyone spoke) to the realtime model: how long it has been quiet, how long the wait has lasted, and the agent's own last words. Nothing else.
+- **What the agent does:** it reads `apps/server/src/voice-waiting-guide.md` (plain text) and either says a few natural words in the language of the call or calls `stay_quiet`. A pause filled this way is out of band and without the conversation, so it can never be used to answer the open question.
+- **Limits still hold:** anything said in a pause is checked like the agent's other words (no amounts, no agreements, no promises), corrected if it breaks a limit, and kept as a transcript fragment, never as a message or a delivered reply.
+
+Phone calls use the same controller.
+
 ## 7. Expectations (measured 2026-11-22, then estimated for the live call)
 
 Measured on 2026-11-22 with the live check (`apps/server/scripts/realtime-check.ts`), recorded Hindi, Tamil, English and Hinglish speech, the real engine and `gpt-realtime-2.1`. Times are from the end of their speech; they include about 0.3 to 0.8 s for the model to decide they finished.
@@ -86,7 +96,7 @@ About $0.06 to $0.12 per minute of call on `gpt-realtime-2.1` (audio in $32 and 
 
 ## 10. Phone calls
 
-Built: see `docs/Kritva_Phone_Calls.md` for the design, the delivery rule and the setup steps. A Vobiz inbound SIP trunk points at OpenAI's SIP endpoint on the India edge. OpenAI calls Kritva's webhook (`realtime.call.incoming`); the server verifies it, routes the dialled number to a listing or mandate, accepts the call with the same session settings and joins it with the same controller over the sideband WebSocket. Nothing in the engine or the controller's turn logic changes. Delivery on the phone is decided by the server from the call's playback events, with a stricter timing fallback.
+Built and tested on a live call: see `docs/Kritva_Phone_Calls.md` for the design, the delivery rule, the setup steps and what the first calls showed. A Vobiz inbound SIP trunk points at OpenAI's SIP endpoint. OpenAI calls Kritva's webhook (`realtime.call.incoming`); the server verifies it, routes the call to a listing or mandate, accepts it with the model, instructions and voice, applies the rest of the same session settings with `session.update` (a full accept left Vobiz calls silent), and joins it with the same controller over the sideband WebSocket. Nothing in the engine or the controller's turn logic changes. Delivery on the phone is decided by the server from the call's playback events, with a stricter timing fallback.
 
 ## 11. Tests
 

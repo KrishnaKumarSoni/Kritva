@@ -11,9 +11,10 @@
  * The engine still decides every amount, offer and agreement. The same controller serves SIP
  * (phone) calls: only how the call starts and how delivery is observed differ (see src/phone/).
  */
+import { readFileSync } from "node:fs";
 import type { Hono } from "hono";
 import type { NegotiationEngine, NegotiationRecord, PayloadOf, ReplyViolation } from "@kritva/core";
-import { findAmounts } from "@kritva/core";
+import { CONVERSATION_TONE, findAmounts } from "@kritva/core";
 
 // ---------- Settings ----------
 
@@ -193,17 +194,23 @@ Public facts you may state:
 ${facts.map((f) => `- ${f}`).join("\n") || "- (none)"}
 
 Every turn is one of two kinds.
-1. Conversation turns you answer yourself: greetings, small talk, checking they can hear you, repeating or explaining something you already said, and questions fully answered by the public facts above. Answer only what they asked, in one or two short, warm sentences. Do not list every fact.
-2. Deal turns go to the negotiation engine: anything about price or any amount, offers, discounts, budgets, payment, delivery or pickup arrangements, availability or holding the item, agreeing, confirming or ending, anything not in the public facts, and anything you are unsure about. For a deal turn, first say a very short, natural acknowledgement in their language, two to five words with no number in it, the way a person says it while thinking (for example "Got it, one moment.", "Hmm, okay.", "ठीक है, एक सेकंड।" or "சரி, ஒரு நிமிஷம்."). It must not describe what happens next: never say you will pass, hand over, forward, check or see what comes back. Then call negotiate with their exact words as you heard them, never paraphrased or translated. Never answer a deal turn yourself.
+1. Conversation turns you answer yourself: greetings, small talk, checking they can hear you, repeating or explaining something you already said, whether you are an AI, and questions fully answered by the public facts above. Answer only what they asked, briefly and warmly as "How you sound" below describes, and hand the turn back. Do not list every fact.
+2. Deal turns go to the negotiation engine: anything about price or any amount, offers, discounts, budgets, payment, delivery or pickup arrangements, availability or holding the item, agreeing, confirming or ending, anything not in the public facts, and anything you are unsure about. For a deal turn, first say a very short, natural acknowledgement in their language, two to five words with no number in it, the way a person says it while thinking (for example "Hmm, okay...", "Got it, one sec.", "Umm, one second.", "ठीक है, एक सेकंड।" or "சரி, ஒரு நிமிஷம்."), and vary it from turn to turn. It must not describe what happens next: never say you will pass, hand over, forward, check or see what comes back. Then call negotiate with their exact words as you heard them, never paraphrased or translated. Never answer a deal turn yourself.
 When you are given a reply to say, say exactly that reply, word for word, and nothing else.
 
 Rules for your own words: never say any amount or price; never agree, accept, approve, promise, hold, reserve or confirm anything; never invent a detail; never mention tools, checks, engines, rules or handing anything over.
 
 When terms need approval: recap the exact terms, ask how long the offer stands and the best way and time to reach them, say clearly it is not final until ${b.principalName || `the ${b.principalRole || "person you represent"}`} confirms, thank them warmly, and end the call. Never say or imply agreement. The replies you are given do this step by step; say them word for word, and the call ends after the last one.
 
-Language: reply in the language they speak, in its own script: Hindi in Devanagari (never Urdu script), Tamil in Tamil script, English in English, and the same for other languages. If they mix Hindi and English, reply in the same natural mix. Do not switch language because of an accent, a name, a filler word or one borrowed word.
+Introduce yourself only once in a call. If they just say hello, even after your greeting was cut off, greet them back warmly and invite them to talk, without introducing yourself again.
+If they ask you to repeat or say they didn't understand, say your last point again in fewer, simpler words, in the language they just used. Never replay the same sentence when they didn't understand it.
 
-Voice: a friendly person on the phone. Warm, relaxed, clear and unhurried; never salesy or over-excited.`;
+Language: reply in the language they speak, in its own script: Hindi in Devanagari (never Urdu script), Tamil in Tamil script, English in English, and the same for other languages. If they mix Hindi and English, reply in the same natural mix. When they start speaking another language, switch to it at once, for every turn after that, including a repeat. Do not switch language because of an accent, a name, a filler word or one borrowed word.
+
+Voice: a friendly person on the phone. Warm, relaxed, clear and unhurried; never salesy or over-excited.
+
+How you sound. This is the same guide that every reply you are given follows, so the whole call sounds like one person. On this call, the person you represent is ${b.principalName || `the ${b.principalRole || "person you represent"}`}. For your own words, the rules above always win: anything about the deal, holding a line, another offer or checking with the person you represent comes only in the replies you are given.
+${CONVERSATION_TONE}`;
 }
 
 /** Each language in its own script, and every number as digits so amounts are read exactly. */
@@ -242,6 +249,18 @@ export function realtimeSession(settings: RealtimeSettings, briefing: VoiceBrief
 
 // ---------- Language ----------
 
+/** "in Hindi (Devanagari script)" for a wait line, from the language the call is in. */
+function languageLabel(code: string): string {
+  const scripts: Record<string, string> = { hi: "Devanagari", ta: "Tamil", kn: "Kannada", te: "Telugu", ml: "Malayalam", bn: "Bengali", mr: "Devanagari" };
+  let name = code;
+  try {
+    name = new Intl.DisplayNames(["en"], { type: "language" }).of(code) ?? code;
+  } catch {
+    /* keep the code */
+  }
+  return scripts[code] ? `in ${name} (${scripts[code]} script)` : `in ${name}`;
+}
+
 /** The language a text is written in, from its script; Latin script counts as English. */
 export function scriptLanguage(text: string): string {
   if (/\p{Script=Devanagari}/u.test(text)) return "hi";
@@ -267,6 +286,21 @@ const RETRY: Record<string, string> = {
 };
 const line = (table: Record<string, string>, language: string) => table[language] ?? table.en!;
 
+/**
+ * Waiting on a call. The model cannot hear silence or feel time passing, so code only reports the
+ * facts: the line has been quiet this long while a reply is being worked out, or while the person
+ * represented decides. The agent decides whether to speak and what to say, guided by the plain-text
+ * waiting guide; it may call stay_quiet instead. Whatever it says is checked like its other words.
+ */
+export const WAIT_SENSOR = { quietMs: 3_000, sampleMs: 500 };
+const WAITING_GUIDE = readFileSync(new URL("./voice-waiting-guide.md", import.meta.url), "utf8").trim();
+export const STAY_QUIET_TOOL = {
+  type: "function",
+  name: "stay_quiet",
+  description: "Say nothing this time: the pause is natural, or you spoke a moment ago.",
+  parameters: { type: "object", properties: {}, additionalProperties: false },
+} as const;
+
 const verbatim = (text: string) => `Say exactly the following to them, word for word, in the same language, with nothing before or after it:\n${text}`;
 
 // ---------- The call ----------
@@ -288,6 +322,10 @@ export interface CallDeps {
   hangup?: () => Promise<void>;
   /** Called once when the call closes, for any reason. */
   onClosed?: () => void;
+  /** Overrides for the wait sensor (tests). */
+  waitSensor?: Partial<typeof WAIT_SENSOR>;
+  /** Kritva placed this call (a phone call it dialled), so the opening line says who is calling and why. */
+  outbound?: boolean;
 }
 
 /**
@@ -300,6 +338,15 @@ export class RealtimeCall {
   #active = false;
   #queue: Array<{ messageId: string; text: string }> = [];
   #pendingSay: { messageId: string; text: string } | null = null;
+  /** When the call last had sound (either side); the wait sensor reports quiet stretches from it. */
+  #lastSoundAt = Date.now();
+  /** Since when a reply is being worked out (null: not working), and since when approval is pending. */
+  #workingSince: number | null = null;
+  #approvalSince: number | null = null;
+  #lastOwnWords = "";
+  #lastReportAt = 0;
+  #sensor: ReturnType<typeof setInterval> | null = null;
+  readonly #wait: typeof WAIT_SENSOR;
   #spoken = new Set<string>();
   #transcripts = new Map<string, string>();
   #transcriptWaiters = new Map<string, Array<(text: string) => void>>();
@@ -317,6 +364,8 @@ export class RealtimeCall {
 
   constructor(deps: CallDeps) {
     this.#d = deps;
+    this.#wait = { ...WAIT_SENSOR, ...deps.waitSensor };
+    this.#sensor = setInterval(() => this.#sense(), this.#wait.sampleMs);
     deps.link.onEvent = (e) => void this.#onEvent(e).catch((error) => this.#log({ kind: "error", error: String(error) }));
     deps.link.onClose = () => this.close();
   }
@@ -348,7 +397,10 @@ export class RealtimeCall {
       const followed = this.#d.opening === "follow_up" ? await this.#d.engine.followUp({ sessionId: this.#d.sessionId, channel: "voice", callBack: true }) : null;
       if (followed?.ok && followed.reply) this.#say(followed.reply.messageId, followed.reply.text);
       else {
-        const greeted = await this.#d.engine.greet({ sessionId: this.#d.sessionId, channel: "voice" });
+        // An outbound call (Kritva dialled them) asks for an opener that says who is calling, for whom and why.
+        // The engine reads `outbound` once the multiple-counterparties work adds it; until then it greets as usual.
+        const greeting = { sessionId: this.#d.sessionId, channel: "voice" as const, outbound: this.#d.outbound === true };
+        const greeted = await this.#d.engine.greet(greeting);
         if (greeted.ok && greeted.reply) this.#say(greeted.reply.messageId, greeted.reply.text);
       }
     } finally {
@@ -361,6 +413,7 @@ export class RealtimeCall {
     if (this.#closed) return;
     this.#closed = true;
     if (this.#poll) clearInterval(this.#poll);
+    if (this.#sensor) clearInterval(this.#sensor);
     this.#d.link.close();
     this.#d.onClosed?.();
   }
@@ -429,6 +482,10 @@ export class RealtimeCall {
       case "response.created":
         this.#active = true;
         return;
+      case "input_audio_buffer.speech_started":
+      case "input_audio_buffer.speech_stopped":
+        this.#lastSoundAt = Date.now();
+        return;
       case "error": {
         this.#log({ kind: "realtime_error", error: e.error });
         // Our response collided with one the model started: speak ours after it.
@@ -438,12 +495,16 @@ export class RealtimeCall {
         }
         return;
       }
-      case "response.done":
+      case "response.done": {
         this.#active = false;
         this.#pendingSay = null;
+        // Only a response that said something counts as sound; staying quiet leaves the silence running.
+        const output: Array<Record<string, any>> = Array.isArray(e.response?.output) ? e.response.output : [];
+        if (output.some((o) => Array.isArray(o.content) && o.content.length > 0)) this.#lastSoundAt = Date.now();
         await this.#finished(e.response ?? {});
         this.#drain();
         return;
+      }
       default:
         return;
     }
@@ -457,8 +518,10 @@ export class RealtimeCall {
       .filter(Boolean)
       .join(" ")
       .trim();
+    if (response.metadata?.kritva === "wait") return this.#waited(output, spoken);
     const ours = response.metadata?.kritva === "say";
     if (ours) {
+      if (spoken) this.#lastOwnWords = spoken;
       this.#checkFidelity(String(response.metadata?.message_id ?? ""), spoken);
       return;
     }
@@ -488,6 +551,7 @@ export class RealtimeCall {
       this.#log({ kind: "heard", source: heard === transcript ? "transcript" : "voice_model", transcript, modelWords });
       this.#language = /^[a-z]{2,3}$/.test(args.language ?? "") ? args.language! : scriptLanguage(heard);
       if (acknowledgement) {
+        this.#lastOwnWords = acknowledgement;
         const problems = await this.#d.engine.checkVoiceWords(this.#d.sessionId, acknowledgement, heard);
         await this.#d.engine.recordVoiceFragment({ sessionId: this.#d.sessionId, text: acknowledgement, utteranceId: String(call.call_id ?? itemId ?? "ack") });
         if (problems.length) await this.#correct(problems, acknowledgement);
@@ -497,7 +561,10 @@ export class RealtimeCall {
         return this.#sayLine(line(RETRY, this.#language), "Asked them to repeat: nothing was heard.");
       }
       const messageId = `msg_${(itemId ?? String(call.call_id ?? "")).replace(/[^\w-]/g, "").slice(0, 90) || crypto.randomUUID()}`;
-      const result = await this.#d.engine.handleCounterpartyMessage({ sessionId: this.#d.sessionId, text: heard.slice(0, 2_000), channel: "voice", messageId, utteranceId: itemId, language: this.#language, contactNumber: this.#d.contactNumber ?? null });
+      this.#workingSince = Date.now();
+      const result = await this.#d.engine
+        .handleCounterpartyMessage({ sessionId: this.#d.sessionId, text: heard.slice(0, 2_000), channel: "voice", messageId, utteranceId: itemId, language: this.#language, contactNumber: this.#d.contactNumber ?? null })
+        .finally(() => (this.#workingSince = null));
       this.#log({ kind: "deal_turn", ms: Math.round(performance.now() - started), engine: result.ok ? result.timings : null, ok: result.ok, language: this.#language });
       if (!result.ok) {
         this.#output(call, { reply_to_say: null, note: "The turn could not be taken." });
@@ -535,6 +602,7 @@ export class RealtimeCall {
         utteranceId: itemId,
       });
       if (!recorded.ok) return this.#log({ kind: "record_failed", code: recorded.code });
+      this.#lastOwnWords = spoken;
       this.#spoken.add(recorded.replyId);
       this.#log({ kind: "conversation_turn", cut, violations: recorded.violations.map((v) => v.rule) });
       if (recorded.violations.length) await this.#correct(recorded.violations, spoken);
@@ -594,6 +662,52 @@ export class RealtimeCall {
       const p = e.payload as PayloadOf<"message">;
       if (p.direction === "outbound") this.#say(e.id, p.text);
     }
+    // Waiting for the decision of the person represented: the sensor reports how long.
+    if (status === "awaiting_approval") this.#approvalSince ??= Date.now();
+    else this.#approvalSince = null;
+  }
+
+  /** Reports a quiet stretch during a wait to the agent, which decides whether and what to say. */
+  #sense() {
+    if (this.#closed || this.#active || this.#queue.length > 0) return;
+    const waitingSince = this.#workingSince ?? this.#approvalSince;
+    if (waitingSince === null) return;
+    const now = Date.now();
+    const quietMs = now - this.#lastSoundAt;
+    if (quietMs < this.#wait.quietMs || now - this.#lastReportAt < this.#wait.quietMs) return;
+    const quiet = Math.round(quietMs / 1000);
+    const waited = Math.round((now - waitingSince) / 1000);
+    const situation = this.#workingSince !== null
+      ? `You are still working out your reply to their last message (${waited} seconds so far). The line has been quiet for ${quiet} seconds.`
+      : `You are waiting for the decision of the person you represent (${waited} seconds so far). The line has been quiet for ${quiet} seconds.`;
+    const last = this.#lastOwnWords ? ` Your last words were: "${this.#lastOwnWords.slice(0, 200)}"` : "";
+    const language = languageLabel(this.#language);
+    this.#active = true;
+    this.#lastReportAt = now;
+    // Out of band and without the conversation: a pause is filled, never used to answer the open question.
+    this.#d.link.send({
+      type: "response.create",
+      response: {
+        conversation: "none",
+        input: [],
+        instructions: `${WAITING_GUIDE}\n\nSpeak ${language}. Never use dashes.\n\nNow: ${situation}${last}`,
+        tools: [STAY_QUIET_TOOL],
+        tool_choice: "auto",
+        metadata: { kritva: "wait", situation: this.#workingSince !== null ? "working" : "approval" },
+      },
+    });
+    this.#log({ kind: "wait_reported", situation: this.#workingSince !== null ? "working" : "approval", quiet, waited });
+  }
+
+  /** What the agent did with a wait report: stayed quiet, or spoke (checked and kept as a fragment). */
+  async #waited(output: Array<Record<string, any>>, spoken: string): Promise<void> {
+    // An out-of-band stay_quiet call is not in the conversation, so it needs no output.
+    this.#log({ kind: "wait_answered", spoke: Boolean(spoken), text: spoken.slice(0, 160) });
+    if (!spoken) return;
+    this.#lastOwnWords = spoken;
+    await this.#d.engine.recordVoiceFragment({ sessionId: this.#d.sessionId, text: spoken, utteranceId: `wait_${Date.now()}` }).catch(() => undefined);
+    const problems = await this.#d.engine.checkVoiceWords(this.#d.sessionId, spoken);
+    if (problems.length) await this.#correct(problems, spoken);
   }
 }
 

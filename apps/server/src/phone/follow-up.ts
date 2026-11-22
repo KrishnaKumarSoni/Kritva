@@ -118,7 +118,8 @@ export class FollowUpCalls {
       const res = await (this.#d.fetch ?? fetch)(`${this.#d.settings.apiBase}/Account/${encodeURIComponent(this.#d.settings.authId)}/Call/`, {
         method: "POST",
         headers: { "X-Auth-ID": this.#d.settings.authId, "X-Auth-Token": this.#d.settings.authToken, "Content-Type": "application/json" },
-        body: JSON.stringify({ from: this.#d.settings.from, to: phone, answer_url: url("answer"), answer_method: "POST", hangup_url: url("hangup"), hangup_method: "POST", hangup_on_ring: this.#d.settings.ringSeconds, time_limit: 1800 }),
+        // Numbers in E.164 with "+", as the phone routes' tested outbound calls send them.
+        body: JSON.stringify({ from: `+${this.#d.settings.from}`, to: `+${phone}`, answer_url: url("answer"), answer_method: "POST", hangup_url: url("hangup"), hangup_method: "POST", hangup_on_ring: this.#d.settings.ringSeconds, time_limit: 1800 }),
         signal: AbortSignal.timeout(8_000),
       });
       const body = (await res.json().catch(() => ({}))) as { request_uuid?: string; message?: string };
@@ -168,7 +169,7 @@ export class FollowUpCalls {
       const body = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Record recordSession="true" fileFormat="mp3" maxLength="1800" playBeep="false" redirect="false" callbackUrl="${url("recording")}" callbackMethod="POST"/>
-  <Dial callerId="${xml(s.from)}" timeout="${s.ringSeconds}" action="${url("dial")}" method="POST" redirect="false">
+  <Dial callerId="${xml(`+${s.from}`)}" timeout="${s.ringSeconds}" action="${url("dial")}" method="POST" redirect="false">
     <User sipHeaders="${xml(`KritvaFollowUp=${a.token}`)}">${xml(s.sipUri)}</User>
   </Dial>
 </Response>`;

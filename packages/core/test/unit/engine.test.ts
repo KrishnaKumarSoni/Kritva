@@ -86,6 +86,15 @@ describe("outgoing reply check (code, not prompt)", () => {
     expect(checkReply("I can't do ₹15,000, but I can offer ₹19,000.", ctx(planFor("counter", 19_000), [15_000]))).toEqual([]);
   });
 
+  it("reads a curly apostrophe like a straight one, both declining and claiming", () => {
+    expect(checkReply("Thanks for the ₹15,000, but I can’t do that. I can do ₹19,000.", ctx(planFor("counter", 19_000), [15_000]))).toEqual([]);
+    for (const claim of ["Great, we’re agreed.", "Great, it’s a deal at ₹19,500!"]) {
+      expect(checkReply(claim, ctx(planFor("counter", 19_500))).map((x) => x.rule), claim).toContain("false_commitment");
+    }
+    const checked = { offerTerms: null, termNames: new Map<string, string>() };
+    expect(checkClaims("Sorry, I can’t go any lower.", checked).map((x) => x.rule)).toContain("limit_identified");
+  });
+
   it("blocks amounts that are not part of the plan", () => {
     expect(checkReply("How about ₹19,200?", ctx(planFor("counter", 19_500))).map((x) => x.rule)).toEqual(
       expect.arrayContaining(["unplanned_amount", "missing_offer"]),

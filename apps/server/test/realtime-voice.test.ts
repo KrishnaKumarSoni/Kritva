@@ -15,7 +15,7 @@ import {
 } from "@kritva/core";
 import { createApp } from "../src/app.ts";
 import { loadConfirmedMandates, loadExamples, loadListings } from "../src/main-helpers.ts";
-import { realtimeSettingsFromEnv, scriptLanguage, type RealtimeConnector, type RealtimeEvent, type RealtimeLink } from "../src/realtime-voice.ts";
+import { RealtimeCall, realtimeSettingsFromEnv, scriptLanguage, type RealtimeConnector, type RealtimeEvent, type RealtimeLink } from "../src/realtime-voice.ts";
 
 const CASES = resolve(import.meta.dirname, "../../../cases");
 
@@ -264,5 +264,85 @@ describe("Realtime voice: language", () => {
     };
     await t.engine.handleCounterpartyMessage({ sessionId: t.sessionId, text: "இதன் விலை எவ்வளவு?", channel: "voice", messageId: "msg_lang1", language: "ta" });
     expect(briefs.join(" ")).toMatch(/Tamil/);
+  });
+});
+
+describe("Realtime voice: no silence during a wait (the agent decides)", () => {
+  const reports = (link: FakeLink) => link.sent.filter((e) => e.type === "response.create" && e.response.metadata?.kritva === "wait");
+
+  it("while the engine works, a quiet stretch is reported to the agent with stay_quiet; what it says is checked and kept as a fragment, never a message", async () => {
+    const t = await setup();
+    const slow = t.engine.handleCounterpartyMessage.bind(t.engine);
+    t.engine.handleCounterpartyMessage = async (input) => {
+      await new Promise((r) => setTimeout(r, 500));
+      return slow(input);
+    };
+    const call = new RealtimeCall({ engine: t.engine, record: t.record, sessionId: t.sessionId, link: t.link, afterSeq: 0, waitSensor: { quietMs: 80, sampleMs: 20 } });
+    t.llm.interpretations.push(t.offer(15_000));
+    t.link.emit({ type: "input_audio_buffer.committed", item_id: "item_w1" });
+    t.link.emit({ type: "conversation.item.input_audio_transcription.completed", item_id: "item_w1", transcript: "I'll pay 15000" });
+    t.done([t.spoken("Hmm, okay."), { type: "function_call", name: "negotiate", call_id: "call_w", arguments: JSON.stringify({ their_words: "I'll pay 15000", language: "en" }) }]);
+    await until(() => reports(t.link).length >= 1, 2_000);
+    const report = reports(t.link)[0]!;
+    expect(report.response.tools.map((x: { name: string }) => x.name)).toEqual(["stay_quiet"]);
+    expect(String(report.response.instructions)).toMatch(/still working out your reply/);
+    expect(String(report.response.instructions)).toMatch(/Hmm, okay\./);
+    // The agent speaks once, then stays quiet; the realtime API finishes each response.
+    let answered = 0;
+    const end = Date.now() + 4_000;
+    while (!t.link.says().some((x) => x.messageId) && Date.now() < end) {
+      while (answered < reports(t.link).length) {
+        answered += 1;
+        if (answered === 1) t.done([t.spoken("Mm, still here.")], { kritva: "wait" });
+        else t.done([{ type: "function_call", name: "stay_quiet", call_id: `quiet_${answered}`, arguments: "{}" }], { kritva: "wait" });
+      }
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(t.link.says().some((x) => x.messageId)).toBe(true);
+    const fragments = (await t.record.context(t.sessionId)).events.filter((e) => e.type === "transcript_fragment").map((e) => (e.payload as PayloadOf<"transcript_fragment">).text);
+    expect(fragments).toContain("Mm, still here.");
+    expect((await t.messages()).some((m) => m.text === "Mm, still here.")).toBe(false);
+    call.close();
+  });
+
+  it("while the decision is pending, quiet stretches are reported as waiting for the person represented, and not while the negotiation is active", async () => {
+    const t = await setup();
+    let status = "active";
+    const record = new Proxy(t.record, {
+      get(target, prop, receiver) {
+        if (prop === "context") return async (id: string) => ({ ...(await target.context(id)), status });
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const call = new RealtimeCall({ engine: t.engine, record, sessionId: t.sessionId, link: t.link, afterSeq: 0, pollMs: 25, waitSensor: { quietMs: 80, sampleMs: 20 } });
+    await call.start();
+    t.done([t.spoken("x")], { kritva: "say", message_id: t.link.says()[0]?.messageId ?? "none" });
+    await new Promise((r) => setTimeout(r, 250));
+    expect(reports(t.link)).toHaveLength(0);
+    status = "awaiting_approval";
+    await until(() => reports(t.link).length >= 1, 2_000);
+    expect(String(reports(t.link)[0]!.response.instructions)).toMatch(/waiting for the decision of the person you represent/);
+    call.close();
+  });
+
+  it("words the agent says in a pause that break a limit are corrected", async () => {
+    const t = await setup();
+    let status = "awaiting_approval";
+    const record = new Proxy(t.record, {
+      get(target, prop, receiver) {
+        if (prop === "context") return async (id: string) => ({ ...(await target.context(id)), status });
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const call = new RealtimeCall({ engine: t.engine, record, sessionId: t.sessionId, link: t.link, afterSeq: 0, pollMs: 25, waitSensor: { quietMs: 60, sampleMs: 20 } });
+    await call.start();
+    t.done([t.spoken("x")], { kritva: "say", message_id: t.link.says()[0]?.messageId ?? "none" });
+    await until(() => reports(t.link).length >= 1, 2_000);
+    t.done([t.spoken("Good news, it's a deal at ₹17,000!")], { kritva: "wait" });
+    await until(() => t.link.says().some((x) => /ignore what I just said/.test(x.text)), 2_000);
+    status = "active";
+    call.close();
   });
 });
