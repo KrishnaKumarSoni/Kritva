@@ -199,15 +199,15 @@ The older turn-based pipeline stays available with `KRITVA_VOICE_MODE=turns`.
 
 ### 10.3 Phone calls
 
-A buyer can call a Vobiz number (`apps/server/src/phone/`):
+A counterparty can call Kritva's Twilio number (`apps/server/src/phone/`), and Kritva can call them (`phone/outbound.ts`):
 
-1. A Vobiz SIP trunk sends the call to OpenAI SIP on the India edge (`sip-in.api.openai.com`).
+1. Twilio asks the number's Voice URL (`POST /api/phone/twilio/voice`, signature checked), and Kritva answers with TwiML that hands the call to OpenAI SIP (`sip.api.openai.com`), with the dialled and calling numbers as `X-` headers.
 2. OpenAI sends `realtime.call.incoming` to `POST /api/webhooks/openai`.
 3. The server checks the signature (HMAC-SHA256, five-minute window).
 4. The server matches the dialled number to `KRITVA_PHONE_ROUTES`.
 5. The server checks the listing or mandate, starts a session, accepts the call and joins it with the browser call controller.
 
-The audio goes directly between Vobiz and OpenAI. The server declines a call with SIP 404 (no route), 480 (not live), 486 (busy) or 500 (start failed).
+The audio goes directly between Twilio and OpenAI. The server declines a call with SIP 404 (no route), 480 (not live), 486 (busy) or 500 (start failed).
 
 The server decides delivery from the playback events. If the evidence is not clear, it reports the reply as interrupted. After 30 seconds of silence, Kritva asks if the caller is there. After 30 more seconds, it ends the call. The maximum call length is 15 minutes.
 
@@ -302,7 +302,7 @@ CAUTION: In `packages/core`, do not run a bare `npx vitest run`. It also runs li
 
 Phone calls start when `OPENAI_WEBHOOK_SECRET` and `KRITVA_PHONE_ROUTES` are set with realtime voice. `apps/server/scripts/phone-check.ts` checks the setup. For the account steps, see `docs/Kritva_Phone_Calls.md`, section 9.
 
-CAUTION: A Vobiz number and each call minute cost money.
+CAUTION: A Twilio number and each call minute cost money.
 
 ## 16. Known limits and next steps
 

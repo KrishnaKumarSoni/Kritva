@@ -1,26 +1,28 @@
 # Kritva phone calls
 
-Engineering design and setup for taking real phone calls with Kritva's realtime voice, through a Vobiz SIP trunk into OpenAI's realtime SIP endpoint. Written 2026-11-22 and updated the same day after the first live calls (section 10). The browser call this builds on is described in `docs/Kritva_Realtime_Voice.md`; read that first.
+Engineering design and setup for real phone calls with Kritva's realtime voice: Twilio carries the phone leg and hands each call to OpenAI's realtime SIP endpoint. Written 2026-11-22; moved to Twilio the same day (section 10 says why and what the earlier calls taught). The browser call this builds on is described in `docs/Kritva_Realtime_Voice.md`; read that first.
 
 Interaction design (what Kritva says when, how a declined call sounds, whether a call ends itself after a deal) is deliberately left open. Where this document makes a placeholder choice, it says so (section 13).
 
 ## 1. What it does
 
-A counterparty dials a Vobiz number. The call reaches Kritva's realtime voice, which talks with them exactly as in a browser call: the realtime model is Kritva's ears and voice, the negotiation engine decides every deal move, and every reply is checked and recorded. The principal (whoever Kritva represents, seller or buyer) sees the call in the console as a voice session.
+A counterparty dials Kritva's Twilio number. The call reaches Kritva's realtime voice, which talks with them exactly as in a browser call: the realtime model is Kritva's ears and voice, the negotiation engine decides every deal move, and every reply is checked and recorded. The principal (whoever Kritva represents, seller or buyer) sees the call in the console as a voice session.
 
 ```
-Caller → Vobiz DID → Vobiz inbound SIP trunk (TLS signalling, SRTP setting on)
-       → OpenAI SIP: sip:proj_...@sip.api.openai.com:5061 (routed by the caller's location)
+Caller → Kritva's Twilio number → Twilio asks the number's Voice URL (POST /api/phone/twilio/voice)
+       → TwiML <Dial answerOnBridge><Sip> sip:proj_...@sip.api.openai.com;transport=tls
+              ?X-Kritva-Called=<number dialled>&X-Kritva-Caller=<caller>
                 │  webhook: realtime.call.incoming
                 ▼
 Kritva server  POST /api/webhooks/openai
   verify signature → route the call → start a session → accept (model, instructions, voice)
-  → join over the sideband WebSocket → session.update (the full session) → PhoneCall greets
+  → wait KRITVA_PHONE_SETUP_DELAY_MS → join over the sideband WebSocket
+  → session.update (the full session) → PhoneCall greets
 ```
 
-Kritva can also place the call itself (section 15): Vobiz dials the counterparty and, once they answer, bridges the call to the same OpenAI address, where it arrives as an incoming call into the negotiation it was placed for.
+Kritva can also place the call itself (section 15): Twilio dials the counterparty and, once they answer, hands the call to the same OpenAI address with `X-Kritva-Call=<token>`, where it arrives as an incoming call into the negotiation it was placed for. Call-backs after the principal decides (`phone/follow-up.ts`) work the same way, tagged `X-Kritva-Follow-Up`.
 
-Audio never passes through Kritva's server. Vobiz and OpenAI exchange it directly; the server answers the webhook, controls the call over REST and handles its events over the sideband WebSocket, as it already does for a browser call.
+Audio never passes through Kritva's server. Twilio and OpenAI exchange it directly; the server answers Twilio's and OpenAI's webhooks, controls the call over REST and handles its events over the sideband WebSocket, as it already does for a browser call.
 
 ## 2. What stays exactly as it is
 
@@ -32,26 +34,26 @@ Audio never passes through Kritva's server. Vobiz and OpenAI exchange it directl
 
 ## 3. How a call works
 
-1. **Ring.** Vobiz sends the call's SIP INVITE to OpenAI. OpenAI posts `realtime.call.incoming` to the project's webhook, with the call ID, the INVITE's SIP headers and `sip_media_security`.
+1. **Ring.** Twilio fetches the number's Voice URL; Kritva answers with TwiML that dials OpenAI's SIP address with the dialled and calling numbers as `X-` headers (signature checked, section 9.2). Twilio sends the SIP INVITE to OpenAI. OpenAI posts `realtime.call.incoming` to the project's webhook, with the call ID, the INVITE's SIP headers and `sip_media_security`.
 2. **Verify.** The server checks the Standard Webhooks signature (`webhook-id`, `webhook-timestamp`, `webhook-signature`; HMAC-SHA256 with the `whsec_` secret; five-minute window). An unsigned or altered request gets 400 and nothing happens. Other event types, and the dashboard's empty test event, get 200 and are ignored.
-3. **Route.** The dialled number is read from the SIP headers and matched to `KRITVA_PHONE_ROUTES` (section 4; with Vobiz, the `*` route). The route names a listing or a saved mandate.
+3. **Route.** The dialled number is read from the SIP headers and matched to `KRITVA_PHONE_ROUTES` (section 4: `X-Kritva-Called`). The route names a listing or a saved mandate.
 4. **Check and start.** The listing (or mandate) must be live with a confirmed mandate, and fewer than `KRITVA_PHONE_MAX_CALLS` calls may be in progress. A new negotiation session starts under the confirmed revision, recording its source, as "Call Seller" does.
-5. **Accept, then configure.** `POST /v1/realtime/calls/{call_id}/accept` carries only `type`, `model`, `instructions` and the output voice. After joining (step 6), the server sends the rest of the session as `session.update` before anything is said. This is how Vobiz's working sample does it, and it is what made audio flow (section 10): with the whole session in the accept, OpenAI answered 200 but the call had no audio either way and no error was reported. A field OpenAI rejects in `session.update` arrives as an `error` event in the log instead. `KRITVA_PHONE_ACCEPT=full` restores the single accept, for comparison only.
-6. **Join and run.** The server opens `wss://api.openai.com/v1/realtime?call_id=...`, sends the `session.update`, and starts a `PhoneCall`, which records `voice_connection` (connected, transport phone) and greets: the engine writes the opening line and the voice speaks it word for word. From here every turn works as in a browser call.
+5. **Accept, then configure.** `POST /v1/realtime/calls/{call_id}/accept` carries only `type`, `model`, `instructions` and the output voice. After joining (step 6), the server sends the rest of the session as `session.update` before anything is said. This is what made audio flow on the first live calls (section 10): with the whole session in the accept, OpenAI answered 200 but the call had no audio either way and no error was reported. A field OpenAI rejects in `session.update` arrives as an `error` event in the log instead. `KRITVA_PHONE_ACCEPT=full` restores the single accept, for comparison only.
+6. **Join and run.** After `KRITVA_PHONE_SETUP_DELAY_MS` (1500 on AWS; section 10), the server opens `wss://api.openai.com/v1/realtime?call_id=...`, sends the `session.update`, and starts a `PhoneCall`, which records `voice_connection` (connected, transport phone) and greets: the engine writes the opening line and the voice speaks it word for word. From here every turn works as in a browser call.
 7. **End.** The caller hanging up closes the sideband. Kritva ends the call itself when the conversation is over: it says a short goodbye, calls `end_call`, and hangs up once the goodbye has played (`docs/Kritva_Realtime_Voice.md`, section 6b). A long silence or the time limit also makes Kritva say a closing line and hang up. Either way the call is hung up at OpenAI, anything still playing is recorded interrupted, and `voice_connection` (ended, with the reason) closes the call in the record.
 
 A retried webhook for the same call answers it once. A failed accept is retried twice within the webhook (after 0.3 s and 0.9 s; each attempt times out after 4 s). OpenAI answers an accept for a call that no longer exists with 503 and an empty body (measured on 2026-11-22), the same as an outage, so a 503 is always retried and only a 404 is final. If the accept still fails, the server hangs the call up, in case an accept went through unseen and left the caller with an unsupervised voice. It then acknowledges the webhook with 200, because a webhook retry would come after the caller stopped waiting. A webhook that fails inside Kritva gets 500, and OpenAI's retry reuses the session already started.
 
 ## 4. Which number was dialled
 
-OpenAI passes the INVITE's headers as untrusted `{ name, value }` pairs. The server looks for the dialled number in the usual places, most specific first, and takes the first number that has a route:
+OpenAI passes the INVITE's headers as untrusted `{ name, value }` pairs. Kritva's Voice URL puts the number Twilio was called on (`To`) in `X-Kritva-Called` and the caller (`From`) in `X-Kritva-Caller`, so routing does not depend on what the provider does with `To`. The server takes the first number that has a route, looking in this order:
 
-1. a provider header whose name mentions the DID, called, dialled, destination or original-to number (for example `X-...-DID`);
+1. a header whose name mentions the DID, called, dialled, destination or original-to number (`X-Kritva-Called` first);
 2. `To`, then `P-Called-Party-ID`, `Diversion` and `History-Info`.
 
-**Vobiz sends no dialled number** (measured on the first live calls). Its INVITE carries `Record-Route`, `Via`, `From`, `To`, `Call-ID`, `CSeq`, `Contact`, `User-Agent: Vobiz`, `Allow`, `Supported`, `Allow-Events`, `Content-*` and `Remote-Party-ID`. `To` is the origination URI (`sip:proj_...@sip.api.openai.com:5061`), and the caller is in `From` and `Remote-Party-ID`. So with Vobiz every call needs the `*` route, and all numbers on one OpenAI project reach the same listing. Separate listings per number would need separate OpenAI projects (each with its own webhook), or a Vobiz feature that adds the dialled number as a header.
+The caller is read from `X-Kritva-Caller`, then `P-Asserted-Identity`, `Remote-Party-ID` and `From`. So each Twilio number can have its own route, and a `*` route catches anything else.
 
-Numbers are compared as digits with the country code (`+91 80 7123 4567`, `080 7123 4567` and `8071234567` are the same number). Every incoming call is logged with the header names it carried and the numbers found. The caller's number is only ever logged masked (`91******3210`) and is not recorded in the negotiation.
+Numbers are compared as digits with the country code (`+91 80 7123 4567`, `080 7123 4567` and `8071234567` are the same number; a `+1` number keeps its `1`). Every incoming call is logged with the header names it carried and the numbers found. The caller's number is only ever logged masked (`91******3210`) and is not recorded in the negotiation.
 
 ## 5. When a call is declined
 
@@ -101,31 +103,31 @@ Phone calls are on when `OPENAI_API_KEY` is set with realtime voice on (`KRITVA_
 | Setting | Default | Meaning |
 |---|---|---|
 | `OPENAI_WEBHOOK_SECRET` | (required) | The project webhook's signing secret, `whsec_...`. |
-| `KRITVA_PHONE_ROUTES` | (required) | `number=target` pairs, comma-separated. Target: a listing's case ID (`bed-sale` or `listing:bed-sale`), a saved mandate (`mandate:man_...`), or `code` for the front desk that asks for the listing code (section 16). `*` matches any number; Vobiz needs it (section 4). Examples: `+918064264194=bed-sale,*=bed-sale`; for a line shared by many mandates, `+918064264194=code,*=code` (the first route's number is the one shown next to each listing code). |
+| `KRITVA_PHONE_ROUTES` | (required) | `number=target` pairs, comma-separated. Target: a listing's case ID (`bed-sale` or `listing:bed-sale`), a saved mandate (`mandate:man_...`), or `code` for the front desk that asks for the listing code (section 16). `*` matches any number (section 4). Examples: `+19125021960=bed-sale,*=bed-sale`; for a line shared by many mandates, `+19125021960=code,*=code` (the first route's number is the one shown next to each listing code). |
 | `KRITVA_PHONE_ANSWERS_FOR` | (none) | Public names the shared line may say it answers for, comma-separated (for example `ABC Corporation`), so the front desk can say yes to "Is this ABC Corporation?" before the code. Demo listings add their own public names. Never read out to callers. |
-| `OPENAI_PROJECT_ID` | (none) | `proj_...`; only used to print the SIP URI for the trunk. |
-| `KRITVA_PHONE_SIP_HOST` | `sip.api.openai.com` | OpenAI's SIP host, routed by location. `sip-in.api.openai.com` is the India edge, not yet tested since the accept fix (section 10). |
+| `OPENAI_PROJECT_ID` | (none) | `proj_...`: the user part of OpenAI's SIP address, which the TwiML dials. Required for Twilio. |
+| `KRITVA_PHONE_SIP_HOST` | `sip.api.openai.com` | OpenAI's SIP host, routed by location. Keep the global host with Twilio (its media servers are not in India). `sip-in.api.openai.com` is the India edge. |
+| `KRITVA_PHONE_SETUP_DELAY_MS` | `0` | Pause between the accept and joining the call (0 to 5000). `1500` on AWS: a server close to OpenAI otherwise sends the session before the call's audio is up, and the call is silent (section 10). |
 | `KRITVA_PHONE_NOISE_REDUCTION` | `near_field` | `near_field` (a handset held to the ear), `far_field` (speakerphone or a room) or `off`. |
 | `KRITVA_PHONE_IDLE_SECONDS` | `30` | Silence before the "still there?" check, and again before hanging up (10 to 300). |
-| `KRITVA_PHONE_MAX_MINUTES` | `15` | Longest call (1 to 120). |
-| `KRITVA_PHONE_MAX_CALLS` | `5` | Calls at once; more are declined as busy. Keep the Vobiz trunk's concurrent-call limit at least this high. |
+| `KRITVA_PHONE_MAX_MINUTES` | `15` | Longest call (1 to 120). Twilio's own limit is set a minute longer, so Kritva closes first. |
+| `KRITVA_PHONE_MAX_CALLS` | `5` | Calls at once; more are declined as busy (outbound: queued). |
 | `KRITVA_PHONE_COUNTRY_CODE` | `91` | Assumed for numbers written without one. |
-| `KRITVA_PHONE_ACCEPT` | `minimal` | `minimal`: accept with model, instructions and voice, then `session.update` (section 3). `full`: everything in the accept (left silent calls with Vobiz). |
+| `KRITVA_PHONE_ACCEPT` | `minimal` | `minimal`: accept with model, instructions and voice, then `session.update` (section 3). `full`: everything in the accept (left calls silent). |
 | `KRITVA_PHONE_TRACE` | off | `1` logs every sideband event type with its time and IDs (never audio), the masked SIP headers and `sip_media_security`. For diagnosing a call. |
 | `KRITVA_PHONE_LOG_FILE` | (none) | Also append every `[phone]` log line to this file (for example `data/phone-calls.log`), to follow calls outside the server's console. |
-| `VOBIZ_AUTH_ID`, `VOBIZ_AUTH_TOKEN` | (none) | Vobiz's API credentials: for outbound calls (section 15) and `scripts/vobiz-trunk.ts`. |
-| `VOBIZ_TRUNK_ID` | (none) | Only for `scripts/vobiz-trunk.ts` (section 9.2). |
-| `KRITVA_PHONE_CALLER_ID` | (none) | Outbound: Kritva's Vobiz number, the caller ID. |
-| `KRITVA_PUBLIC_URL` | (none) | Outbound: the public `https://` base URL Vobiz calls back (the tunnel or the deployed host). |
-| `KRITVA_PHONE_BRIDGE` | `number` | Outbound: how an answered call reaches OpenAI. `number` forwards it to Kritva's own Vobiz number (through the inbound trunk); `sip` dials OpenAI's SIP address directly, tagged. Both were silent on 2026-11-22 (section 15.4). |
-| `KRITVA_PHONE_OUTBOUND_CODEC` | (none) | Outbound: declare `pcmu` or `pcma` to OpenAI for calls Kritva placed. Declaring PCMU did not help on 2026-11-22. |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` | (none) | Twilio's account credentials: webhook signatures, outbound calls, call-backs and their recordings. |
+| `TWILIO_VERIFY_SIGNATURE` | on | `off` skips the check of `X-Twilio-Signature` (only for diagnosing a proxy that changes the URL). |
+| `KRITVA_PUBLIC_URL` | (none) | The public `https://` base URL Twilio calls (the deployed host, or a tunnel). Signatures are checked against it. |
+| `KRITVA_PHONE_CALLER_ID` | (none) | Kritva's Twilio number, the caller ID for outbound calls and call-backs. |
 | `KRITVA_PHONE_OUTBOUND_ALLOW` | (none) | Outbound: the only numbers Kritva may call, comma-separated, or `*`. Empty means nothing can be dialled. |
+| `KRITVA_FOLLOW_UP_FROM`, `KRITVA_FOLLOW_UP_SIP_URI`, `KRITVA_FOLLOW_UP_RETRY_MINUTES` | caller ID, OpenAI's SIP address, `15` | Call-backs after the principal decides: their own caller ID and SIP address if they differ, and the wait before the one retry. |
 
 The realtime settings (`KRITVA_REALTIME_*`, `KRITVA_VOICE_LANGUAGES`) apply to phone calls too.
 
 ## 9. Setup (steps that need your accounts)
 
-These steps use your OpenAI and Vobiz accounts and cost money, so they are yours to do or approve. The code needs nothing else. The current setup (section 9.6) was made this way on 2026-11-22.
+These steps use your OpenAI and Twilio accounts and cost money, so they are yours to do or approve. The code needs nothing else. The current setup (section 9.6) was made this way on 2026-11-22.
 
 ### 9.1 OpenAI
 
@@ -135,40 +137,33 @@ These steps use your OpenAI and Vobiz accounts and cost money, so they are yours
    - event: `realtime.call.incoming`.
 3. Copy its signing secret (shown once) into `.env` as `OPENAI_WEBHOOK_SECRET`.
 
-### 9.2 Vobiz
+### 9.2 Twilio
 
-In the Vobiz console (console.vobiz.ai), following Vobiz's OpenAI guide (https://www.vobiz.ai/docs/integrations/openai-realtime):
+No SIP trunk is needed: Twilio's Programmable Voice dials OpenAI's SIP address from TwiML (`<Dial><Sip>`), which is also what lets Kritva tag each call with headers.
 
-1. **Origination URI** (SIP Trunk → Inbound Trunks → Origination URIs → Add): URI `proj_YOUR_PROJECT_ID@sip.api.openai.com:5061` (no `sip:` prefix), transport **TLS**. The console warns "Invalid host" because of the `proj_...@` part; choose **Save anyway**, as Vobiz's own guide uses this form. The `:5061` is required: without it Vobiz dials port 5060 and the call is refused (the CDR shows `send_refuse`).
-2. **Trunk** (Inbound Trunks → Create trunk): a name and the origination URI above. Leave call recording off.
-3. **SRTP.** Vobiz's guide requires `secure: true` on the trunk, and the console has no switch for it, on create or edit. Put `VOBIZ_AUTH_ID`, `VOBIZ_AUTH_TOKEN` (console dashboard) and `VOBIZ_TRUNK_ID` in `.env` and run:
+1. **Account.** A full (upgraded) account, because a trial account can only call verified numbers. New accounts must have an approved KYC profile (Trust Hub, Primary Customer Profile) before Twilio sells a number. Put `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` in `.env`.
+2. **Number.** Any number with voice. Twilio does not sell Indian numbers without regulatory documents, so Kritva uses a US local number ($1.15 a month). Calling it from India is an international call on the caller's plan.
+3. **Voice URL.** On the number: A call comes in, Webhook, `https://<public host>/api/phone/twilio/voice`, HTTP POST. Or through the API: `POST /2010-04-01/Accounts/{sid}/IncomingPhoneNumbers/{PN...}.json` with `VoiceUrl` and `VoiceMethod=POST`.
+4. **Geo permissions** (Voice, Settings, Geo permissions): India must be on for outbound calls to Indian numbers. It was on by default.
+5. Put the number in `.env`: `KRITVA_PHONE_CALLER_ID=+1...` and `KRITVA_PHONE_ROUTES=+1...=bed-sale,*=bed-sale`.
 
-   ```bash
-   node --env-file=.env apps/server/scripts/vobiz-trunk.ts --secure
-   ```
+Every Twilio webhook carries `X-Twilio-Signature` (HMAC-SHA1 with the auth token over the URL Twilio requested and the sorted form fields). The server rebuilds the URL from `KRITVA_PUBLIC_URL`, because a proxy or tunnel changes the host it sees, and refuses a mismatch with 403 and a `twilio_signature_mismatch` log line that shows the URL it checked.
 
-   It sets `transport: tls` and `secure: true` through Vobiz's API and prints the result. (OpenAI's webhook still reported `sip_media_security: "rtp"` on the working call; audio works either way.)
-4. **Number** (Numbers → Buy new number). Vobiz takes the setup fee and first month from the wallet at purchase and refuses if the wallet cannot cover both. The cheapest Indian numbers were Karnataka (080) at ₹500 a month plus ₹100 setup; giving a number back costs a ₹700 release fee. Wallet top-ups have a ₹500 minimum plus 18% GST. Any Indian number can be called from anywhere in India, so the city does not matter.
-5. **Link the number** to the trunk (the purchase panel offers it: Inbound Trunk → the trunk → Link & Finish).
-6. Put the routes in `.env`: `KRITVA_PHONE_ROUTES=+91XXXXXXXXXX=bed-sale,*=bed-sale` (the `*` route is the one that matches; section 4).
-
-`node --env-file=.env apps/server/scripts/phone-check.ts` prints the exact origination URI from your settings.
-
-**Dialling.** A Vobiz 080 number is a Bangalore landline number. From an Indian mobile, dial `08064264194` or `+918064264194`; dialling the ten digits alone gives "number is invalid" because the network reads it as a mobile number.
+**Cost** (2026-11-22, Twilio's price list): inbound to a US local number $0.0085 a minute; outbound to Indian mobiles $0.0496 a minute, other Indian numbers $0.0699; plus OpenAI's realtime cost per minute.
 
 ### 9.3 A public URL for local testing
 
-OpenAI must reach the webhook over HTTPS. Both tunnels are installed on this Mac; the server listens on port 8787.
+OpenAI and Twilio must reach the server over HTTPS. Both tunnels are installed on this Mac; the server listens on port 8787. Set `KRITVA_PUBLIC_URL` and the number's Voice URL to the tunnel too.
 
 ```bash
 cloudflared tunnel --no-autoupdate --url http://localhost:8787
 ```
 
-It prints `https://<random>.trycloudflare.com`; that host changes on every run, so update the OpenAI webhook URL each time. `ngrok http 8787` works the same way, with a fixed domain on a paid plan. While the tunnel runs, the whole local API is reachable from the internet; the principal's console routes still need the access key.
+It prints `https://<random>.trycloudflare.com`; that host changes on every run, so update the OpenAI webhook URL, the Twilio Voice URL and `KRITVA_PUBLIC_URL` each time. `ngrok http 8787` works the same way, with a fixed domain on a paid plan. While the tunnel runs, the whole local API is reachable from the internet; the principal's console routes still need the access key.
 
 ### 9.4 Run and check
 
-1. Start the server: `npm run dev -w @kritva/server`. It prints `Phone calls: on`, the SIP URI and the webhook path.
+1. Start the server: `npm run dev -w @kritva/server`. It prints `Phone calls: on`, OpenAI's SIP URI, the webhook path, the Twilio Voice URL and whether outbound calls are on.
 2. Check the tunnel and the secret:
 
    ```bash
@@ -176,63 +171,66 @@ It prints `https://<random>.trycloudflare.com`; that host changes on every run, 
    ```
 
    Expect `200`. A 400 means the secret differs between the script's `.env` and the server; a 404 means phone calls are off on that server. Adding `--ring +91XXXXXXXXXX` sends a made-up call: the server routes it, starts a session and tries to answer, and OpenAI refuses because the call does not exist. Expect `200` with `"error":"accept_failed"`. This leaves one empty session in the record.
-3. Call the number, with `KRITVA_PHONE_TRACE=1` and `KRITVA_PHONE_LOG_FILE` set for the first calls. In the log, a healthy call shows `phone_incoming`, `phone_accepted`, `session.updated`, `input_audio_buffer.speech_started` when you speak, `output_audio_buffer.started` and `.stopped` around each reply, and `phone_ended` with `deliveryFrom: "playback_events"`.
+3. Call the number, with `KRITVA_PHONE_TRACE=1` and `KRITVA_PHONE_LOG_FILE` set for the first calls. In the log, a healthy call shows `twilio_incoming`, `phone_incoming`, `phone_accepted`, `session.updated`, `input_audio_buffer.speech_started` when you speak, `output_audio_buffer.started` and `.stopped` around each reply, and `phone_ended` with `deliveryFrom: "playback_events"`.
 4. The principal's console shows the session, with "Phone call connected" and, after hanging up, "Phone call ended".
 
 ### 9.5 Troubleshooting
 
 | Symptom | Likely cause |
 |---|---|
-| "Number is invalid" from the caller's network, and nothing in Vobiz's call logs | Dialled without `0` or `+91` (section 9.2). |
-| Call refused at the carrier, CDR `send_refuse` | `:5061` missing from the origination URI. |
-| Call answered, greeting generated, but silence both ways; the trace has no `input_audio_buffer.*` events and no `output_audio_buffer.*`; Vobiz shows jitter 0 | The full session was sent in the accept (`KRITVA_PHONE_ACCEPT=full`). Use the default `minimal`. If it persists, check SRTP (section 9.2, step 3). |
-| No webhook arrives | The project ID in the URI is not the webhook's project, the number is not linked to the trunk, or the tunnel URL changed. |
+| The caller hears "an application error has occurred" | Twilio could not get TwiML: the Voice URL is wrong or the server is down (Twilio's console, Monitor, Errors shows the code), or the signature check refused it (`twilio_signature_mismatch`: `KRITVA_PUBLIC_URL` differs from the URL Twilio calls). |
+| `twilio_incoming` in the log but no `phone_incoming` | OpenAI did not post the webhook: the project ID in the SIP address is not the webhook's project, or the OpenAI webhook URL is stale (a tunnel that restarted). |
+| Call answered, greeting generated, but silence both ways; the trace has no `input_audio_buffer.*` and no `output_audio_buffer.*` events | The session went out before the call's audio was up: set `KRITVA_PHONE_SETUP_DELAY_MS=1500`. Also check `KRITVA_PHONE_ACCEPT` is `minimal`. |
 | Webhook answered 400 | Wrong `OPENAI_WEBHOOK_SECRET`, or the server's clock is more than five minutes off. |
 | Caller hears a busy or unavailable tone | Declined on purpose: see section 5 and the `phone_rejected` log line. |
+| Outbound call ends at once as `failed` | Twilio refused it (the `outbound_ended` reason has Twilio's error): Geo permissions for the country, or the caller ID is not a Twilio number on the account. |
 | Call drops right after it is answered | `phone_attach_failed`: the sideband could not open (API key or network). The call is hung up at once. |
 | Call drops mid-conversation in development | A saved file restarted the `--watch` server, which hangs up live calls (`phone_shutdown` in the log). |
 
 ### 9.6 The current setup (2026-11-22)
 
-- OpenAI project "Tinkering" (`proj_whvrXH1lLvXn3OwPSbX5qkBV`), webhook "Kritva phone calls (local tunnel)" for `realtime.call.incoming`, pointing at a cloudflared quick tunnel (the URL changes when the tunnel restarts).
-- Vobiz origination URI "OpenAI Realtime global" (`proj_whvrXH1lLvXn3OwPSbX5qkBV@sip.api.openai.com:5061`, TLS), trunk "Kritva phone OpenAI realtime" (`8553ee4d-7b76-45e8-8715-5364168f7e54`, TLS, secure), number +91 80 6426 4194 linked to it.
-- `.env`: the settings above with `*=bed-sale`, `KRITVA_PHONE_SIP_HOST=sip.api.openai.com`, `KRITVA_PHONE_LOG_FILE=data/phone-calls.log` and, while testing, `KRITVA_PHONE_TRACE=1`.
+- OpenAI project "Tinkering" (`proj_whvrXH1lLvXn3OwPSbX5qkBV`), webhook for `realtime.call.incoming` pointing at the AWS server (through the `kritva-tunnel` cloudflared service on the box).
+- Twilio: a borrowed account, number +1 912 502 1960, Voice URL `https://184-33-88-175.sslip.io/api/phone/twilio/voice` (POST). India is on in Geo permissions.
+- AWS `.env`: `KRITVA_PHONE_ROUTES=+19125021960=bed-sale,*=bed-sale`, `KRITVA_PHONE_CALLER_ID=+19125021960`, `KRITVA_PUBLIC_URL=https://184-33-88-175.sslip.io`, `KRITVA_PHONE_SETUP_DELAY_MS=1500`, `KRITVA_PHONE_SIP_HOST=sip.api.openai.com`, the Twilio credentials, and the user's own number in `KRITVA_PHONE_OUTBOUND_ALLOW`.
 
-## 10. What the first live calls showed (2026-11-22)
+## 10. What the earlier live calls showed (2026-11-22)
 
-- **Calls 1 to 3 were silent both ways.** OpenAI's webhook arrived, the accept returned 200, the sideband joined and the model wrote the greeting, but the caller heard nothing and the model heard nothing (no `input_audio_buffer.*` events; Vobiz reported jitter 0 and some packet loss). The caller's hang-up never reached Kritva either: Kritva's silence timer ended the call. Moving the origination URI from the India edge to the global host did not change this.
-- **Call 4 worked** after one change: the accept carried only model, instructions and voice, and the full session followed as `session.update` (section 3, step 5), as in Vobiz's sample. Audio flowed both ways, OpenAI sent `session.updated` with no error, the caller's speech started turns, playback events decided every delivery, and the hang-up closed the sideband and was recorded. The global host served it from the same OpenAI region as the India-edge calls (call IDs `rtc_u7_...`). Which field of the full accept broke the audio is not known; the trace shows no error for it.
-- **Call 1 was also cut off by a dev server restart** (`node --watch` reloading after another session saved a file). The server now hangs up live calls on shutdown (section 7).
-- Vobiz puts no dialled number in the INVITE (section 4), and OpenAI reported `sip_media_security: "rtp"` with the trunk's SRTP setting on.
-- On call 4 the voice model answered "Can you repeat that?" and a Hindi request to repeat with the same English introduction three times. That is the voice model's conversation behaviour, not the phone path, and was passed to the session working on Kritva's tone.
+The first live calls went through another SIP provider, removed in commit 68ef124 because its outbound calls could not carry audio. What they taught still shapes the code:
+
+- **A full accept left calls silent both ways** (200 from OpenAI, no error). Accepting with model, instructions and voice only, then sending the rest as `session.update`, made audio flow (`KRITVA_PHONE_ACCEPT=minimal`, the default).
+- **A server close to OpenAI was silent too.** From the Mac in India, `session.updated` came about 400 ms after the accept and calls had audio; from AWS us-west-2 it came after 118 to 219 ms and every call was silent. Applying the audio settings before the SIP media leg is up seems to leave a call without audio, so the server waits `KRITVA_PHONE_SETUP_DELAY_MS` before joining (1500 on AWS).
+- **OpenAI sends `output_audio_buffer.*` on the SIP sideband**, so delivery is decided by playback events (section 6), and accepted plain RTP (`sip_media_security: "rtp"`).
+- **A dev server restart dropped a live call.** The server now hangs up live calls on shutdown (section 7).
+- **Routing needs the dialled number in a header**, which the earlier provider never sent. Kritva's Twilio Voice URL adds it (section 4).
+- **The earlier provider's outbound calls were silent**: audio did not cross the second leg its dialling servers placed. With Twilio, the answered call is handed to OpenAI by Twilio itself, as an inbound call is.
 
 ## 11. Latency and deployment
 
-- **Audio** goes caller → Vobiz (Mumbai origination in Vobiz's CDRs) → OpenAI's SIP host, routed by location → the realtime model. Kritva's server is not in that path. On call 4, the reply's audio started 0.7 to 0.9 s after the caller stopped speaking on conversation turns.
-- **Control** (the webhook, accept, the sideband and the engine's own model calls) goes between Kritva's server and `api.openai.com`. Deal turns wait on this path, so deploy the server close to it and to the users. With the target users in Bangalore, AWS `ap-south-1` (Mumbai) is the natural region; measure `api.openai.com` round trips from there before deciding.
-- The webhook must answer within a few seconds. It does local work (a session start) and one accept call before answering; the join and greeting run after it. On the live calls, the time from the webhook arriving to the accept succeeding was 0.5 to 2.8 s.
-- Cost: Vobiz charged ₹0.38 for each short test call, plus the number's rental; OpenAI's realtime cost per minute is as in `docs/Kritva_Realtime_Voice.md`, section 8.
+- **Audio** goes caller → their network → Twilio (US) → OpenAI's SIP host, routed by location → the realtime model. Kritva's server is not in that path. A caller in India adds the international leg to the US number; outbound calls to India add the leg from Twilio to the Indian network.
+- **Control** (Twilio's and OpenAI's webhooks, the accept, the sideband and the engine's own model calls) goes between Kritva's server and Twilio and `api.openai.com`. Deal turns wait on this path. The server runs on AWS us-west-2, next to OpenAI.
+- The webhook must answer within a few seconds. It does local work (a session start) and one accept call before answering; the join and greeting run after it.
+- Cost: Twilio's per-minute prices are in section 9.2; OpenAI's realtime cost per minute is as in `docs/Kritva_Realtime_Voice.md`, section 8.
 
 ## 12. Code map
 
 | File | What it holds |
 |---|---|
-| `apps/server/src/phone/routes.ts` | The webhook route, routing to a listing or mandate, decline codes, the accept plan (`acceptPlan`) and retries, join, the call registry, hang-up on shutdown, `GET /api/operator/phone` (setup values and calls in progress, no secrets) and `phoneFromEnv` for `main.ts`. |
+| `apps/server/src/phone/routes.ts` | The Twilio routes (Voice URL, outbound answer and status), the OpenAI webhook route, routing to a listing or mandate, decline codes, the accept plan (`acceptPlan`) and retries, join, the call registry, hang-up on shutdown, `GET /api/operator/phone` (setup values and calls in progress, no secrets) and `phoneFromEnv` for `main.ts`. |
 | `apps/server/src/phone/front-desk.ts` | `FrontDesk`: the shared line before a listing is known; `find_listing`, keypad digits, quiet reports, the agent's own goodbye, and the hand-over (section 16). |
 | `apps/server/src/voice-front-desk-guide.md` | The plain-text guide that shapes how the front desk talks, and its "Once the listing is found" section, which the negotiation's instructions take over. |
 | `packages/core/src/mandate/listing-code.ts` | Listing codes: the Damm check digit, reading digits in any script, picking a free code. |
 | `apps/server/src/phone/phone-call.ts` | `PhoneCall`: wraps `RealtimeCall`, sends the `session.update`, feeds `ServerPlayback`, the silence and time-limit timers, hang-up, the call-end record, event counts and the trace, and the lines it says itself. |
 | `apps/server/src/phone/playback.ts` | `ServerPlayback`: the delivery rule of section 6. Pure, with an injectable clock. |
 | `apps/server/src/phone/sip-headers.ts` | Reading the dialled and calling numbers from SIP headers; masking numbers for logs. |
-| `apps/server/src/phone/config.ts` | Settings from the environment, number routes, the SIP URI. |
+| `apps/server/src/phone/config.ts` | Settings from the environment, number routes, OpenAI's SIP URI, the Twilio credentials. |
+| `apps/server/src/phone/twilio.ts` | Twilio: the Calls API (place, hang up, fetch a recording), the TwiML that hands a call to OpenAI (`dialSipTwiml`), and webhook signatures. |
+| `apps/server/src/phone/follow-up.ts` | Call-backs after the principal decides, through Twilio, recorded. |
 | `apps/server/src/phone/webhook-signature.ts` | Standard Webhooks verification (checked against OpenAI's SDK) and signing for tests and the check script. |
 | `apps/server/src/realtime-voice.ts` | `RealtimeCallControl` (accept, reject, hangup) on `OpenAIRealtimeConnector`; `realtimeSession(..., { noiseReduction })`. |
 | `apps/server/src/voice-routes.ts` | `resolveListing`, shared with "Call Seller". |
 | `packages/core/src/record/events.ts` | `voice_connection` with `ended`, `transport` and `reason`. |
 | `apps/server/scripts/phone-check.ts` | The setup check of section 9.4. |
-| `apps/server/scripts/vobiz-trunk.ts` | Shows a Vobiz trunk and turns SRTP on (section 9.2, step 3). |
 | `apps/server/src/phone/outbound.ts` | `OutboundDialer`: places calls, follows their state, matches the bridged call to its session (section 15). |
-| `apps/server/src/phone/vobiz.ts` | Vobiz's Make Call and hang-up API, and the answer XML that bridges to OpenAI. |
 | `apps/server/test/phone.test.ts` | The tests of section 14. |
 
 ## 13. Open decisions and known limits
@@ -246,12 +244,12 @@ Placeholders, for the interaction design:
 
 Known limits:
 
-- With Vobiz, all numbers on one OpenAI project reach the same route (section 4). The front desk (section 16) is how one number serves many mandates.
-- The India edge (`sip-in.api.openai.com`) has not been tried since the accept fix.
+- The front desk (section 16) is how one number serves many mandates.
+- Twilio's number is a US number; callers in India pay for an international call. An Indian number needs Twilio's regulatory bundle.
 - A hang-up and a dropped line look the same.
 - If the accept succeeds but OpenAI never connects the call, the session stays empty in the console.
 - Inherited from the browser call: when an interrupted reply's partial transcript lacks one of its amounts, the controller's fidelity check says the whole reply again once after the interruption. That is the controller's existing behaviour (`#checkFidelity`), unchanged here; it may deserve its own look.
-- Outbound calls are built but not yet tried on a real call (section 15).
+- Outbound calls through Twilio are not yet tried on a real call (section 15).
 
 ## 14. Tests
 
@@ -262,22 +260,24 @@ Known limits:
 - the delivery rule with a manual clock: delivered and interrupted by playback events, the heard part from `audio_end_ms` and from playback time, cancelled before audio, no end event, the timing fallback both ways, waiting for proof of caller audio, a call whose audio never connected, the call ending mid-reply, and the voice model's own words being ignored;
 - whole calls: unsigned webhook, ignored events, no route (404), paused listing and missing mandate (480), busy (486), a call gone while ringing, accept retries, the minimal accept and the `session.update` before the greeting (no audio format, phone noise reduction, no private amounts), the full accept mode, the recorded connection, a retried webhook, the setup route, a deal turn through the engine with delivery, an interruption with the part heard, a hang-up mid-reply with the event counts, the silence check and goodbye, a reset by speech, and the time limit.
 
-- outbound calls: settings and the empty default allowlist, placing a call with tokened callback URLs and no number in the record, refusals (allowlist, malformed number, inactive session), one call per repeated request ID, a provider failure, the answer XML, the bridged call joining its own session with direction "outbound", the Vobiz leg hung up when the realtime side ends, no answer and busy, a late answer after the end, matching without the tag, cancelling a ringing call, and the setup view.
+- Twilio: the inbound Voice URL's TwiML and its headers routing the call, the webhook signature (Twilio's published example, refused unsigned, accepted signed);
+- outbound calls: settings and the empty default allowlist, placing a call with tokened callback URLs and no number in the record, refusals (allowlist, malformed number, inactive session), one call per repeated request ID, a provider failure, the answer TwiML, the handed-over call joining its own session with direction "outbound", Twilio's leg hung up when the realtime side ends, no-answer, busy and failed, a late answer after the end, matching without the tag, cancelling a ringing call, and the setup view;
+- call-backs: placed through Twilio with recording, the TwiML, the tagged call joining its negotiation, one retry then lapse.
 
 Run them with the rest of the server tests: `npx vitest run --testTimeout=30000` in `apps/server`.
 
 ## 15. Outbound calls (Kritva dials the counterparty)
 
-For negotiations where the principal gives Kritva numbers to call (the multiple-counterparties work decides how those are organised). Built on 2026-11-22. **Live calls connect end to end but are silent: audio does not cross the second leg Vobiz's dialling servers place (section 15.4).**
+For negotiations where the principal gives Kritva numbers to call (the multiple-counterparties work decides how those are organised). Built on 2026-11-22, on Twilio since commit 68ef124.
 
 ### 15.1 How a call works
 
-OpenAI's Realtime API cannot dial out: its outbound SIP calling exists only in the separate Live API (`POST /v1/live/sessions`, model `gpt-live-1`), which would mean a different model and a rewritten call controller. So Vobiz places the call and hands it to OpenAI as an incoming one:
+OpenAI's Realtime API cannot dial out: its outbound SIP calling exists only in the separate Live API (`POST /v1/live/sessions`, model `gpt-live-1`), which would mean a different model and a rewritten call controller. So Twilio places the call and hands it to OpenAI as an incoming one:
 
-1. `call({ sessionId, to })` checks the number (allowlist, format) and that the session is active. Over `KRITVA_PHONE_MAX_CALLS` lines in use, the call waits as `queued` and goes out in order as lines free up (each queued call's negotiation is checked again before it is dialled). Then Kritva asks Vobiz's Make Call API (`POST /api/v1/Account/{auth_id}/Call/`) to dial `to` from Kritva's number. The answer, ring and hang-up URLs carry an unguessable per-call token, which is what authorises Vobiz's callbacks. State: dialling, then ringing.
-2. When they answer, Vobiz fetches the answer URL. The XML bridges the call to OpenAI: `<Dial callerId="+91…"><User sipHeaders="kritva_call=<token>">sip:proj_…@sip.api.openai.com:5061;transport=tls</User></Dial>`. State: answered.
-3. OpenAI posts `realtime.call.incoming`. The webhook finds the token in a SIP header (Vobiz adds its own `X-` prefix to `sipHeaders`), or, without it, takes the one call that is answered and waiting for its bridge. It accepts the call into **that session** (no new session, no routing), and the same `PhoneCall` runs it: turns, delivery, silence and time limit. The greeting asks the engine for an outbound opener (`engine.greet({ ..., outbound: true })`: who is calling, for whom and why, and whether now is a good time); until the multiple-counterparties work adds that to the engine, the usual greeting is used. State: connected. The record gets `voice_connection` with `direction: "outbound"`; the console shows "Kritva's call connected".
-4. The end: their hang-up, Kritva's (`hangup(callId)`, silence, time limit) or Vobiz's. Whichever side ends first, Kritva makes sure the other ends too. Outcomes: `completed`, `no_answer`, `busy`, `failed` (answered but the bridge never arrived within 45 s, or the provider refused), `cancelled`.
+1. `call({ sessionId, to })` checks the number (allowlist, format) and that the session is active. Over `KRITVA_PHONE_MAX_CALLS` lines in use, the call waits as `queued` and goes out in order as lines free up (each queued call's negotiation is checked again before it is dialled). Then Kritva asks Twilio's Calls API (`POST /2010-04-01/Accounts/{sid}/Calls.json`) to dial `to` from Kritva's number, with `Url` (answer) and `StatusCallback` at `/api/phone/twilio/call/<token>/...`. The per-call token ties Twilio's callbacks to the call; Twilio's signature authorises them. State: dialling, then ringing (status callback `ringing`).
+2. When they answer, Twilio fetches the answer URL. The TwiML hands the call to OpenAI: `<Dial><Sip>sip:proj_…@sip.api.openai.com;transport=tls?X-Kritva-Call=<token></Sip></Dial>`. State: answered.
+3. OpenAI posts `realtime.call.incoming`. The webhook finds the token in the `X-Kritva-Call` header, or, without it, takes the one call that is answered and waiting for its bridge (hand-offs are serialised). It accepts the call into **that session** (no new session, no routing), and the same `PhoneCall` runs it: turns, delivery, silence and time limit. The greeting asks the engine for an outbound opener (`engine.greet({ ..., outbound: true })`: who is calling, for whom and why). State: connected. The record gets `voice_connection` with `direction: "outbound"`; the console shows "Kritva's call connected".
+4. The end: their hang-up, Kritva's (`hangup(callId)`, silence, time limit) or Twilio's. Whichever side ends first, Kritva makes sure the other ends too (Twilio's final status callback ends the realtime side; the realtime side ending sets the Twilio call to `completed`). Outcomes from Twilio's final status: `completed`, `no_answer` (no-answer), `busy`, `failed` (also: answered but the bridge never arrived within 45 s, or Twilio refused the call), `cancelled` (canceled, or the principal hung up a ringing call).
 
 ### 15.2 The interface (agreed with the multiple-counterparties work, 2026-11-22)
 
@@ -292,46 +292,18 @@ OpenAI's Realtime API cannot dial out: its outbound SIP calling exists only in t
 - One call belongs to one existing, active negotiation session. A repeated `clientRequestId` returns the first call, so a double click dials once.
 - The counterparty's number stays in memory and masked in logs and views. It never enters the negotiation record, as the user decided for inbound callers.
 
-### 15.3 Indian rules (from Vobiz's compliance pages; to confirm with the user before any real call)
+### 15.3 Indian rules (to confirm with the user before calling anyone but themselves)
 
-- Only Indian businesses or KYC-verified individuals may make domestic calls; the caller ID must be a Vobiz Indian number. The account's KYC is verified.
-- Number series: 140 is for promotional calls only (10 AM to 8 PM, no Do-Not-Disturb bypass); 160 is for service and transactional calls (BFSI); **landline numbers like Kritva's 080 number are for service and transactional calls only, never promotional.** Whether a negotiation call to someone who asked to be called counts as service or transactional is not settled by those pages.
-- Consent: cold calling is prohibited. Vobiz checks the national Do-Not-Disturb registry and blocks calls to registered numbers without documented consent, which must be no older than six months. Opt-outs must be honoured at once. Repeated complaints suspend the account (5 in 10 days: 15 days) and can lead to a one-year blacklisting.
-- Cost: Vobiz quotes from ₹0.45 a minute for Indian outbound calls (its comparison page; the real rate shows on each call), plus OpenAI's realtime cost per minute.
+- Indian rules restrict business calls: cold calling is prohibited, numbers on the national Do-Not-Disturb registry need documented consent, and opt-outs must be honoured at once.
+- Calls come from Twilio's US number over an international route. India blocks international calls that show an Indian number, so the caller ID must stay the Twilio number.
 
 Hence the allowlist: until the user confirms these points, only numbers they list (their own, for testing) can be dialled.
-
-### 15.4 The first live outbound call (2026-11-22): connected, but silent
-
-Placed to the user's own phone, with their approval, from the bed listing's negotiation.
-
-What worked, end to end in about 11 s: Vobiz accepted `+91…` numbers and rang the phone; the ring and answer callbacks arrived; the answer XML's `<Dial><User>` reached `sip:proj_…@sip.api.openai.com:5061;transport=tls` over TLS; the tag arrived as the header `X-VH-kritva_call` (matched by header, not by the fallback); OpenAI took plain RTP (`sip_media_security: "rtp"`); the call joined its own negotiation, the full session applied (`session.updated`, no error) and the greeting was generated. Vobiz reported the hang-up as "Normal Hangup".
-
-What did not: **no audio either way**. OpenAI never heard the person (no `input_audio_buffer.*` events) and never started playing Kritva's reply (no `output_audio_buffer.*`), and it did not pass on the hang-up. The cause is on Vobiz's side of the bridge: the bridged INVITE came from a Vobiz media server behind NAT (`Contact: <sip:Vobiz@10.1.35.193:5080;alias=18.96.230.113~5080~1>`, `Via: SIP/2.0/UDP 10.1.35.193:5080;received=18.96.230.113`, Record-Route `nat=yes`), while working inbound calls come from a public one (`Contact: <sip:mod_sofia@13.200.197.87:5080>`). A private address in the INVITE (and, very likely, in its SDP) leaves OpenAI no reachable place to send media or in-dialog requests.
-
-Since then, Vobiz's hang-up callback ends Kritva's side of a bridged call at once (before, the silence timer ended it after 81 s).
-
-Two more live attempts the same day, both connected end to end and both silent:
-
-| Attempt | What reached OpenAI | Vobiz's record of the legs |
-|---|---|---|
-| 1. `<Dial><User>` to OpenAI's SIP address | from a NAT'd dialling server (`10.1.35.193`) | phone leg PCMU, 0.5% loss; SIP leg PCMU |
-| 2. `<Dial><Number>` to Kritva's own number (`KRITVA_PHONE_BRIDGE=number`) | through the inbound trunk, from a public media server (`18.96.232.170`), matched as the one waiting call | phone leg PCMU, 0.6% loss; **forwarding leg PCMU, 100% loss**; inbound leg PCMU, 15% loss |
-| 3. As 2, declaring `audio/pcmu` to OpenAI (`KRITVA_PHONE_OUTBOUND_CODEC`) | the same, `session.updated` with no error | the same pattern |
-
-In every case OpenAI saw no audio from the far end (no `input_audio_buffer.*`) and never started playing (no `output_audio_buffer.*`), although the response was generated. The working inbound call, by contrast, came straight from a caller's network (PCMA) through the inbound trunk. **Conclusion: audio does not cross the second leg that Vobiz's dialling servers place with `<Dial>`** (100% loss on the forwarding leg), whatever its target. Kritva cannot fix that; Vobiz can.
-
-Ways forward:
-- **Vobiz support**, with these calls: Vobiz call `d5befe4d-fd03-4e4d-82ae-b966cc0653d4` (02:43 UTC, SIP bridge) and `c048c153-6f36-4dba-832a-a9677ae0e4e5` (03:00 UTC, forward to own number, 100% loss on the forwarding leg).
-- **Stream the audio through Kritva's server** (Vobiz's `<Stream>` verb to a WebSocket, relayed to OpenAI's realtime WebSocket in G.711 mu-law). It avoids the `<Dial>` bridge entirely but is a larger build: the server carries the audio, and delivery must come from the stream's playback marks instead of OpenAI's playback events.
-- **OpenAI's Live API** dials out itself through a SIP trunk, but needs `gpt-live-1` and a different call controller.
-- For a demo today, multiple counterparties work over **inbound** phone calls (counterparties call Kritva's number), browser voice and chat.
 
 Still open: the greeting. The engine's opening line is written for a call the counterparty started; the outbound opener (`engine.greet({ ..., outbound: true })`) comes with the multiple-counterparties work.
 
 ## 16. Listing codes and the front desk
 
-One number serves every mandate. The call cannot say which mandate the caller means (Vobiz does not even pass the dialled number, section 4), so the context is printed where the caller found the number: each live mandate has a **listing code**, four digits shown next to the line's number on its listing or ad. A call on a `code` route is answered by the **front desk**, which asks for the code, and then goes on with that mandate as one conversation.
+One number serves every mandate. The call cannot say which mandate the caller means, so the context is printed where the caller found the number: each live mandate has a **listing code**, four digits shown next to the line's number on its listing or ad. A call on a `code` route is answered by the **front desk**, which asks for the code, and then goes on with that mandate as one conversation.
 
 ### 16.1 What is decided in code, and what the agent decides
 
@@ -366,11 +338,11 @@ The record of the negotiation shows the whole call: Kritva's first line, each ca
 - A mandate gets its code when it first goes live (confirmed in the library, or imported from a case file). Mandates saved before codes existed get theirs when the server starts.
 - The code stays through new revisions, pauses and closing, so a caller with an old ad hears that the listing is paused or closed. Deleting the mandate releases the code; released codes are reused only after all 900 have been used, oldest release first.
 - Codes live in `library_listing_codes` (append-only, like the rest of the library). `MandateLibrary.findByListingCode` gives the mandate that holds a code now.
-- The Mandates page shows the code in the list ("Code 4821 · Revision 2") and above the setup chat, with the line's number and **Copy for your ad** ("Call +91 80 6426 4194 and give listing code 4821."). `GET /api/operator/phone` gives the line's number (`line`).
+- The Mandates page shows the code in the list ("Code 4821 · Revision 2") and above the setup chat, with the line's number and **Copy for your ad** ("Call +1 912 502 1960 and give listing code 4821."). `GET /api/operator/phone` gives the line's number (`line`).
 
 ### 16.4 Turning it on, and what is not tried yet
 
-- Set `KRITVA_PHONE_ROUTES=+918064264194=code,*=code`, and optionally `KRITVA_PHONE_ANSWERS_FOR=ABC Corporation`. Restart the server. Copy the line from the mandate into the listing or ad.
-- **Keypad digits**: OpenAI reports DTMF on SIP calls (added November 2025; its guide calls the event `transport.dtmf.received`, its reference `input_audio_buffer.dtmf_event_received`; both are read). Whether Vobiz passes keypad tones through on the inbound trunk is not known. One call with `KRITVA_PHONE_TRACE=1`, pressing keys, shows it in the log (`front_desk_keypad`). If it works, a listing's call button can carry the code (`tel:+918064264194,4821`).
+- Set `KRITVA_PHONE_ROUTES=+19125021960=code,*=code`, and optionally `KRITVA_PHONE_ANSWERS_FOR=ABC Corporation`. Restart the server. Copy the line from the mandate into the listing or ad.
+- **Keypad digits**: OpenAI reports DTMF on SIP calls (added November 2025; its guide calls the event `transport.dtmf.received`, its reference `input_audio_buffer.dtmf_event_received`; both are read). Whether Twilio passes keypad tones through `<Dial><Sip>` as RFC 2833 events is not yet tried. One call with `KRITVA_PHONE_TRACE=1`, pressing keys, shows it in the log (`front_desk_keypad`). If it works, a listing's call button can carry the code (`tel:+19125021960,4821`).
 - Not tried on a live call yet: the hand-over (`session.update` mid-call that changes tools and instructions) works on the fake connection in the tests; the first live call should be watched with the trace on.
 - Tests: `apps/server/test/phone.test.ts` ("the front desk asks for the listing code") and `packages/core/test/unit/listing-code.test.ts`.

@@ -215,7 +215,7 @@ Browser calls and phone calls share `RealtimeCall`, so one implementation serves
 
 ### 13a. Kritva calls the counterparties (added 2026-11-22)
 
-The user asked for Kritva to call the numbers the principal provides. The telephony session owns the dialer (Vobiz Make Call, bridged into the same realtime controller); this work owns when to call and what the board shows. The agreed interface (`Dialer` in apps/server/src/group-routes.ts):
+The user asked for Kritva to call the numbers the principal provides. The telephony session owns the dialer (Twilio's Calls API, handed to OpenAI and into the same realtime controller); this work owns when to call and what the board shows. The agreed interface (`Dialer` in apps/server/src/group-routes.ts):
 - `call({ sessionId, to, clientRequestId })`, `listForSession(sessionId)`, `hangup(callId)`; a call view with a masked number, state (dialling, ringing, answered, connected, ended) and outcome (completed, no answer, busy, failed, blocked, cancelled).
 - One call belongs to one negotiation session. "Start negotiations" calls every listed counterparty with a phone number; the others get their private link. The board shows each call's state and has a Call button per counterparty. No automatic retries in P0.
 - Numbers stay only on the mandate's counterparty list (operator-only). The dialer keeps them in memory and masks them in logs; the record gets only voice_connection events.
@@ -253,7 +253,7 @@ King-size bed · Koramangala                         [Start negotiations (2)]
 |---|---|---|
 | Parent (`epics-12-14-console-voice-demo`) | The refactor: code checks slimmed to hard limits, a plain-text conversation guide, a price and terms split in the brief. Touches `engine.ts`, `gate.ts`, `reply-check.ts`, `compose.ts`, `negotiator.ts`, `app.ts` and the phone routes. | Merged into this branch (commit `4424d97` and the voice-wait commit after it). The reply check still has its hard-limit rules, and the `invented_competition` rule (9.2) joins them. Baseline after the merge: 352 core and 129 server tests pass. |
 | Approval (`claude/approval-flow-1d75c9`) | Per-session approval: approve, counter and decline; the wrap-up; follow-ups; the contact consent event; the approval card; the `#onApproved` and `#recordAgreement` hooks. | This work hooks into those two functions and reuses the consent event and the card. Changes to `record/events.ts` and `record/rules.ts` are announced to each other first. |
-| Phone calls | Vobiz trunk, `phone/routes.ts`. | Caller matching and the cap are added there (section 13). |
+| Phone calls | Twilio, `phone/routes.ts` and `phone/twilio.ts`. | Caller matching and the cap are added there (section 13). |
 | Tone | Reply wording. | The closing message follows the conversation guide like every other reply. |
 
 ## 16. Stages, tests and evals

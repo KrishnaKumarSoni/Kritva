@@ -1,6 +1,8 @@
 # Approval with a later follow-up: design
 
-Written 2026-11-22. Branch `claude/approval-flow-1d75c9`. Approved by the user on 2026-11-22, with the instruction to build for a five-minute demo: the main path solid, rare edge cases later.
+Written 2026-11-22. Branch `claude/approval-flow-1d75c9`.
+
+> Update (commit 68ef124): call-backs now go through Twilio, not the provider this design names. They use Twilio's Calls API with recording and hand the answered call to OpenAI tagged `X-Kritva-Follow-Up`, at `/api/phone/twilio/follow-up/<token>/...` (`apps/server/src/phone/follow-up.ts`, `docs/Kritva_Phone_Calls.md`). The flow is otherwise as written. Approved by the user on 2026-11-22, with the instruction to build for a five-minute demo: the main path solid, rare edge cases later.
 
 ## 1. Intent
 

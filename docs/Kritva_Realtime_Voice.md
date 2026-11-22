@@ -8,7 +8,7 @@ The turn pipeline was measured at about 7 to 8 seconds of silence before each re
 
 - Listening, turn-taking and barge-in are handled by OpenAI's realtime model on a live audio stream.
 - The model hears audio directly, so Hindi, Tamil, English and mixed speech are understood in their own script.
-- The same call controller serves the browser (WebRTC) and phone calls (a Vobiz SIP trunk into OpenAI's SIP endpoint `sip.api.openai.com`, routed by location; see `docs/Kritva_Phone_Calls.md`).
+- The same call controller serves the browser (WebRTC) and phone calls (Twilio hands each call to OpenAI's SIP endpoint `sip.api.openai.com` with TwiML `<Dial><Sip>`; see `docs/Kritva_Phone_Calls.md`).
 
 ## 2. What stays exactly as it is
 
@@ -109,7 +109,7 @@ About $0.06 to $0.12 per minute of call on `gpt-realtime-2.1` (audio in $32 and 
 
 ## 10. Phone calls
 
-Built and tested on a live call: see `docs/Kritva_Phone_Calls.md` for the design, the delivery rule, the setup steps and what the first calls showed. A Vobiz inbound SIP trunk points at OpenAI's SIP endpoint. OpenAI calls Kritva's webhook (`realtime.call.incoming`); the server verifies it, routes the call to a listing or mandate, accepts it with the model, instructions and voice, applies the rest of the same session settings with `session.update` (a full accept left Vobiz calls silent), and joins it with the same controller over the sideband WebSocket. Nothing in the engine or the controller's turn logic changes. Delivery on the phone is decided by the server from the call's playback events, with a stricter timing fallback.
+Built and tested on a live call: see `docs/Kritva_Phone_Calls.md` for the design, the delivery rule, the setup steps and what the first calls showed. Twilio hands each call to OpenAI's SIP endpoint. OpenAI calls Kritva's webhook (`realtime.call.incoming`); the server verifies it, routes the call to a listing or mandate, accepts it with the model, instructions and voice, applies the rest of the same session settings with `session.update` (a full accept left calls silent), and joins it with the same controller over the sideband WebSocket. Nothing in the engine or the controller's turn logic changes. Delivery on the phone is decided by the server from the call's playback events, with a stricter timing fallback.
 
 ## 11. Tests
 
