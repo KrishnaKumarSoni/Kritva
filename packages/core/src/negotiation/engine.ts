@@ -606,7 +606,9 @@ export class NegotiationEngine {
     if (!f) return;
     const normalized = (digits: string) => (digits.length === 10 ? `${this.#countryCode}${digits}` : digits);
     const callerNumber = contactNumber ? contactNumber.replace(/\D/g, "") : "";
-    const given = f.phone ? normalized(f.phone) : f.useThisNumber && callerNumber.length >= 10 ? normalized(callerNumber) : null;
+    // On a phone call, "call me back" (or "on this number") means the line they are calling from.
+    const callBackHere = f.useThisNumber || (f.contact === "call" && !f.phone);
+    const given = f.phone ? normalized(f.phone) : callBackHere && callerNumber.length >= 10 ? normalized(callerNumber) : null;
     const phone = given && /^\d{10,15}$/.test(given) ? given : null;
     const contact = f.contact ?? (phone ? "call" : null);
     const offerId = before.pendingApproval?.offerId ?? before.pendingFinal?.offerId ?? null;

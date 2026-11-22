@@ -205,21 +205,6 @@ export function InsightsPanel({ view, responding, sessionId, onDecide, onPause, 
           {s && insights && (
             <dl className="kv">
               <div className="kv-row">
-                <dt>Counteroffers</dt>
-                <dd>
-                  {s.maxCounteroffers !== null ? (
-                    <span className="pips">
-                      {Array.from({ length: s.maxCounteroffers }, (_, i) => (
-                        <span key={i} className={`pip${i < s.countersMade ? " is-used" : ""}`} aria-hidden="true" />
-                      ))}
-                      <span className="tabular">{s.countersMade} of {s.maxCounteroffers} used</span>
-                    </span>
-                  ) : (
-                    <span className="tabular">{s.countersMade} made</span>
-                  )}
-                </dd>
-              </div>
-              <div className="kv-row">
                 <dt>Next concession</dt>
                 <dd className="tabular">{nextConcession(insights, roles.counterparty)}</dd>
               </div>

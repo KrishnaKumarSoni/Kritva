@@ -15,7 +15,7 @@ import {
 } from "@kritva/core";
 import { createApp } from "../src/app.ts";
 import { loadConfirmedMandates, loadExamples, loadListings } from "../src/main-helpers.ts";
-import { RealtimeCall, realtimeSettingsFromEnv, scriptLanguage, type RealtimeConnector, type RealtimeEvent, type RealtimeLink } from "../src/realtime-voice.ts";
+import { RealtimeCall, realtimeSettingsFromEnv, scriptLanguage, spokenAmounts, type RealtimeConnector, type RealtimeEvent, type RealtimeLink } from "../src/realtime-voice.ts";
 
 const CASES = resolve(import.meta.dirname, "../../../cases");
 
@@ -141,7 +141,9 @@ describe("Realtime voice: turns", () => {
     expect(msgs.find((m) => m.direction === "inbound")!.text).toBe("मैं 15000 दूँगा");
     const reply = msgs.at(-1)!;
     expect(reply.direction).toBe("outbound");
-    expect(t.link.says()[1]).toEqual({ text: reply.text, messageId: reply.id });
+    // Spoken as people say amounts ("19,000 rupees"); the recorded reply keeps the ₹ sign.
+    expect(t.link.says()[1]).toEqual({ text: spokenAmounts(reply.text), messageId: reply.id });
+    expect(t.link.says()[1]!.text).not.toContain("₹");
     const output = t.link.sent.find((e) => e.type === "conversation.item.create")!;
     expect(output.item).toMatchObject({ type: "function_call_output", call_id: "call_1" });
     expect(JSON.parse(output.item.output).reply_to_say).toBe(reply.text);

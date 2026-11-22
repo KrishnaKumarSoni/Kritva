@@ -67,19 +67,16 @@ async function setup() {
 }
 
 describe("the wrap-up after the buyer accepts", () => {
-  it("asks how long the offer stands, then how to reach them, then says it is not final, each once", async () => {
+  it("asks in one question how long the offer stands and when to get back to them, then says it is not final, once", async () => {
     const t = await setup();
     const accepted = await t.toPending();
-    expect(accepted.reply!.text).toMatch(/How long does your offer stand\?/);
+    expect(accepted.reply!.text).toMatch(/How long does your offer stand, and when's a good time to get back to you\?/);
     expect(accepted.reply!.text).not.toMatch(/\bagreed\b|\bdeal\b/i);
 
-    const validity = await t.say("Good till tonight.", { intent: "other", follow_up: followUp({ valid_until: "2026-11-22T23:59:00+05:30", validity_quote: "Good till tonight" }) });
-    expect(validity.reply!.text).toMatch(/best way and time to reach you/i);
-
-    const contact = await t.say("Here in the chat is fine, any time.", { intent: "other", follow_up: followUp({ contact: "chat", best_time_quote: "any time" }) });
-    expect(contact.reply!.text).toMatch(/not final until/i);
-    expect(contact.reply!.text).not.toContain("?");
-    expect(contact.endCall).toBe(false);
+    const answer = await t.say("Good till tonight. Here in the chat is fine, any time.", { intent: "other", follow_up: followUp({ valid_until: "2026-11-22T23:59:00+05:30", validity_quote: "Good till tonight", contact: "chat", best_time_quote: "any time" }) });
+    expect(answer.reply!.text).toMatch(/not final until/i);
+    expect(answer.reply!.text).not.toContain("?");
+    expect(answer.endCall).toBe(false);
 
     const later = await t.say("Any news?", { intent: "question" });
     expect(later.reply!.text).not.toMatch(/not final until/i);
@@ -88,7 +85,15 @@ describe("the wrap-up after the buyer accepts", () => {
     expect(s.followUp.validUntil).toBe("2026-11-22T18:29:00.000Z");
     expect(s.followUp.closedOfferIds).toEqual([s.pendingApproval!.offerId]);
     const asked = (await t.events()).filter((e) => e.type === "question_asked");
-    expect(asked).toHaveLength(2);
+    expect(asked).toHaveLength(1);
+  });
+
+  it("when they only say how long it stands, the close follows: no second question about reaching them", async () => {
+    const t = await setup();
+    await t.toPending();
+    const validity = await t.say("Good till tonight.", { intent: "other", follow_up: followUp({ valid_until: "2026-11-22T23:59:00+05:30", validity_quote: "Good till tonight" }) });
+    expect(validity.reply!.text).toMatch(/not final until/i);
+    expect(validity.reply!.text).not.toContain("?");
   });
 
   it("several details in one message all count, so the close comes straight away", async () => {
@@ -99,27 +104,29 @@ describe("the wrap-up after the buyer accepts", () => {
     expect(accepted.reply!.text).toMatch(/not final until/i);
   });
 
-  it("on a call, only the closing line ends the call", async () => {
+  it("on a call, only the closing line ends the call, and 'call me' means the line they are calling from", async () => {
     const t = await setup();
     const accepted = await t.toPending("voice");
     expect(accepted.endCall).toBe(false);
-    const validity = await t.say("Till tonight.", { intent: "other", follow_up: followUp({ valid_until: "2026-11-22T23:59:00+05:30", validity_quote: "Till tonight" }) }, "voice");
-    expect(validity.endCall).toBe(false);
-    const contact = await t.say("Yes, call me on this number, after six.", { intent: "other", follow_up: followUp({ contact: "call", use_this_number: true, best_time_quote: "after six" }) }, "voice", "+91 98765 43210");
-    expect(contact.endCall).toBe(true);
-    expect(contact.reply!.text).toMatch(/not final until/i);
-    expect(contact.state.followUp).toMatchObject({ contact: "call", phone: "919876543210", bestTime: "after six" });
+    const answer = await t.say("Till tonight. Call me after six.", { intent: "other", follow_up: followUp({ valid_until: "2026-11-22T23:59:00+05:30", validity_quote: "Till tonight", contact: "call", best_time_quote: "after six" }) }, "voice", "+91 98765 43210");
+    expect(answer.endCall).toBe(true);
+    expect(answer.reply!.text).toMatch(/not final until/i);
+    expect(answer.state.followUp).toMatchObject({ contact: "call", phone: "919876543210", bestTime: "after six" });
+    // No number was asked for: the caller's own line is the one to call back.
+    expect((await t.events()).filter((e) => e.type === "question_asked").map((e) => (e.payload as { text: string }).text).join(" ")).not.toMatch(/What number/);
   });
 
-  it("asks for a number when they want a call but gave none", async () => {
+  it("asks for a number when they want a call but gave none, and the number they give is never read as an offer", async () => {
     const t = await setup();
     await t.toPending();
-    await t.say("Till tonight.", { intent: "other", follow_up: followUp({ valid_until: "2026-11-22T23:59:00+05:30", validity_quote: "Till tonight" }) });
-    const contact = await t.say("Call me.", { intent: "other", follow_up: followUp({ contact: "call" }) });
+    const contact = await t.say("Till tonight. Call me.", { intent: "other", follow_up: followUp({ valid_until: "2026-11-22T23:59:00+05:30", validity_quote: "Till tonight", contact: "call" }) });
     expect(contact.reply!.text).toMatch(/What number should I call you on\?/);
-    const number = await t.say("98765 43210", { intent: "other", follow_up: followUp({ phone_number: "9876543210" }) });
+    // The reader also took the digits for a price: the number stays a number, and the approval still waits.
+    const number = await t.say("9876543210", { intent: "offer", offer_terms: [offer(9_876_543_210)], follow_up: followUp({ phone_number: "9876543210" }) });
     expect(number.state.followUp.phone).toBe("919876543210");
+    expect(number.state.status).toBe("awaiting_approval");
     expect(number.reply!.text).toMatch(/not final until/i);
+    expect(number.reply!.text).not.toMatch(/9,?876,?543,?210/);
   });
 });
 

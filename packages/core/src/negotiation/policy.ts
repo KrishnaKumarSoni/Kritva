@@ -629,14 +629,15 @@ export function wrapUpStep(state: NegotiationState, offerId: string, context: St
   // What they said about how long it stands carries over to a later round (a counter's new terms).
   const hasValidity = f.validUntil !== null || f.validity !== null;
   if (!hasValidity && !asked(FOLLOW_UP_KEYS.validity)) return "validity";
-  if (f.contact === null && !asked(FOLLOW_UP_KEYS.contact)) return "contact";
+  // The first wrap-up question already asks when and how to get back to them: never a second question for it.
+  if (f.contact === null && !asked(FOLLOW_UP_KEYS.contact) && !asked(FOLLOW_UP_KEYS.validity)) return "contact";
   if ((f.contact === "call" || f.contact === "whatsapp") && f.phone === null && !asked(FOLLOW_UP_KEYS.phone)) return "phone";
   if (!f.closedOfferIds.includes(offerId)) return "close";
   return null;
 }
 
 const WRAP_UP_QUESTIONS = {
-  validity: { text: "How long does your offer stand?", purpose: "Find out how long their offer stands, for example whether it is good till tonight. Ask only this. Never suggest it is agreed." },
+  validity: { text: "How long does your offer stand, and when's a good time to get back to you?", purpose: "In one question, find out how long their offer stands (for example till tonight) and when, and how, they'd like to hear back. Never suggest it is agreed." },
   contact: { text: "What's the best way and time to reach you?", purpose: "Find out how they would like to hear back (a phone call, or here in this conversation) and what time suits them. Ask only this." },
   phone: { text: "What number should I call you on?", purpose: "Get the phone number to call them back on. Ask only this." },
 } as const;

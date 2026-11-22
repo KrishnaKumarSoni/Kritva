@@ -29,7 +29,7 @@ import type { OutboundTelephony, PlaceCall } from "../src/phone/vobiz.ts";
 import { heardPart, ServerPlayback, type Clock, type PlaybackReport } from "../src/phone/playback.ts";
 import { callerNumber, dialledNumbers, maskNumber, routeFor } from "../src/phone/sip-headers.ts";
 import { signWebhook, verifyWebhook, WebhookSignatureError } from "../src/phone/webhook-signature.ts";
-import { RealtimeCallError, realtimeSettingsFromEnv, type RealtimeCall, type RealtimeCallControl, type RealtimeConnector, type RealtimeEvent, type RealtimeLink } from "../src/realtime-voice.ts";
+import { RealtimeCallError, realtimeSettingsFromEnv, spokenAmounts, type RealtimeCall, type RealtimeCallControl, type RealtimeConnector, type RealtimeEvent, type RealtimeLink } from "../src/realtime-voice.ts";
 import { FollowUpCalls, followUpSettingsFromEnv } from "../src/phone/follow-up.ts";
 
 const CASES = resolve(import.meta.dirname, "../../../cases");
@@ -636,7 +636,8 @@ describe("Phone: during a call", () => {
     await until(() => t.link.says().length === 2);
     const reply = (await t.messages(t.sessionId)).at(-1)!;
     expect(reply.direction).toBe("outbound");
-    expect(t.link.says()[1]).toEqual({ text: reply.text, messageId: reply.id });
+    // Spoken as people say amounts ("19,000 rupees"); the recorded reply keeps the ₹ sign.
+    expect(t.link.says()[1]).toEqual({ text: spokenAmounts(reply.text), messageId: reply.id });
     t.play(1);
     await until(async () => (await t.deliveries(t.sessionId)).length === 2);
     expect((await t.deliveries(t.sessionId)).map((d) => [d.messageId, d.status])).toEqual([
@@ -952,11 +953,10 @@ describe("Phone: approval after the call, and a call-back", () => {
     t.play(1);
     await until(async () => (await t.deliveries(sessionId)).length === 2);
     const asked = await deal(t, 2, "Yes, I confirm", yes);
-    expect(asked.text).toMatch(/How long does your offer stand\?/);
+    // One wrap-up question covers how long the offer stands and when to get back to them.
+    expect(asked.text).toMatch(/How long does your offer stand, and when's a good time to get back to you\?/);
     t.play(2);
-    await deal(t, 3, "Good till tonight", { intent: "other", ...followUp({ valid_until: new Date(Date.now() + 3 * 3_600_000).toISOString(), validity_quote: "Good till tonight" }) });
-    t.play(3);
-    const close = await deal(t, 4, "Call me back on this number", { intent: "other", ...followUp({ contact: "call", use_this_number: true }) });
+    const close = await deal(t, 3, "Good till tonight. Call me back on this number", { intent: "other", ...followUp({ valid_until: new Date(Date.now() + 3 * 3_600_000).toISOString(), validity_quote: "Good till tonight", contact: "call", use_this_number: true }) });
     return { ...t, sessionId, close };
   };
 
@@ -964,7 +964,7 @@ describe("Phone: approval after the call, and a call-back", () => {
     const t = await wrappedUp();
     expect(t.close.text).toMatch(/not final until/i);
     expect(t.connector.hungUp).toEqual([]);
-    t.play(4);
+    t.play(3);
     await until(async () => (await t.connections(t.sessionId)).some((c) => c.status === "ended"));
     expect(t.connector.hungUp).toEqual(["rtc_first"]);
     expect((await t.connections(t.sessionId)).at(-1)).toMatchObject({ status: "ended", transport: "phone", reason: "server" });
@@ -975,7 +975,7 @@ describe("Phone: approval after the call, and a call-back", () => {
 
   it("the seller approves later: Kritva calls back, the call joins the same negotiation, and the buyer's yes closes it", async () => {
     const t = await wrappedUp();
-    t.play(4);
+    t.play(3);
     await until(async () => (await t.connections(t.sessionId)).some((c) => c.status === "ended"));
     const pending = ((await (await t.app.request(`/api/operator/sessions/${t.sessionId}`)).json()) as any).state.pendingApproval;
     const res = await t.app.request(`/api/operator/sessions/${t.sessionId}/approvals/${pending.requestId}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ decision: "approved", offerId: pending.offerId, mandateRevision: pending.mandateRevision }) });
@@ -1007,20 +1007,20 @@ describe("Phone: approval after the call, and a call-back", () => {
     await until(() => t.link.says().length === said + 1);
     const opening = t.link.says().at(-1)!;
     expect(opening.text).toMatch(/Kritva/);
-    expect(opening.text).toContain("₹19,500");
+    expect(opening.text).toContain("19,500 rupees");
     t.play(t.link.says().length - 1);
     await until(async () => (await t.deliveries(t.sessionId)).some((d) => d.messageId === opening.messageId));
 
-    const agreed = await deal(t, 5, "Yes, still good", yes);
+    const agreed = await deal(t, 4, "Yes, still good", yes);
     expect((await t.engine.state(t.sessionId)).outcome.kind).toBe("agreement");
     t.play(t.link.says().length - 1);
     await until(() => t.connector.hungUp.includes("rtc_back"));
-    expect(agreed.text).toContain("₹19,500");
+    expect(agreed.text).toContain("19,500 rupees");
   });
 
   it("no answer twice: one retry, then the follow-up lapses with no agreement", async () => {
     const t = await wrappedUp();
-    t.play(4);
+    t.play(3);
     await until(async () => (await t.connections(t.sessionId)).some((c) => c.status === "ended"));
     const pending = ((await (await t.app.request(`/api/operator/sessions/${t.sessionId}`)).json()) as any).state.pendingApproval;
     await t.app.request(`/api/operator/sessions/${t.sessionId}/approvals/${pending.requestId}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ decision: "approved", offerId: pending.offerId, mandateRevision: pending.mandateRevision }) });

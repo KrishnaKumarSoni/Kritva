@@ -3,7 +3,7 @@
   "source": "Kritva negotiation strategy (Kritva_Negotiation_Strategy.pdf) for mandates without their own guidance: its controls without case-specific amounts. Steps halve the distance to the limit.",
   "increment": null,
   "concessionSteps": [],
-  "maxCounteroffers": 3,
+  "maxCounteroffers": null,
   "splitTheDifference": true,
   "askBeforeConceding": true,
   "walkAwayAfterMaxCounteroffers": true,

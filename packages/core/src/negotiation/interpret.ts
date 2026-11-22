@@ -35,7 +35,7 @@ Extract only what "counterparty_message" says now. Use history to resolve refere
 - offer_kind: "offer" for explicit willingness to transact on the proposed terms. Stating what they will pay for the subject and how they will carry out their side is an offer even if they also explain a separate cost. "enquiry" probes whether a possible price or package is acceptable without committing. "budget_ceiling" states what the other party can spend without making an offer. A standalone ceiling goes in a budget note with offer_terms empty. If the message states both a budget and a distinct offer, record both separately. "interest" is interest without proposed terms, and "none" is used otherwise.
 - A budget note's condition must be an exact quoted qualifier in its quote, such as a named additional cost included in the total. A bare ceiling has condition null. Do not add or infer inclusions, including the negotiated price itself.
 - price_concern: "objection" when the other party says the price is too high or too low, "value_question" when they ask you to assess fairness or explain value, otherwise null. A request to verify the amount just stated leaves price_concern null.
-- offer_conditions: exact quotes of dependencies that still need to be satisfied and that no term value can express, such as needing another person's approval. A statement that they will carry out an existing term is a commitment. A requested change belongs in offer_terms or new_terms. Keep their pronouns and exact wording. Leave empty when none.
+- offer_conditions: exact quotes of dependencies that still need to be satisfied and that no term value can express, such as needing another person's approval. A ceiling ("I can't go above X", "X is my best") is never a condition: it is their final position (pressure "final_offer"). A statement that they will carry out an existing term is a commitment. A requested change belongs in offer_terms or new_terms. Keep their pronouns and exact wording. Leave empty when none.
 - corrects_previous: true only if they correct a mistake in their own previous offer ("sorry, I meant X", "typo, X not Y"). A new, different offer is not a correction.
 - ends_negotiation: true only if they clearly decline to continue or withdraw ("I'm not interested anymore", "I won't negotiate"), including refusing to deal with an AI ("I don't want to speak to an AI"). A final offer ("final offer, no more bargaining") is not withdrawing: use pressure "final_offer".
 - pressure: "lowest_price" for a request to lower your price or to name your best terms with no concrete offer by the other party. This is separate from asks_private_info. "final_offer" for their own final offer and "cheaper_elsewhere" for a comparison with a cheaper alternative. An identified pressure move takes priority over the generic price concern.
@@ -576,6 +576,23 @@ function groundTurn(view: MandateView, interpretation: Interpretation, message: 
     if (interpretation.offerKind === "budget_ceiling") {
       interpretation.offerTerms = interpretation.offerTerms.filter((t) => t.termId !== term?.termId);
     }
+  }
+  // A phone number is never a price: the number they gave to be called back on, or a run of ten or
+  // more digits said with no currency, is a contact detail, never an offer or a budget.
+  if (term?.valueType === "money") {
+    const given = (interpretation.followUp?.phone ?? "").replace(/\D/g, "");
+    const opening = view.negotiable?.opening ?? null;
+    const isPhone = (amount: number) => {
+      const digits = String(Math.trunc(Math.abs(amount)));
+      // Ten or more digits, a thousand times the opening or more: a number to dial, not a price for this deal.
+      return (given.length >= 6 && (given.endsWith(digits) || digits.endsWith(given.slice(-10)))) || (digits.length >= 10 && (opening === null || Math.abs(amount) >= opening * 1000));
+    };
+    const priced = (t: { termId: string; value: Value }) => t.termId === term.termId && "amount" in t.value && isPhone(t.value.amount as number);
+    if (interpretation.offerTerms.some(priced)) {
+      interpretation.offerTerms = interpretation.offerTerms.filter((t) => !priced(t));
+      if (interpretation.offerTerms.length === 0 && interpretation.offerKind === "offer") interpretation.offerKind = undefined;
+    }
+    interpretation.notes = interpretation.notes?.filter((note) => !(note.value?.type === "money" && isPhone(note.value.amount)));
   }
   return interpretation;
 }

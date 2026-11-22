@@ -3,7 +3,7 @@
   "source": "Kritva seller negotiation strategy (Kritva_Negotiation_Strategy.pdf): controls, concessions, pressure, closing and walking away.",
   "increment": 100,
   "concessionSteps": [1500, 800, 300],
-  "maxCounteroffers": 3,
+  "maxCounteroffers": null,
   "splitTheDifference": true,
   "askBeforeConceding": true,
   "walkAwayAfterMaxCounteroffers": true,

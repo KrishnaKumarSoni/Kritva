@@ -153,7 +153,7 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
   }
   const theirPosition = payload.counterparty_stated_budget ?? payload.enquired_amount;
   if (theirPosition && plan.move === "counter") must.push(`They mentioned ${String(theirPosition)}, which is below what works. Say it back warmly as theirs (never compare it with yours) and show you want to find a price that works for both, then put your amount to them as a step toward them. Never accept or agree to their figure, and never call your amount your best, lowest or final price.`);
-  if (plan.move === "request_approval") must.push(`React warmly, then say plainly in a short line that you're checking with ${String(payload.who_you_represent)} before anything is confirmed, like asking them for a moment. Never say it works, is fine or is agreed.`);
+  if (plan.move === "request_approval") must.push(`React warmly, then say plainly in a short line that you'll check with ${String(payload.who_you_represent)} and come back to them before anything is confirmed. Never ask them to wait or hold on, never say you are checking right now, and never say it works, is fine or is agreed.`);
   if (plan.move === "await_approval") must.push(`Say in a short, warm line that you're still checking with ${String(payload.who_you_represent)} and they'll hear as soon as there's an answer.`);
   if (plan.move === "confirm_agreement") must.push("Close warmly and happily: thank them, and say the next steps (such as payment and handover) will be arranged together.");
   if (plan.move === "state_final_terms") must.push(`Write ${EXACT_TERMS_SLOT} exactly once where the complete terms go, then one plain question asking them to confirm the complete package. Nothing before it may sound like agreement (no "that works", "deal" or "done"). State no amount or term yourself.`);
@@ -246,10 +246,10 @@ function followUpRequirements(input: ComposeInput, payload: Record<string, unkno
     case "contact":
     case "phone":
       // Code asks each detail only while it is unknown, so the question is never answered already.
-      must.push(`They haven't told you ${f.step === "validity" ? "how long their offer stands" : f.step === "contact" ? "how and when they'd like to hear back" : "the number to call"} yet: ask it. Nothing is agreed yet: never say or imply it is agreed, accepted, done or theirs.`);
+      must.push(`They haven't told you ${f.step === "validity" ? "how long their offer stands, or when's a good time to get back to them: ask both in one short question" : f.step === "contact" ? "how and when they'd like to hear back: ask it" : "the number to call: ask it"}. You will check with ${who} after this conversation and come back to them: never ask them to wait or hold on, and never say you are checking right now. Nothing is agreed yet: never say or imply it is agreed, accepted, done or theirs.`);
       break;
     case "close":
-      must.push(`Say clearly that it is not final until ${who} confirms, that you will get back to them${f.contact === "call" || f.contact === "whatsapp" ? " with a call" : f.contact === "chat" ? " here" : ""}, and thank them warmly for their time. Never say or imply agreement. Ask no question.`);
+      must.push(`Say clearly that it is not final until ${who} confirms, that you will check with ${who} after this and get back to them${f.contact === "call" || f.contact === "whatsapp" ? " with a call" : f.contact === "chat" ? " here" : ""}, and thank them warmly for their time. Never say you are checking right now or ask them to wait. Never say or imply agreement. Ask no question.`);
       if (input.channel === "voice") must.push("This ends the call: finish with a warm goodbye.");
       break;
     case "approved":

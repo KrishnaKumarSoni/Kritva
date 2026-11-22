@@ -215,10 +215,10 @@ ${facts.map((f) => `- ${f}`).join("\n") || "- (none)"}
 
 Every turn is one of two kinds.
 1. Conversation turns you answer yourself: greetings, small talk, checking they can hear you, repeating or explaining something you already said, whether you are an AI, and questions fully answered by the public facts above. Answer only what they asked, briefly and warmly as "How you sound" below describes, and hand the turn back. Do not list every fact.
-2. Deal turns go to the negotiation engine: anything about price or any amount, offers, discounts, budgets, payment, delivery or pickup arrangements, availability or holding the item, agreeing, confirming or walking away from the deal, anything not in the public facts, and anything you are unsure about. A goodbye once nothing is left to settle is not a deal turn: "Ending the call" below says what to do. For a deal turn, first say a very short, natural acknowledgement in their language, two to five words with no number in it, the way a person says it while thinking (for example "Hmm, okay...", "Got it, one sec.", "Umm, one second.", "ठीक है, बस एक second।" or "சரி, ஒரு நிமிஷம்."), and vary it from turn to turn. It must not describe what happens next: never say you will pass, hand over, forward, check or see what comes back. Then call negotiate with their exact words as you heard them, never paraphrased or translated. Never answer a deal turn yourself.
+2. Deal turns go to the negotiation engine: anything about price or any amount, offers, discounts, budgets, payment, delivery or pickup arrangements, availability or holding the item, agreeing, confirming or walking away from the deal, anything not in the public facts, and anything you are unsure about. A goodbye once nothing is left to settle is not a deal turn: "Ending the call" below says what to do. For a deal turn, first say a very short, natural acknowledgement in their language, two to five words with no number in it, the way a person says it while thinking (for example "Hmm, okay...", "Right, so...", "अच्छा, समझ गई...", "हम्म, ठीक है..." or "சரி..."), and vary it from turn to turn. It reacts to what they said; it never asks them to wait ("one second", "एक पल", "एक सेकंड", "रुकिए"). It must not describe what happens next: never say you will pass, hand over, forward, check or see what comes back. Then call negotiate with their exact words as you heard them, never paraphrased or translated. Never answer a deal turn yourself.
 When you are given a reply to say, say exactly that reply, word for word, and nothing else.
 
-Rules for your own words: never say any amount or price; never agree, accept, approve, promise, hold, reserve or confirm anything; never invent a detail; never mention tools, checks, engines, rules or handing anything over.
+Rules for your own words: never ask them to wait or hold on; never say any amount or price; never agree, accept, approve, promise, hold, reserve or confirm anything; never invent a detail; never mention tools, checks, engines, rules or handing anything over.
 
 When terms need approval: recap the exact terms, ask how long the offer stands and the best way and time to reach them, say clearly it is not final until ${b.principalName || `the ${b.principalRole || "person you represent"}`} confirms, thank them warmly, and end the call. Never say or imply agreement. The replies you are given do this step by step; say them word for word, and the call ends after the last one.
 
@@ -343,6 +343,15 @@ export const STAY_QUIET_TOOL = {
 } as const;
 
 const verbatim = (text: string) => `Say exactly the following to them, word for word, in the same language, with nothing before or after it:\n${text}`;
+/**
+ * Amounts as people say them: "20,000 rupees" (or "20,000 रुपये"), never "rupees 20,000" read off the
+ * ₹ sign. Only the spoken form changes; the recorded reply keeps the ₹, and the amount stays exact.
+ */
+export function spokenAmounts(text: string): string {
+  const word = /\p{Script=Devanagari}/u.test(text) ? "रुपये" : /\p{Script=Tamil}/u.test(text) ? "ரூபாய்" : "rupees";
+  // Digit groups only: the comma after an amount ("₹19,500, pickup") stays where it is.
+  return text.replace(/₹\s?(\d+(?:,\d+)*(?:\.\d+)?)/g, `$1 ${word}`);
+}
 /** A reply that may close the call: the agent decides, from the conversation, whether to hang up after it. */
 const verbatimMayEnd = (text: string) =>
   `Say exactly the following to them, word for word, in the same language, with nothing before or after it. After saying it, call end_call (with no more words) only if they had already said goodbye or clearly ended the conversation and nothing is left to settle; otherwise call nothing. The reply:\n${text}`;
@@ -546,8 +555,8 @@ export class RealtimeCall {
     const response = next.filler
       ? { instructions: verbatim(next.text), tool_choice: "none", metadata: { kritva: "filler", kind: "break_in" } }
       : mayEnd
-        ? { instructions: verbatimMayEnd(next.text), tools: [END_CALL_TOOL], tool_choice: "auto", metadata: { kritva: "say", message_id: next.messageId } }
-        : { instructions: verbatim(next.text), tool_choice: "none", metadata: { kritva: "say", message_id: next.messageId } };
+        ? { instructions: verbatimMayEnd(spokenAmounts(next.text)), tools: [END_CALL_TOOL], tool_choice: "auto", metadata: { kritva: "say", message_id: next.messageId } }
+        : { instructions: verbatim(spokenAmounts(next.text)), tool_choice: "none", metadata: { kritva: "say", message_id: next.messageId } };
     this.#d.link.send({ type: "response.create", response });
   }
 
