@@ -15,7 +15,7 @@
  * Everything Kritva says is the agent's choice; this file never writes a line for it.
  */
 import { readFileSync } from "node:fs";
-import { CONVERSATION_TONE, listingCodeDigits } from "@kritva/core";
+import { CONVERSATION_MISTAKES, CONVERSATION_TONE, listingCodeDigits } from "@kritva/core";
 import { END_CALL_TOOL, LANGUAGE_RULES, realtimeSessionWith, RealtimeCallError, scriptLanguage, VOICE_RULES, type RealtimeCallControl, type RealtimeEvent, type RealtimeLink, type RealtimeSettings, type SessionOptions } from "../realtime-voice.ts";
 import type { EndReason } from "./phone-call.ts";
 
@@ -56,7 +56,10 @@ ${LANGUAGE_RULES}
 ${VOICE_RULES}
 
 How you sound:
-${CONVERSATION_TONE}`;
+${CONVERSATION_TONE}
+
+Mistakes to avoid:
+${CONVERSATION_MISTAKES}`;
 }
 
 /** The realtime session a front-desk call is answered with. */
