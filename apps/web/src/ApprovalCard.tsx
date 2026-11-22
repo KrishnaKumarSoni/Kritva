@@ -185,6 +185,9 @@ function CounterEditor({ terms, responding, onCancel, onSend }: { terms: Editabl
   const [values, setValues] = useState<Record<string, TermValue>>(() => Object.fromEntries(terms.map((t) => [t.termId, t.value])));
   const [error, setError] = useState<string | null>(null);
   const baseId = useId();
+  const reducedMotion = useReducedMotion();
+  // The chosen option's pill springs to the new choice; under reduced motion it simply moves.
+  const pillTransition = reducedMotion ? { duration: 0 } : ({ type: "spring", duration: 0.3, bounce: 0 } as const);
   const set = (termId: string, value: TermValue) => {
     setError(null);
     setValues((v) => ({ ...v, [termId]: value }));
@@ -214,6 +217,7 @@ function CounterEditor({ terms, responding, onCancel, onSend }: { terms: Editabl
               <div className="segmented" role="group" aria-labelledby={id}>
                 {[true, false].map((option) => (
                   <button key={String(option)} type="button" className="segmented-option" aria-pressed={v.value === option} onClick={() => set(t.termId, { type: "boolean", value: option })}>
+                    {v.value === option && <motion.span layoutId={`${id}-pill`} className="segmented-pill" transition={pillTransition} aria-hidden="true" />}
                     {option ? "Yes" : "No"}
                   </button>
                 ))}
