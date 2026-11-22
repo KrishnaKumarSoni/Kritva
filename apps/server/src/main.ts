@@ -12,7 +12,7 @@ import { loadCaseRuntime, maxCounterparties } from "./main-helpers.ts";
 import { LiveCalls } from "./live-calls.ts";
 import { hangUpPending } from "./group-routes.ts";
 import { FollowUpCalls, followUpSettingsFromEnv } from "./phone/follow-up.ts";
-import { sipUri, twilioFromEnv } from "./phone/config.ts";
+import { normalizeNumber, sipUri, twilioFromEnv } from "./phone/config.ts";
 import { AuthStore, authFromEnv } from "./auth.ts";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
@@ -64,7 +64,11 @@ const revisions = new MandateRevisions({ record, engine, mappingLlm });
 const intake = new IntakeService({ store: new SqliteIntakeStore(join(dataDir, "kritva.sqlite")), agent: createIntakeAgentFromEnv(), library, defaultCurrency: process.env.KRITVA_DEFAULT_CURRENCY ?? "Indian rupees (₹)", counterpartyCap: maxCounterparties(process.env.KRITVA_MAX_COUNTERPARTIES) });
 // Phone calls (docs/Kritva_Phone_Calls.md), and Kritva's outbound dialer, shared by the phone routes and the counterparties' board.
 const phone = phoneFromEnv();
-dialer = outboundDialer(phone, engine);
+// With board calls on, numbers on the principal's counterparty lists may be called too (besides KRITVA_PHONE_OUTBOUND_ALLOW).
+const boardCalls = process.env.KRITVA_BOARD_CALLS === "on";
+const listedNumber = (to: string) => library.list().some((m) => library.counterparties(m.mandateId).some((e) => e.phone && normalizeNumber(e.phone, phone?.settings.countryCode) === to));
+dialer = outboundDialer(phone, engine, boardCalls ? listedNumber : undefined);
+if (dialer && boardCalls) console.log("Board calls: on. Numbers on counterparty lists may be called.");
 // Call-backs after the principal decides (Twilio). Without them, every follow-up goes to the counterparty's chat.
 const followUpConfig = followUpSettingsFromEnv(process.env, phone ? sipUri(phone.settings) : null);
 const followUps = phone && followUpConfig.settings ? new FollowUpCalls({ record, engine, settings: followUpConfig.settings, twilio: phone.twilio, log: (entry) => console.log("[follow-up]", JSON.stringify(entry)) }) : null;
@@ -99,7 +103,7 @@ const app = createApp({
   liveCalls,
   dialer,
   // The deal board places calls only when KRITVA_BOARD_CALLS=on.
-  boardCalls: process.env.KRITVA_BOARD_CALLS === "on",
+  boardCalls,
   followUps,
   recordingsDir: join(dataDir, "recordings"),
   twilio: twilioFromEnv(process.env),

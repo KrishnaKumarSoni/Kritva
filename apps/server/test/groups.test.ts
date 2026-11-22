@@ -16,6 +16,7 @@ import {
   type StructuredResponse,
 } from "@kritva/core";
 import { createApp, type AppDeps } from "../src/app.ts";
+import { OutboundDialer } from "../src/phone/outbound.ts";
 import { hangUpPending, type CallView, type Dialer } from "../src/group-routes.ts";
 import { loadConfirmedMandates, loadExamples, loadListings } from "../src/main-helpers.ts";
 
@@ -272,9 +273,22 @@ describe("several counterparties: the call-everyone campaign reaches each person
     const { call, mandateId } = groupSetup(5, dialer);
     const entry = (await call("POST", `/api/operator/library/${mandateId}/counterparties`, { name: "Ravi", phone: "98450 12345" })).json.entry;
     const [first, second] = await Promise.all([1, 2].map((i) => call("POST", `/api/operator/library/${mandateId}/counterparties/${entry.id}/call`, { clientRequestId: `click-${i}` })));
-    expect(first.status).toBe(202);
-    expect(second.json.call.callId).toBe(first.json.call.callId);
+    expect(first!.status).toBe(202);
+    expect(second!.json.call.callId).toBe(first!.json.call.callId);
     expect(dialer.numbers).toHaveLength(1);
+  });
+});
+
+describe("several counterparties: which numbers Kritva may call", () => {
+  it("calls numbers on a counterparty list as well as the allowed ones, and nothing else", () => {
+    const listed = new Set(["919845012345"]);
+    const settings = { callerId: "19125021960", publicUrl: "https://kritva.example.test", bridgeUri: "sip:proj_test@sip.api.openai.com;transport=tls", allow: ["919900000001"], maxCalls: 5, timeLimitSeconds: 900, countryCode: "91" };
+    const dialer = new OutboundDialer({ engine: null as never, telephony: null as never, settings, isListed: (to) => listed.has(to) });
+    expect(dialer.canDial("+91 98450 12345")).toEqual({ ok: true });
+    expect(dialer.canDial("99000 00001")).toEqual({ ok: true });
+    expect(dialer.canDial("+91 98450 99999")).toMatchObject({ ok: false, code: "not_allowed" });
+    // Without the list (board calls off), only the allowed numbers.
+    expect(new OutboundDialer({ engine: null as never, telephony: null as never, settings }).canDial("+91 98450 12345")).toMatchObject({ ok: false, code: "not_allowed" });
   });
 });
 

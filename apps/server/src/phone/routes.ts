@@ -78,8 +78,8 @@ export interface LiveCallRegistry {
 }
 
 /** The outbound dialer for the running server, built once in main.ts and passed to createApp as `dialer`. */
-export function outboundDialer(phone: { outbound: PhoneDeps["outbound"]; log?: (entry: Record<string, unknown>) => void } | null, engine: NegotiationEngine): OutboundDialer | null {
-  return phone?.outbound ? new OutboundDialer({ engine, telephony: phone.outbound.telephony, settings: phone.outbound.settings, log: phone.log }) : null;
+export function outboundDialer(phone: { outbound: PhoneDeps["outbound"]; log?: (entry: Record<string, unknown>) => void } | null, engine: NegotiationEngine, isListed?: (to: string) => boolean): OutboundDialer | null {
+  return phone?.outbound ? new OutboundDialer({ engine, telephony: phone.outbound.telephony, settings: phone.outbound.settings, log: phone.log, isListed }) : null;
 }
 
 /**

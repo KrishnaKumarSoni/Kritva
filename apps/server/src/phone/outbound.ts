@@ -90,6 +90,11 @@ export interface OutboundDeps {
   telephony: OutboundTelephony;
   settings: OutboundSettings;
   log?: (entry: Record<string, unknown>) => void;
+  /**
+   * Whether a number (digits with country code) is on one of the principal's counterparty lists. Such
+   * numbers may be called too, besides KRITVA_PHONE_OUTBOUND_ALLOW. Set only when board calls are on.
+   */
+  isListed?: (to: string) => boolean;
 }
 
 export class OutboundDialer {
@@ -126,7 +131,7 @@ export class OutboundDialer {
     const s = this.#d.settings;
     const to = normalizeNumber(rawTo ?? "", s.countryCode);
     if (!/^\d{10,15}$/.test(to)) return fail("invalid_number", "That doesn't look like a phone number. Use the full number, for example +91 98765 43210.");
-    if (!s.allow.includes("*") && !s.allow.includes(to)) return fail("not_allowed", "Calling this number isn't allowed yet. Add it to KRITVA_PHONE_OUTBOUND_ALLOW once calling it is approved.");
+    if (!s.allow.includes("*") && !s.allow.includes(to) && !this.#d.isListed?.(to)) return fail("not_allowed", "Calling this number isn't allowed yet. Add it to KRITVA_PHONE_OUTBOUND_ALLOW once calling it is approved.");
     return { ok: true };
   }
 
