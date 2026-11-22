@@ -686,6 +686,22 @@ describe("Bare proposals", () => {
   });
 });
 
+describe("The price on first contact", () => {
+  const briefs = (llm: { seen: Array<{ purpose: string; messages: Array<{ content: string }> }> }) =>
+    llm.seen.filter((c) => c.purpose === "compose_reply").map((c) => JSON.parse(c.messages[0]!.content));
+  it("an enquiry before they have heard the price asks for the price to be said; once said, it is not asked again", async () => {
+    const { say, llm } = await setup(listingOnlyDeliveryMandate());
+    await say("Would you take ₹18,500 if I collect it myself?", { intent: "question", offer_kind: "enquiry", offer_terms: [price(18_500)] });
+    const first = briefs(llm).at(-1);
+    expect(first.must.join(" ")).toMatch(/have not heard the price yet: say it \(₹20,000\)/);
+    expect(first.must.join(" ")).toMatch(/never say a figure does or doesn't work for/);
+    llm.composed.length = 0;
+    await say("Would you take ₹19,000 then?", { intent: "question", offer_kind: "enquiry", offer_terms: [price(19_000)] }, { composed: "Thanks for asking about ₹19,000. It's ₹20,000 right now. What works for you?" });
+    await say("And ₹19,200?", { intent: "question", offer_kind: "enquiry", offer_terms: [price(19_200)] });
+    expect(briefs(llm).at(-1).must.join(" ")).not.toMatch(/have not heard/);
+  });
+});
+
 describe("Enquiries that name their amount", () => {
   it('"Would you take ₹18,000 for it?" is an enquiry about ₹18,000 even when the model drops the amount, and asks for the missing day', async () => {
     const { say } = await setup(conditionalMandate());
