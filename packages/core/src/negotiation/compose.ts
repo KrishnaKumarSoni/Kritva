@@ -77,7 +77,8 @@ export function composeBrief(input: ComposeInput): Record<string, unknown> {
     who_you_represent: (plan.introduce && input.publicPrincipalName) || principalLabel(view),
     introduce: plan.introduce === true,
     opening: plan.opening === true,
-    calling_them: plan.outbound === true,
+    // Only present when they apply, so a single negotiation's brief is unchanged.
+    ...(plan.outbound === true ? { calling_them: true } : {}),
     open_for_discussion: plan.openForDiscussion === true,
     listing_available: plan.listingAvailable ?? null,
     // The price and the other terms, separately: the guide decides when the price is worth saying again.
@@ -88,7 +89,7 @@ export function composeBrief(input: ComposeInput): Record<string, unknown> {
     counterparty_stated_budget: amount(plan.statedBudget),
     enquired_amount: amount(plan.enquiredAmount),
     // Another counterparty's real live offer that this reply may mention (code decided it may).
-    another_offer: amount(plan.competingAmount),
+    ...(plan.competingAmount !== undefined ? { another_offer: amount(plan.competingAmount) } : {}),
     channel: input.channel ?? "text",
     ...(languageName(input.language) ? { reply_language: languageName(input.language) } : {}),
     their_offer: plan.respondingTo !== null && plan.respondingTo !== undefined && ["counter", "hold", "state_final_terms"].includes(plan.move) ? amount(plan.respondingTo) : null,
