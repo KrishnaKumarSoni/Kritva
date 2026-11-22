@@ -7,7 +7,7 @@ import type { OfferTerm } from "../record/events.ts";
 import { formatValue, numericValue, orderTerms, type MandateView } from "./mandate-view.ts";
 import type { Plan } from "./policy.ts";
 import { principalLabel } from "./templates.ts";
-import { CONVERSATION_GUIDE } from "./conversation-guide.ts";
+import { CONVERSATION_GUIDE, CONVERSATION_TONE } from "./conversation-guide.ts";
 import { findAmounts } from "./reply-check.ts";
 
 export const EXACT_TERMS_SLOT = "[[TERMS]]";
@@ -88,7 +88,8 @@ export function composeBrief(input: ComposeInput): Record<string, unknown> {
     counterparty_stated_budget: amount(plan.statedBudget),
     enquired_amount: amount(plan.enquiredAmount),
     channel: input.channel ?? "text",
-    ...(languageName(input.language) ? { reply_language: languageName(input.language) } : {}),
+    // The language they wrote or spoke in, decided in code from its script, so the writer never guesses.
+    ...(replyLanguage(input) ? { reply_language: replyLanguage(input) } : {}),
     their_offer: plan.respondingTo !== null && plan.respondingTo !== undefined && ["counter", "hold", "state_final_terms"].includes(plan.move) ? amount(plan.respondingTo) : null,
     move: plan.move,
     action: plan.action ?? null,
@@ -130,9 +131,12 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
   const { plan } = input;
   const must: string[] = [];
   if (plan.introduce) must.push(`Introduce yourself once as Kritva, the assistant of ${String(payload.who_you_represent)}, in your first sentence.`);
-  if (payload.their_offer && plan.move === "counter") must.push(`Say their offer of ${String(payload.their_offer)} back as theirs first and, in that same sentence, say you can't do it; then put your amount to them clearly as your offer.`);
+  if (payload.their_offer && plan.move === "counter") must.push(`Say their offer of ${String(payload.their_offer)} back as theirs first (never call it "noted") and, in that same sentence, say you can't do it; then put your amount to them clearly as your offer, and hand the turn back.`);
+  if (plan.move === "compare_terms") must.push("Never repeat the amount of the other option they mention, and never say whether it is a good deal or useful to know.");
   if (input.publicPrincipalName) must.push(`${input.publicPrincipalName} is the person you represent, not the person you are talking to: refer to ${input.publicPrincipalName} by name, never as "he" or "she", and never address them by that name.`);
   else must.push(`Refer to ${String(payload.who_you_represent)} without "he" or "she".`);
+  // Putting the price in the principal's mouth ("<name> can do X", "<name> is keeping it") invents what they said.
+  must.push(`The price and your offers are yours to state ("I can do <amount>", "it's <amount>"): never say what ${String(payload.who_you_represent)} can, can't, is asking, is keeping or has done with the price. Mention ${String(payload.who_you_represent)} only to say who you're helping, that you're checking with them, or what the brief says they decided.`);
   const theirPosition = payload.counterparty_stated_budget ?? payload.enquired_amount;
   if (theirPosition && plan.move === "counter") must.push(`They mentioned ${String(theirPosition)}, which is below what works. Say it back warmly as theirs (never compare it with yours) and show you want to find a price that works for both, then put your amount to them as a step toward them. Never accept or agree to their figure, and never call your amount your best, lowest or final price.`);
   if (plan.move === "request_approval") must.push(`React warmly, then say plainly in a short line that you're checking with ${String(payload.who_you_represent)} before anything is confirmed, like asking them for a moment. Never say it works, is fine or is agreed.`);
@@ -177,7 +181,7 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
     ? "This is the start of a live voice call. In one or two short, warm sentences, say hi, who you are and who you're helping, and invite them to talk. Do not mention the price, terms or other details yet."
     : input.channel === "voice"
     ? `This is a live voice call: sound like a friendly person on the phone, as in "How Kritva sounds". React to what they said, give the answer or move, and hand the turn back, usually in two to four short spoken sentences. Do not repeat details you already gave, do not add terms or facts they did not ask about, and promise nothing (no holding, reserving or checking back unless the brief says so). Say places in full and never read terms as a list. Reply in ${languageName(input.language) ?? "the language of their latest message"}, in that language's own script (Hindi in Devanagari, never Urdu script; Tamil in Tamil script), and write every amount in digits with its currency symbol, never in words.`
-    : `This is a chat: write the way you'd talk, as in "How Kritva sounds". React to what they said, give the answer or move, and hand the turn back, usually in two to four short sentences. Promise nothing the brief does not say: no checking with anyone, holding or coming back to them unless the brief says so.`);
+    : `This is a chat: write the way you'd talk, as in "How Kritva sounds". React to what they said, give the answer or move, and hand the turn back, usually in two to four short sentences. Reply in ${replyLanguage(input) ?? "the language of their latest message"}, in that language's own script, with every amount in digits. Promise nothing the brief does not say: no checking with anyone, holding or coming back to them unless the brief says so.`);
   if (plan.notice && notice[plan.notice]) must.unshift(notice[plan.notice]!);
   // "Is that your final price?" is answered with the current terms, never a yes or no: either would mislead.
   if (["price_pressure", "answer_public_terms", "answer", "hold", "counter", "answer_enquiry", "explain_price", "compare_terms"].includes(plan.move) && input.theirMessage && /\bfinal\b|\bbest you can\b|\blast price\b/i.test(input.theirMessage)) must.push("They asked whether this is your final price. Do not answer yes, no or anything like \"not quite\", and do not call it final: say it's the price right now (by number only if you did not just say it), then hand the turn back.");
@@ -207,6 +211,17 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
 
 export const REPLY_SCHEMA = SCHEMA;
 
+/**
+ * The last step before fixed wording is sent: the checked fallback ("checked_reply") said the way Kritva
+ * talks and in their language. The result is checked again like any draft; if it fails, the fixed wording is sent.
+ */
+export const REWORD_PROMPT = `You are Kritva, talking with the other party for the person in "who_you_represent". A checked reply is ready to send ("checked_reply"), but it comes from fixed wording and sounds stiff. Say exactly the same thing the way you talk: in the language given by "reply_language", or else the language of "their_message", in that language's own script, with every amount in digits exactly as written. Translate every sentence of the checked reply into that language; leave no sentence in English unless the language is English.
+
+Keep its meaning exactly. The same amounts, the same offer, the same question and the same commitments, and nothing added: no new fact, reason, amount, promise or deadline. The one thing you may add: when "hand_back" is true, end with one short, open invitation that hands the turn back (for example asking what works for them), asking for no new information. If it contains ${EXACT_TERMS_SLOT}, keep that marker exactly once, where it is. Keep any question at the end of "text" and set "question" to null. "channel" "voice" means it is spoken on a call: natural spoken sentences, no lists.
+
+How you sound (here only the sound applies, never anything the checked reply does not say):
+${CONVERSATION_TONE}`;
+
 export async function composeReply(llm: StructuredLlm, input: ComposeInput): Promise<{ text: string; question: string | null }> {
   const payload = composeBrief(input);
   const response = await llm.generate({
@@ -228,6 +243,15 @@ function earlierInvitations(conversation: Array<{ speaker: "agent" | "counterpar
     .map((m) => m.text.split(/(?<=[.!?])\s+/).at(-1)?.trim() ?? "")
     .filter((s) => s.endsWith("?"))
     .slice(-4);
+}
+
+/** Their language: the call's, or else the script of their latest message (Latin script reads as English). */
+function replyLanguage(input: ComposeInput): string | null {
+  if (input.language) return languageName(input.language);
+  const text = input.theirMessage ?? "";
+  if (!/\p{L}/u.test(text)) return null;
+  const scripts: Array<[RegExp, string]> = [[/\p{Script=Devanagari}/u, "hi"], [/\p{Script=Tamil}/u, "ta"], [/\p{Script=Kannada}/u, "kn"], [/\p{Script=Telugu}/u, "te"], [/\p{Script=Malayalam}/u, "ml"], [/\p{Script=Bengali}/u, "bn"]];
+  return languageName(scripts.find(([pattern]) => pattern.test(text))?.[1] ?? "en");
 }
 
 /** A language code as a name for the brief ("ta" → "Tamil"); null when unknown. */

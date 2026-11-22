@@ -33,7 +33,7 @@ Flag a concern for anything in the reply that:
 - invented_competition: mentions other interested parties, competing offers or demand.
 - invented_deadline: sets or implies a time limit.
 - market_claim: asserts market value, new price, or what others charge. Openly saying no market comparison is available does not make a market claim.
-- promise_outside_terms: promises a service, extra, payment arrangement or term not in checked_terms.
+- promise_outside_terms: promises a service, extra, payment arrangement or term not in checked_terms, or offers to connect them with, put them through to or arrange a call with the person represented (in any language). Saying you will ask or check with the person represented is not a connection, and is never this concern.
 - turn_mismatch: answers a superseded earlier turn, ignores the current request, or restates an unrelated fact instead of addressing the current message. Check the current message before reading earlier context.
 - redundant_question: asks for information the other party already supplied, or asks a question unrelated to the selected question objective. A question distinguishing two still-open possibilities is not redundant. With no selected question, one short closing invitation that hands the turn back (what works for them, where they can get to, whether it could work for them, or whether to check with the person represented) is not redundant unless it asks for something they just gave.
 - action_mismatch: changes the action in "action.move" or "action.notice". An opening before the other party has spoken only welcomes them and invites them to speak. For "state_final_terms", asking the other party to confirm the full package is required, and that question is not a claim of agreement. Flag that move only if the reply says the package is already agreed, asks for something other than full confirmation, or otherwise changes the action. For "counter" and "hold", putting the amount in checked_terms to them as your offer ("I can do <amount>", "How about <amount>?") is the action, not a mismatch. A budget ceiling, enquiry, or price explanation does not authorize a new offer, an acceptance, or a counter. For "request_approval", saying it needs the approval of the person represented, so it cannot be confirmed yet, is the action. An agreement confirmation may announce explicit approval only when "action.approvalGranted" is true. While paused, waiting for approval or ended, reflect that state without making a new commitment.
@@ -104,17 +104,21 @@ const OFFER_PHRASE = /^(?:(?:so|well|okay|ok|then|right),?\s+)?(?:i can do|i cou
  * Code chose the counter or hold and checked its amount, so a sentence that only puts that amount to
  * them as the offer is the action itself, never a mismatch or an invented fact.
  */
+/** The same offer in Hindi or Tamil: "मैं <amount> कर सकता हूँ", "நான் <amount> தர முடியும்". */
+const OFFER_PHRASE_INDIC = /^(?:(?:तो|ठीक है|अच्छा|ओके|हाँ|हां),?\s+)?(?:मैं|हम)\s+(\S+?)\s+(?:(?:में|पर|तक)\s+)?(?:कर|दे)\s+(?:सकता|सकती|सकते)(?:\s+(?:हूँ|हूं|हैं|है))?$|^(?:நான்|நாங்கள்)\s+(\S+?)\s+(?:க்கு\s+)?(?:தர|கொடுக்க)\s+முடியும்$/u;
+const offerAmount = (text: string) => { const m = OFFER_PHRASE.exec(text) ?? OFFER_PHRASE_INDIC.exec(text); return (m?.[1] ?? m?.[2])?.trim(); };
+
 function flagsOnlyTheOffer(reply: string, quote: string, checkedTerms: string[], move: string | undefined): boolean {
   if (move !== "counter" && move !== "hold") return false;
-  const quoted = normalizeForQuoteMatch(quote).replace(/[.!?]$/, "");
+  const quoted = normalizeForQuoteMatch(quote).replace(/[.!?।]$/u, "");
   const offered = checkedTerms.map((t) => normalizeForQuoteMatch(t.slice(t.indexOf(": ") + 2)));
   // The quote may be just the offer clause of a longer sentence ("..., and I can bring it to X").
-  const own = OFFER_PHRASE.exec(quoted.replace(/^(?:and|but|so|then),?\s+/, ""))?.[1]?.trim();
+  const own = offerAmount(quoted.replace(/^(?:and|but|so|then|लेकिन|पर|ஆனால்),?\s+/u, ""));
   if (own !== undefined && offered.includes(own)) return true;
-  return reply.split(/(?<=[.!?])\s+/).some((line) => {
-    const sentence = normalizeForQuoteMatch(line).replace(/[.!?]$/, "");
+  return reply.split(/(?<=[.!?])\s+|(?<=।)\s*/u).some((line) => {
+    const sentence = normalizeForQuoteMatch(line).replace(/[.!?।]$/u, "");
     if (!sentence.includes(quoted)) return false;
-    const amount = OFFER_PHRASE.exec(sentence)?.[1]?.trim();
+    const amount = offerAmount(sentence);
     return amount !== undefined && offered.includes(amount);
   });
 }
@@ -201,6 +205,38 @@ function flagsOnlyADecline(reply: string, quote: string, declinedTerms: string[]
   });
 }
 
+/** The whole sentence of the reply that contains the quote, normalized, or null. */
+function sentenceWith(reply: string, quote: string): string | null {
+  const quoted = normalizeForQuoteMatch(quote).replace(/[.!?।]$/u, "");
+  for (const line of reply.split(/(?<=[.!?])\s+|(?<=।)\s*/u)) {
+    const sentence = normalizeForQuoteMatch(line).replace(/[.!?।]$/u, "");
+    if (sentence.includes(quoted)) return sentence;
+  }
+  return null;
+}
+
+/** "I can't share <name>'s private limit." is the refusal the brief asks for, never a disclosure. */
+const REFUSAL = /^(?:(?:sorry|i'm sorry|ah|hmm|okay|ok)[,!]?\s+)?(?:but\s+)?i (?:can't|cannot|can not|am not able to|'m not able to|won't) (?:share|tell you|give out|reveal|disclose) (?:[\p{L} ]+'s |the |their |his |her |our |my |any )?(?:private |internal |exact )?(?:limits?|numbers?|details|minimum|floor)(?: (?:behind it|with you|on (?:it|this|the price)))?(?:,? sorry)?$/u;
+function flagsOnlyTheRefusal(reply: string, quote: string): boolean {
+  const sentence = sentenceWith(reply, quote);
+  return sentence !== null && REFUSAL.test(sentence);
+}
+
+/**
+ * "I can't do <their amount>." or "I can't do that." declines their own figure, which is the move itself:
+ * it reveals nothing beyond the reply's own offer.
+ */
+const DECLINE_THEIRS = /^(?:(?:hmm|okay|ok|sorry|thanks|thank you|ah|got it)[,!]?\s+)?(?:but\s+)?i (?:can't|cannot|can not|won't be able to|'m not able to|am not able to) (?:do|take|accept|go (?:to|with)) (?:that|it|this|(\S+))(?: (?:for (?:the |it|this )[\p{L} -]*|on (?:the |it|this )[\p{L} -]*|one))?$/u;
+function flagsOnlyDecliningTheirFigure(reply: string, quote: string, counterpartyWords: string[]): boolean {
+  const sentence = sentenceWith(reply, quote);
+  const match = sentence === null ? null : DECLINE_THEIRS.exec(sentence);
+  if (!match) return false;
+  if (!match[1]) return true;
+  const amounts = findAmounts(match[1]);
+  const theirs = new Set(counterpartyWords.flatMap((words) => findAmounts(words)));
+  return amounts.length === 1 && theirs.has(amounts[0]!);
+}
+
 export async function languageCheck(
   llm: StructuredLlm,
   input: { reply: string; principal?: string | null; checkedTerms: string[]; permittedFacts: string[]; counterpartyWords: string[]; currentMessage?: string | null; publicAmounts?: string[]; statedBudget?: string | null; questionObjective?: string | null; selectedQuestion?: string | null; declinedTerms?: string[]; validatedTermsMarker?: string; action?: { move: string; notice: string | null; opening: boolean; approvalGranted: boolean; outcome: string } },
@@ -237,6 +273,7 @@ export async function languageCheck(
         if ((c.type === "invented_fact" || c.type === "action_mismatch") && flagsOnlyARecordedApproval(input.reply, c.quote, input.principal, input.action, input.validatedTermsMarker)) return false;
         if (c.type === "invented_fact" && flagsOnlyADecline(input.reply, c.quote, input.declinedTerms ?? [], input.currentMessage)) return false;
         if (c.type === "invented_fact" && onlyAdmitsNotKnowing(c.quote)) return false;
+        if (c.type === "private_disclosure" && (flagsOnlyTheRefusal(input.reply, c.quote) || flagsOnlyDecliningTheirFigure(input.reply, c.quote, [...input.counterpartyWords, input.currentMessage ?? ""]))) return false;
         return (c.type !== "counterparty_claim_as_fact" && c.type !== "private_disclosure") || !flagsOnlyAnAttributedBudget(input.reply, c.quote, input.statedBudget);
       });
     return { ok: true, concerns };

@@ -306,6 +306,18 @@ async function runScenario(s: Scenario, run: number): Promise<RunResult> {
   const opener = (t: string) => t.replace(/^Hi, I'm Kritva[^.]*\.\s*/, "").split(/\s+/).slice(0, 3).join(" ").toLowerCase();
   const repeated = agentTexts.slice(1).find((t, i) => opener(t) === opener(agentTexts[i]!) && !/^just to confirm|^good news/i.test(opener(t)));
   checks.push({ check: "no repeated opener in consecutive replies", pass: !repeated, detail: repeated ? `"${opener(repeated)}…" twice in a row` : undefined });
+  // The tone guide's slips (2026-11-22 user feedback): robotic "noted", holds that sound like a limit or a hint
+  // of room, and putting the price in the principal's mouth. Wording, not safety: reported, never relaxed.
+  const plain = (t: string) => t.replace(/[‘’]/g, "'");
+  const SLIPS: Array<[string, RegExp]> = [
+    ["\"noted\"", /\bnoted\b/i],
+    ["a hold that sounds like a limit", /\bwhere (?:it|the price) sits\b|\bas far as i can (?:go|take it)\b|\bthat'?s my limit\b|\bthe best i can do\b/i],
+    ["a hint of room", /\b(?:can|could) (?:move|come down|go down|budge) (?:a (?:little|bit)|slightly)\b|\b(?:some|a little|a bit of) (?:room|flexibility|wiggle room)\b(?! (?:in|on|with|for) your\b)/i],
+    ["the price put in the principal's mouth", /\b(?:Krishna|the seller|the owner)(?:'s| is| has)? (?:can do|can't do|is keeping|keeping it|is asking|asking|holding|is holding|has come down|already come down|brought it down|is still at|still at)\b/i],
+    ["a reason for the price", /\b(?:set|kept|keeping|priced) (?:it|the price)? ?(?:there|at that level|that way)? ?(?:because|based on|given)\b/i],
+  ];
+  const slips = SLIPS.flatMap(([name, pattern]) => agentTexts.filter((t) => pattern.test(plain(t))).map((t) => `${name}: "${t.slice(0, 90)}"`));
+  checks.push({ check: "no tone slips (noted, limit-sounding holds, room hints, words put in the principal's mouth, reasons for the price)", pass: slips.length === 0, detail: slips.slice(0, 3).join(" | ") || undefined });
 
   // Never the same sentence twice: a person who repeats themselves word for word sounds like a script.
   const sentencesSeen = new Map<string, number>();

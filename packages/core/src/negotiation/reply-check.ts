@@ -31,11 +31,28 @@ export interface CheckContext {
   statedAmounts?: number[];
 }
 
-const DECLINE_CUE = /\b(can'?t|cannot|can not|won'?t|unable|not able|too low|too high|not possible|isn'?t|is not|no\b|decline|don'?t|do not|below|under|above|over|beyond)\b/i;
+const DECLINE_CUE = /\b(can'?t|cannot|can not|won'?t|unable|not able|(?:a bit|a little|bit|quite|rather|too|very|pretty|way) (?:low|high)|not possible|isn'?t|is not|no\b|decline|don'?t|do not|below|under|above|over|beyond)\b/i;
 const AGREEMENT_CLAIM = /\b(we have (a |an )?(deal|agreement)|we(?:'re| are) agreed|it'?s (a deal|agreed)|deal (is )?(done|confirmed)|agreement (is )?(confirmed|recorded)|(sold|it'?s yours)\b|i accept (your|the) offer|offer accepted)/i;
 /** "That works.", "Okay, it works for me", "19,000 works": agreeing, not "a price that works for both of us". */
 const WORKS_CLAIM = /(?:^|[.!?]\s+|\b(?:yes|yeah|ok(?:ay)?|sure|great|perfect|alright|fine),?\s+)(?:that|it|this)\s+works\b|\d[\d,]*(?:\.\d+)?\s+works\b/i;
 const APPROVAL_CLAIM = /\b(has|have) approved\b|\bapproved (it|this|your offer|the (offer|terms))\b|\bapproval (is )?(given|granted|received)\b/i;
+
+/**
+ * The same cues in Hindi and Tamil, so a reply in the other party's language is read like an English one.
+ * Indic scripts have no \b word boundary in JavaScript, so these are plain sequences.
+ */
+const DECLINE_CUE_INDIC = /नहीं|मुमकिन नहीं|संभव नहीं|मुश्किल|कम है|முடியாது|இயலாது|இல்லை|சாத்தியமில்லை|கஷ்டம்|குறைவு/u;
+const AGREEMENT_CLAIM_INDIC = /डील (पक्की|हो गई|डन)|सौदा (पक्का|तय|हो गया)|बात पक्की|मंज़ूर है|मंजूर है|आपका हुआ|बिक गया|ஒப்பந்தம் (உறுதி|முடிந்தது|ஆனது)|டீல் (ஓகே|முடிந்தது|உறுதி)|உங்களுடையது/u;
+const APPROVAL_CLAIM_INDIC = /(मंज़ूरी|मंजूरी|अप्रूवल) (दे दी|मिल गई|मिल गयी)|अप्रूव कर (दिया|दी)|ஒப்புதல் (கொடுத்தார்|கிடைத்தது|தந்தார்)|அப்ரூவ் (பண்ணிட்டார்|செய்தார்)/u;
+/** "<amount> चलेगा" / "<amount> ஓகே": agreeing to a figure, unless it is asked as a question. */
+const WORKS_CLAIM_INDIC = /\d[\d,]*\s*(?:में\s*)?(?:चलेगा|ठीक है|डन|डील पक्की|ஓகே|சரி|டீல்)(?![^।.!?]*\?)/u;
+const QUOTE_CUE_INDIC = /आप|तुम|உங்கள்|நீங்கள்|உங்க|நீங்க/u;
+const ACKNOWLEDGED_INDIC = /धन्यवाद|शुक्रिया|थैंक|बताया|कहा|बजट|நன்றி|சொன்ன|பட்ஜெட்/u;
+const OFFERING_INDIC = /कर सकता|कर सकती|कर सकते|दे सकता|दे सकती|दे सकते|चलेगा|ठीक रहेगा|डील|தர முடியும்|கொடுக்க முடியும்|பண்ணலாம்|செய்யலாம்|டீல்/u;
+const declines = (s: string) => DECLINE_CUE.test(s) || DECLINE_CUE_INDIC.test(s);
+const quotes = (s: string) => QUOTE_CUE.test(s) || QUOTE_CUE_INDIC.test(s);
+const acknowledges = (s: string) => ACKNOWLEDGED.test(s) || ACKNOWLEDGED_INDIC.test(s);
+const offers = (s: string) => OFFERING.test(s) || OFFERING_INDIC.test(s);
 
 const INTERNAL_TERM = /\b(mandate|governance|zopa|batna|parameter|principal|negotiation core|the core|strategy engine|guidance file|policy engine|score)\b/i;
 /** snake_case identifiers (prompt or record field names) never belong in a reply. */
@@ -61,7 +78,7 @@ export function checkReply(reply: string, ctx: CheckContext): ReplyViolation[] {
 
   for (const sentence of sentences) {
     for (const amount of findAmounts(sentence)) {
-      if (amount === plan.statedBudget && QUOTE_CUE.test(sentence)) continue;
+      if (amount === plan.statedBudget && quotes(sentence)) continue;
       // Repeating the counterparty's own number reveals nothing; any other private value does.
       if (view.privateAmounts.includes(amount) && !offered.includes(amount) && !ctx.counterpartyAmounts.includes(amount) && !citedAmounts.includes(amount) && !stated.includes(amount) && amount !== plan.referenceAmount) {
         violations.push({ rule: "private_amount", detail: "Mentions a private value that is not being offered." });
@@ -71,10 +88,10 @@ export function checkReply(reply: string, ctx: CheckContext): ReplyViolation[] {
       const crosses = n ? (n.direction === "up" ? amount < n.limit : amount > n.limit) : false;
       // Quoting the counterparty's own figure back (in a question, with "your", or acknowledged as theirs) is not offering it.
       const theirs = ctx.counterpartyAmounts.includes(amount) || plan.statedBudget === amount || plan.enquiredAmount === amount;
-      const clause = sentence.split(/;\s*|,\s+|\s+but\s+/i).find((part) => findAmounts(part).includes(amount)) ?? sentence;
+      const clause = sentence.split(/;\s*|,\s+|\s+but\s+|\s+(?:लेकिन|मगर|ஆனால்|ஆனா)\s+/iu).find((part) => findAmounts(part).includes(amount)) ?? sentence;
       // Putting their figure forward as ours ("I can do X if you collect it") is never quoting them.
-      const quotingThem = theirs && !OFFERING.test(clause) && (QUOTE_CUE.test(sentence) || ACKNOWLEDGED.test(clause));
-      if (crosses && !offered.includes(amount) && !citedAmounts.includes(amount) && !DECLINE_CUE.test(sentence) && !quotingThem) {
+      const quotingThem = theirs && !offers(clause) && (quotes(sentence) || acknowledges(clause));
+      if (crosses && !offered.includes(amount) && !citedAmounts.includes(amount) && !declines(sentence) && !quotingThem) {
         violations.push({ rule: "crosses_limit", detail: "States an amount beyond the limit without declining it." });
       }
     }
@@ -98,10 +115,10 @@ export function checkReply(reply: string, ctx: CheckContext): ReplyViolation[] {
 
   // Whether to restate the current price or their budget is a matter of conversation, left to the guide.
 
-  if (plan.move !== "confirm_agreement" && !(plan.move === "closed" && plan.notice === null) && (AGREEMENT_CLAIM.test(text) || WORKS_CLAIM.test(text))) {
+  if (plan.move !== "confirm_agreement" && !(plan.move === "closed" && plan.notice === null) && (AGREEMENT_CLAIM.test(text) || WORKS_CLAIM.test(text) || AGREEMENT_CLAIM_INDIC.test(text) || WORKS_CLAIM_INDIC.test(text))) {
     violations.push({ rule: "false_commitment", detail: "Claims an agreement that is not recorded." });
   }
-  if (!plan.approvalGranted && APPROVAL_CLAIM.test(text)) violations.push({ rule: "false_commitment", detail: "Claims an approval that is not recorded." });
+  if (!plan.approvalGranted && (APPROVAL_CLAIM.test(text) || APPROVAL_CLAIM_INDIC.test(text))) violations.push({ rule: "false_commitment", detail: "Claims an approval that is not recorded." });
 
   const normalizedReply = normalizeForQuoteMatch(text);
   for (const privateText of view.privateTexts) {
@@ -128,7 +145,7 @@ function plannedAmounts(plan: Plan): number[] {
 }
 
 function splitSentences(text: string): string[] {
-  return text.split(/(?<=[.!?])\s+|\n+/).map((s) => s.trim()).filter(Boolean);
+  return text.split(/(?<=[.!?])\s+|(?<=[।॥])\s*|\n+/u).map((s) => s.trim()).filter(Boolean);
 }
 
 /** Eight-word passages from private text, normalized. Long enough to avoid common phrases. */
