@@ -186,6 +186,20 @@ export const NEGOTIATE_TOOL = {
   },
 } as const;
 
+/** The agent ends the call itself, after its goodbye, when the plain-text ending guide says the call is over. */
+export const END_CALL_TOOL = {
+  type: "function",
+  name: "end_call",
+  description: "Hang up. Only when the call is over, as \"Ending the call\" describes, and only after your short goodbye in this same turn.",
+  parameters: {
+    type: "object",
+    properties: { reason: { type: "string", description: "Why the call is over, in a few words, for the record." } },
+    required: ["reason"],
+    additionalProperties: false,
+  },
+} as const;
+const ENDING_GUIDE = readFileSync(new URL("./voice-ending-guide.md", import.meta.url), "utf8").trim();
+
 export function realtimeInstructions(b: VoiceBriefing): string {
   const principal = b.principalName ? `${b.principalName} (the ${b.principalRole || "person you represent"})` : `the ${b.principalRole || "person you represent"}`;
   const facts = [...(b.subject ? [`What is offered: ${b.subject}`] : []), ...b.facts, ...b.terms];
@@ -196,7 +210,7 @@ ${facts.map((f) => `- ${f}`).join("\n") || "- (none)"}
 
 Every turn is one of two kinds.
 1. Conversation turns you answer yourself: greetings, small talk, checking they can hear you, repeating or explaining something you already said, whether you are an AI, and questions fully answered by the public facts above. Answer only what they asked, briefly and warmly as "How you sound" below describes, and hand the turn back. Do not list every fact.
-2. Deal turns go to the negotiation engine: anything about price or any amount, offers, discounts, budgets, payment, delivery or pickup arrangements, availability or holding the item, agreeing, confirming or ending, anything not in the public facts, and anything you are unsure about. For a deal turn, first say a very short, natural acknowledgement in their language, two to five words with no number in it, the way a person says it while thinking (for example "Hmm, okay...", "Got it, one sec.", "Umm, one second.", "ठीक है, एक सेकंड।" or "சரி, ஒரு நிமிஷம்."), and vary it from turn to turn. It must not describe what happens next: never say you will pass, hand over, forward, check or see what comes back. Then call negotiate with their exact words as you heard them, never paraphrased or translated. Never answer a deal turn yourself.
+2. Deal turns go to the negotiation engine: anything about price or any amount, offers, discounts, budgets, payment, delivery or pickup arrangements, availability or holding the item, agreeing, confirming or walking away from the deal, anything not in the public facts, and anything you are unsure about. A goodbye once nothing is left to settle is not a deal turn: "Ending the call" below says what to do. For a deal turn, first say a very short, natural acknowledgement in their language, two to five words with no number in it, the way a person says it while thinking (for example "Hmm, okay...", "Got it, one sec.", "Umm, one second.", "ठीक है, एक सेकंड।" or "சரி, ஒரு நிமிஷம்."), and vary it from turn to turn. It must not describe what happens next: never say you will pass, hand over, forward, check or see what comes back. Then call negotiate with their exact words as you heard them, never paraphrased or translated. Never answer a deal turn yourself.
 When you are given a reply to say, say exactly that reply, word for word, and nothing else.
 
 Rules for your own words: never say any amount or price; never agree, accept, approve, promise, hold, reserve or confirm anything; never invent a detail; never mention tools, checks, engines, rules or handing anything over.
@@ -209,6 +223,8 @@ If they ask you to repeat or say they didn't understand, say your last point aga
 Language: reply in the language they speak, in its own script: Hindi in Devanagari (never Urdu script), Tamil in Tamil script, English in English, and the same for other languages. If they mix Hindi and English, reply in the same natural mix. When they start speaking another language, switch to it at once, for every turn after that, including a repeat. Do not switch language because of an accent, a name, a filler word or one borrowed word.
 
 Voice: a friendly person on the phone. Warm, relaxed, clear and unhurried; never salesy or over-excited.
+
+${ENDING_GUIDE}
 
 How you sound. This is the same guide that every reply you are given follows, so the whole call sounds like one person. On this call, the person you represent is ${b.principalName || `the ${b.principalRole || "person you represent"}`}. For your own words, the rules above always win: anything about the deal, holding a line, another offer or checking with the person you represent comes only in the replies you are given.
 ${CONVERSATION_TONE}`;
@@ -242,7 +258,7 @@ export function realtimeSession(settings: RealtimeSettings, briefing: VoiceBrief
       },
       output: { voice: settings.voice },
     },
-    tools: [NEGOTIATE_TOOL],
+    tools: [NEGOTIATE_TOOL, END_CALL_TOOL],
     tool_choice: "auto",
     reasoning: { effort: settings.reasoning },
   };
@@ -299,7 +315,8 @@ const BREAK_IN: Record<string, string> = {
   hi: "माफ़ कीजिए, एक सेकंड।",
   ta: "மன்னிக்கவும், ஒரு நொடி.",
 };
-export const WAIT_SENSOR = { quietMs: 3_000, sampleMs: 500 };
+/** quietMs: a pause worth reporting while waiting; overQuietMs: a quiet line worth reporting once the negotiation has finished. */
+export const WAIT_SENSOR = { quietMs: 3_000, sampleMs: 500, overQuietMs: 6_000 };
 const WAITING_GUIDE = readFileSync(new URL("./voice-waiting-guide.md", import.meta.url), "utf8").trim();
 export const STAY_QUIET_TOOL = {
   type: "function",
@@ -309,6 +326,12 @@ export const STAY_QUIET_TOOL = {
 } as const;
 
 const verbatim = (text: string) => `Say exactly the following to them, word for word, in the same language, with nothing before or after it:\n${text}`;
+/** A reply that may close the call: the agent decides, from the conversation, whether to hang up after it. */
+const verbatimMayEnd = (text: string) =>
+  `Say exactly the following to them, word for word, in the same language, with nothing before or after it. After saying it, call end_call (with no more words) only if they had already said goodbye or clearly ended the conversation and nothing is left to settle; otherwise call nothing. The reply:\n${text}`;
+/** How long a goodbye takes to play, when the call does not report the end of playback: generous, never cut short. */
+const playTimeMs = (text: string) => Math.min(15_000, Math.max(2_500, 1_200 + text.length * 80));
+const OVER: Record<string, string> = { agreed: "agreed", no_agreement: "ended without agreement", ended: "ended" };
 
 // ---------- The call ----------
 
@@ -381,6 +404,17 @@ export class RealtimeCall {
   /** What each spoken message says, to compare with what was actually spoken. */
   readonly #lastSaid = new Map<string, string>();
   readonly #resaid = new Set<string>();
+  /**
+   * The agent called end_call: the call hangs up once its goodbye has played (or by the deadline), and
+   * not at all if they start speaking first. Code only carries this out; the agent decided.
+   */
+  #ending: { responseId: string | null; callId: string | null; reason: string; timer: ReturnType<typeof setTimeout> | null; tries: number } | null = null;
+  /** Responses whose audio has finished playing (output_audio_buffer.stopped). */
+  readonly #played = new Set<string>();
+  /** The agent called end_call without a goodbye once and was asked for one. */
+  #goodbyeAsked = false;
+  /** Quiet-line reports to the agent after the negotiation finished. */
+  #overReports = 0;
 
   constructor(deps: CallDeps) {
     this.#d = deps;
@@ -394,9 +428,9 @@ export class RealtimeCall {
     return this.#closed;
   }
 
-  /** Nothing is being said, decided or queued. */
+  /** Nothing is being said, decided or queued (and the call is not on its way out). */
   get idle() {
-    return !this.#active && this.#busy === 0 && this.#queue.length === 0;
+    return !this.#active && this.#busy === 0 && this.#queue.length === 0 && this.#ending === null;
   }
 
   /** The language they last spoke (ISO 639-1), for lines the call says itself. */
@@ -434,6 +468,7 @@ export class RealtimeCall {
     this.#closed = true;
     if (this.#poll) clearInterval(this.#poll);
     if (this.#sensor) clearInterval(this.#sensor);
+    if (this.#ending?.timer) clearTimeout(this.#ending.timer);
     this.#d.link.close();
     this.#d.onClosed?.();
   }
@@ -471,7 +506,14 @@ export class RealtimeCall {
     if (!next) return;
     this.#active = true;
     this.#pendingSay = next;
-    this.#d.link.send({ type: "response.create", response: { instructions: verbatim(next.text), tool_choice: "none", metadata: next.filler ? { kritva: "filler", kind: "break_in" } : { kritva: "say", message_id: next.messageId } } });
+    // An engine reply may close the call (the agent decides from the conversation); a break-in never does.
+    const mayEnd = !next.filler && this.#brokeInAfterTurn === null && this.#d.hangup !== undefined;
+    const response = next.filler
+      ? { instructions: verbatim(next.text), tool_choice: "none", metadata: { kritva: "filler", kind: "break_in" } }
+      : mayEnd
+        ? { instructions: verbatimMayEnd(next.text), tools: [END_CALL_TOOL], tool_choice: "auto", metadata: { kritva: "say", message_id: next.messageId } }
+        : { instructions: verbatim(next.text), tool_choice: "none", metadata: { kritva: "say", message_id: next.messageId } };
+    this.#d.link.send({ type: "response.create", response });
   }
 
   /**
@@ -560,7 +602,16 @@ export class RealtimeCall {
       case "input_audio_buffer.speech_started":
         this.#theySpeaking = true;
         this.#lastSoundAt = Date.now();
+        // They are talking again: the goodbye was not the end, so the call goes on.
+        if (this.#ending) this.#keepCallOpen("They started speaking again, so the call goes on. Listen and answer them.");
         return;
+      case "output_audio_buffer.stopped": {
+        // The audio of a response finished playing to them.
+        const responseId = typeof e.response_id === "string" ? e.response_id : null;
+        if (responseId) this.#played.add(responseId);
+        if (this.#ending && (responseId === null || responseId === this.#ending.responseId)) this.#hangUpSoon(400);
+        return;
+      }
       case "input_audio_buffer.speech_stopped":
         this.#theySpeaking = false;
         this.#lastSoundAt = Date.now();
@@ -603,18 +654,96 @@ export class RealtimeCall {
       .filter(Boolean)
       .join(" ")
       .trim();
-    if (response.metadata?.kritva === "wait") return this.#waited(output, spoken);
+    const end = output.find((o) => o.type === "function_call" && o.name === END_CALL_TOOL.name) ?? null;
+    if (response.metadata?.kritva === "wait") return this.#waited(output, spoken, response, end);
     // The break-in's short line before the news: said word for word, never a turn of its own.
     if (response.metadata?.kritva === "filler") return;
     const ours = response.metadata?.kritva === "say";
     if (ours) {
       if (spoken) this.#lastOwnWords = spoken;
-      this.#checkFidelity(String(response.metadata?.message_id ?? ""), spoken);
+      const messageId = String(response.metadata?.message_id ?? "");
+      const resaying = this.#checkFidelity(messageId, spoken);
+      // The engine's reply closed the call (they had already said goodbye): hang up once it has played.
+      if (end && !resaying && response.status !== "cancelled") this.#endWhenPlayed(response, end, spoken || this.#lastSaid.get(messageId) || "");
       return;
     }
     const call = output.find((o) => o.type === "function_call" && o.name === NEGOTIATE_TOOL.name);
     if (call) return this.#dealTurn(call, spoken);
-    if (spoken) return this.#conversationTurn(spoken, response.status === "cancelled");
+    if (end) return this.#goodbyeTurn(response, end, spoken);
+    if (spoken) return void (await this.#conversationTurn(spoken, response.status === "cancelled"));
+  }
+
+  /** The agent said goodbye and called end_call: keep the goodbye like any turn, then hang up once it is heard. */
+  async #goodbyeTurn(response: Record<string, any>, end: Record<string, any>, spoken: string): Promise<void> {
+    if (response.status === "cancelled") return this.#answerEnd(end, { ended: false, note: "You were cut off, so the call goes on." });
+    if (!spoken) {
+      // Never hang up on silence: the agent is asked for its goodbye once; after that the call ends anyway.
+      if (!this.#goodbyeAsked) {
+        this.#goodbyeAsked = true;
+        this.#answerEnd(end, { ended: false, note: "Say your short, warm goodbye in their language first, then call end_call again." });
+        this.#d.link.send({ type: "response.create", response: { tools: [END_CALL_TOOL], tool_choice: "auto" } });
+        return;
+      }
+      return this.#endWhenPlayed(response, end, "");
+    }
+    const ok = await this.#conversationTurn(spoken, false);
+    // A goodbye that failed a check was corrected: the call goes on, and the agent decides again.
+    if (!ok) return this.#answerEnd(end, { ended: false, note: "Your goodbye said something you cannot say, so it was corrected. The call goes on." });
+    this.#endWhenPlayed(response, end, spoken);
+  }
+
+  /** Hangs up once this response's audio has played (or by a generous deadline), unless they speak first. */
+  #endWhenPlayed(response: Record<string, any>, end: Record<string, any>, spoken: string) {
+    if (this.#closed || this.#ending) return;
+    let reason = "";
+    try {
+      reason = String(JSON.parse(String(end.arguments ?? "{}")).reason ?? "");
+    } catch {
+      reason = "";
+    }
+    const responseId = typeof response.id === "string" ? response.id : null;
+    this.#ending = { responseId, callId: typeof end.call_id === "string" ? end.call_id : null, reason: reason.slice(0, 200), timer: null, tries: 0 };
+    this.#log({ kind: "ending", reason: this.#ending.reason, goodbye: spoken.slice(0, 160) });
+    if (responseId && this.#played.has(responseId)) this.#hangUpSoon(400);
+    else this.#hangUpSoon(playTimeMs(spoken));
+  }
+
+  #hangUpSoon(ms: number) {
+    if (!this.#ending) return;
+    if (this.#ending.timer) clearTimeout(this.#ending.timer);
+    this.#ending.timer = setTimeout(() => void this.#hangUpNow(), ms);
+  }
+
+  async #hangUpNow(): Promise<void> {
+    const ending = this.#ending;
+    if (!ending || this.#closed) return;
+    // Something is still being said or decided: let it finish first (a few seconds at most).
+    if ((this.#active || this.#busy > 0 || this.#queue.length > 0) && ending.tries < 20) {
+      ending.tries += 1;
+      return this.#hangUpSoon(500);
+    }
+    this.#ending = null;
+    this.#log({ kind: "call_ended_by_agent", reason: ending.reason });
+    try {
+      await this.#d.hangup?.();
+    } catch (error) {
+      this.#log({ kind: "hangup_failed", error: String(error) });
+    }
+    this.close();
+  }
+
+  /** The call goes on after all: the agent hears why, and nothing is hung up. */
+  #keepCallOpen(note: string) {
+    const ending = this.#ending;
+    if (!ending) return;
+    if (ending.timer) clearTimeout(ending.timer);
+    this.#ending = null;
+    this.#log({ kind: "ending_cancelled", note });
+    if (ending.callId) this.#answerEnd({ call_id: ending.callId }, { ended: false, note });
+  }
+
+  #answerEnd(end: Record<string, any>, output: Record<string, unknown>) {
+    if (typeof end.call_id === "string") this.#output(end, output);
   }
 
   /** A deal turn: check and keep the acknowledgement, run the engine, speak its checked reply. */
@@ -680,8 +809,8 @@ export class RealtimeCall {
     this.#d.link.send({ type: "conversation.item.create", item: { type: "function_call_output", call_id: call.call_id, output: JSON.stringify(output) } });
   }
 
-  /** A conversation turn the model answered itself: record both sides, and correct a failed check. */
-  async #conversationTurn(spoken: string, cut: boolean): Promise<void> {
+  /** A conversation turn the model answered itself: record both sides, and correct a failed check. False when corrected. */
+  async #conversationTurn(spoken: string, cut: boolean): Promise<boolean> {
     this.#busy += 1;
     try {
       const itemId = this.#lastUserItem;
@@ -694,11 +823,15 @@ export class RealtimeCall {
         messageId: `msg_${(itemId ?? crypto.randomUUID()).replace(/[^\w-]/g, "").slice(0, 90)}`,
         utteranceId: itemId,
       });
-      if (!recorded.ok) return this.#log({ kind: "record_failed", code: recorded.code });
+      if (!recorded.ok) {
+        this.#log({ kind: "record_failed", code: recorded.code });
+        return true;
+      }
       this.#lastOwnWords = spoken;
       this.#spoken.add(recorded.replyId);
       this.#log({ kind: "conversation_turn", cut, violations: recorded.violations.map((v) => v.rule) });
       if (recorded.violations.length) await this.#correct(recorded.violations, spoken);
+      return recorded.violations.length === 0;
     } finally {
       this.#busy -= 1;
     }
@@ -716,10 +849,10 @@ export class RealtimeCall {
     if (recorded.ok) this.#say(recorded.replyId, text);
   }
 
-  /** The engine's reply must be spoken as recorded; a different amount is repeated correctly. */
-  #checkFidelity(messageId: string, spoken: string) {
+  /** The engine's reply must be spoken as recorded; a different amount is repeated correctly (true: said again). */
+  #checkFidelity(messageId: string, spoken: string): boolean {
     const expected = this.#lastSaid.get(messageId);
-    if (expected === undefined) return;
+    if (expected === undefined) return false;
     const want = findAmounts(expected).sort().join(",");
     const got = findAmounts(spoken).sort().join(",");
     const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
@@ -729,7 +862,9 @@ export class RealtimeCall {
       this.#resaid.add(messageId);
       this.#spoken.delete(messageId);
       this.#say(messageId, expected);
+      return true;
     }
+    return false;
   }
 
   /** Engine messages recorded during the call (for example after the seller's approval) are spoken once. */
@@ -772,9 +907,9 @@ export class RealtimeCall {
 
   /** Reports a quiet stretch during a wait to the agent, which decides whether and what to say. */
   #sense() {
-    if (this.#closed || this.#active || this.#queue.length > 0) return;
+    if (this.#closed || this.#active || this.#queue.length > 0 || this.#ending) return;
     const waitingSince = this.#workingSince ?? this.#approvalSince;
-    if (waitingSince === null) return;
+    if (waitingSince === null) return this.#senseOver();
     const now = Date.now();
     const quietMs = now - this.#lastSoundAt;
     if (quietMs < this.#wait.quietMs || now - this.#lastReportAt < this.#wait.quietMs) return;
@@ -802,15 +937,47 @@ export class RealtimeCall {
     this.#log({ kind: "wait_reported", situation: this.#workingSince !== null ? "working" : "approval", quiet, waited });
   }
 
-  /** What the agent did with a wait report: stayed quiet, or spoke (checked and kept as a fragment). */
-  async #waited(output: Array<Record<string, any>>, spoken: string): Promise<void> {
-    // An out-of-band stay_quiet call is not in the conversation, so it needs no output.
-    this.#log({ kind: "wait_answered", spoke: Boolean(spoken), text: spoken.slice(0, 160) });
+  /**
+   * The negotiation has finished and the line has gone quiet: code reports only that, and the agent
+   * decides whether the call is over (a goodbye and end_call), asks if there is anything else, or stays quiet.
+   */
+  #senseOver() {
+    const over = this.#status ? OVER[this.#status] : undefined;
+    if (!over || this.#endAfter || this.#busy > 0 || this.#theySpeaking || this.#overReports >= 2 || this.#d.hangup === undefined) return;
+    const now = Date.now();
+    const quietMs = now - this.#lastSoundAt;
+    if (quietMs < this.#wait.overQuietMs || now - this.#lastReportAt < this.#wait.overQuietMs) return;
+    const quiet = Math.round(quietMs / 1000);
+    const theirs = this.#lastUserItem ? this.#transcripts.get(this.#lastUserItem) : undefined;
+    const last = `${this.#lastOwnWords ? ` Your last words were: "${this.#lastOwnWords.slice(0, 200)}"` : ""}${theirs ? ` Their last words were: "${theirs.slice(0, 200)}"` : ""}`;
+    this.#active = true;
+    this.#lastReportAt = now;
+    this.#overReports += 1;
+    this.#d.link.send({
+      type: "response.create",
+      response: {
+        conversation: "none",
+        input: [],
+        instructions: `${ENDING_GUIDE}\n\nSpeak ${languageLabel(this.#language)}. Never use dashes.\n\nNow: the negotiation has ${over}, and the line has been quiet for ${quiet} seconds.${last} If the call is over, say your goodbye and call end_call. If they may still want something, warmly ask if there is anything else. If speaking now would be awkward, call stay_quiet.`,
+        tools: [END_CALL_TOOL, STAY_QUIET_TOOL],
+        tool_choice: "auto",
+        metadata: { kritva: "wait", situation: "over" },
+      },
+    });
+    this.#log({ kind: "wait_reported", situation: "over", quiet });
+  }
+
+  /** What the agent did with a wait report: stayed quiet, spoke (checked and kept as a fragment), or ended the call. */
+  async #waited(output: Array<Record<string, any>>, spoken: string, response: Record<string, any> = {}, end: Record<string, any> | null = null): Promise<void> {
+    // An out-of-band stay_quiet or end_call is not in the conversation, so it needs no output.
+    this.#log({ kind: "wait_answered", spoke: Boolean(spoken), text: spoken.slice(0, 160), ended: Boolean(end) });
+    // Never hang up on silence: an end_call without a goodbye is not acted on.
     if (!spoken) return;
     this.#lastOwnWords = spoken;
     await this.#d.engine.recordVoiceFragment({ sessionId: this.#d.sessionId, text: spoken, utteranceId: `wait_${Date.now()}` }).catch(() => undefined);
     const problems = await this.#d.engine.checkVoiceWords(this.#d.sessionId, spoken);
-    if (problems.length) await this.#correct(problems, spoken);
+    if (problems.length) return void (await this.#correct(problems, spoken));
+    if (end && response.status !== "cancelled") this.#endWhenPlayed(response, { ...end, call_id: undefined }, spoken);
   }
 }
 
