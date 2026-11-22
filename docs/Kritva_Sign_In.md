@@ -40,21 +40,34 @@ POST /api/auth/signout         → the session ends; the cookie is cleared
 | `KRITVA_EMAIL_FROM` | (none) | The sender, for example `Kritva <signin@yourdomain.com>`. Setting it turns on emailed links (Amazon SES). |
 | `KRITVA_SIGNIN_EMAILS` | (none) | Who may sign in, comma-separated. Required for emailed links. |
 | `KRITVA_EMAIL_PROVIDER` | `ses` when `KRITVA_EMAIL_FROM` is set, else `console` | `console` prints links in the server log. |
-| `KRITVA_SES_REGION` | `ap-south-1` | The SES region (Mumbai, close to Bangalore). |
+| `KRITVA_SES_REGION` | the AWS profile's region | Any SES region your account can use. Where the email is sent from does not change how fast the console is. `npm run email:setup` sets it. |
 | AWS credentials | (environment, profile or instance role) | The usual AWS settings; the server needs `ses:SendEmail`. |
 
 The server prints at startup how sign-in links are delivered and what is missing.
 
 ## 4. Email delivery: Amazon SES
 
-Chosen because the project runs on AWS (`CLAUDE.md`) and SES has a Mumbai region. The sender is one small class (`SesEmailSender` in `apps/server/src/auth.ts`), so another provider is a drop-in replacement. These steps need your AWS account:
+Chosen because the project runs on AWS (`CLAUDE.md`). Any SES region works (Mumbai is not needed); the sender is one small class (`SesEmailSender` in `apps/server/src/auth.ts`), so another provider is a drop-in replacement.
 
-1. In the SES console, region **Asia Pacific (Mumbai)**, verify the sender: a domain (best: add the DKIM records it gives you) or a single email address.
-2. A new SES account is in the **sandbox**: it can only send to verified addresses. For the demo, verify your own address too; or request production access.
-3. Give the server credentials allowed `ses:SendEmail` (an IAM user's keys locally, the instance or task role on AWS).
-4. Set `KRITVA_EMAIL_FROM`, `KRITVA_SIGNIN_EMAILS` and `KRITVA_WEB_URL`, and restart.
+One command does the AWS side and the settings, with the AWS credentials already on the computer (the ones the AWS CLI uses):
 
-Until then, links are printed in the server log, which is all a local demo needs.
+```bash
+npm run email:setup -- you@example.com                    # your AWS profile's region
+npm run email:setup -- you@example.com --region us-east-1 # or name one
+```
+
+It checks SES in that region (sending on, sandbox or not), asks SES to verify the sending and signing-in addresses (AWS emails each a link; click it), and writes `KRITVA_EMAIL_FROM`, `KRITVA_SIGNIN_EMAILS` and `KRITVA_SES_REGION` into `.env`, keeping everything else. Run it again to see what is still missing; then restart the server.
+
+What only you can do:
+- **Click the verification email from AWS.** AWS sends it to prove the inbox is yours; no tool can do that step.
+- **AWS credentials**, if this computer has none: `aws configure` with a user allowed `ses:GetAccount`, `ses:GetEmailIdentity`, `ses:CreateEmailIdentity` and `ses:SendEmail`. On AWS itself, the server's role needs `ses:SendEmail`.
+
+Notes:
+- A new SES account is in the **sandbox**: it sends only to verified addresses. Signing yourself in needs nothing more; others need production access (requested in the SES console).
+- Mail sent through SES **from a gmail.com address can land in spam**. Mark it "Not spam" once, or use an address on a domain you own (`--from signin@yourdomain.com`).
+- For a deployed console, also set `KRITVA_WEB_URL` (https).
+
+Until this is done, links are printed in the server log, which is all a local demo needs.
 
 ## 5. Demo day
 

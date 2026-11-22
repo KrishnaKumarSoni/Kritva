@@ -70,18 +70,22 @@ export function signInMessage(email: SignInEmail): { subject: string; text: stri
   return { subject, text, html };
 }
 
-/** Amazon SES (v2 API). Credentials come from the usual AWS settings (environment, profile or the instance's role). */
+/**
+ * Amazon SES (v2 API). Credentials and, unless KRITVA_SES_REGION names one, the region come from the
+ * usual AWS settings (environment, profile or the instance's role). Any SES region works: where the
+ * email is sent from does not change how fast the console is.
+ */
 export class SesEmailSender implements EmailSender {
   readonly kind = "ses" as const;
   #client: Promise<{ send(command: unknown): Promise<unknown> }> | null = null;
   #command: Promise<new (input: unknown) => unknown> | null = null;
-  readonly #options: { from: string; region: string };
-  constructor(options: { from: string; region: string }) {
+  readonly #options: { from: string; region: string | null };
+  constructor(options: { from: string; region: string | null }) {
     this.#options = options;
   }
   async sendSignIn(email: SignInEmail): Promise<void> {
     // Loaded only when SES is used, so local runs never need the AWS SDK.
-    this.#client ??= import("@aws-sdk/client-sesv2").then((m) => new m.SESv2Client({ region: this.#options.region }));
+    this.#client ??= import("@aws-sdk/client-sesv2").then((m) => new m.SESv2Client(this.#options.region ? { region: this.#options.region } : {}));
     this.#command ??= import("@aws-sdk/client-sesv2").then((m) => m.SendEmailCommand as unknown as new (input: unknown) => unknown);
     const [client, SendEmail] = await Promise.all([this.#client, this.#command]);
     const message = signInMessage(email);
@@ -132,8 +136,9 @@ export function authFromEnv(env: NodeJS.ProcessEnv = process.env): { settings: A
   let sender: EmailSender = new ConsoleEmailSender();
   if (useSes && !from) notes.push("KRITVA_EMAIL_PROVIDER=ses needs KRITVA_EMAIL_FROM; sign-in links go to the server log instead.");
   else if (useSes && !allowed.length) notes.push("Emailed sign-in needs KRITVA_SIGNIN_EMAILS (who may sign in); sign-in links go to the server log instead.");
-  else if (useSes) sender = new SesEmailSender({ from: from!, region: env.KRITVA_SES_REGION?.trim() || "ap-south-1" });
-  notes.unshift(sender.kind === "ses" ? `Sign-in: links are emailed through Amazon SES from ${from}, to ${allowed.length} allowed address(es).` : "Sign-in: links are printed in this log (set KRITVA_EMAIL_FROM and KRITVA_SIGNIN_EMAILS to email them).");
+  const region = env.KRITVA_SES_REGION?.trim() || null;
+  if (useSes && from && allowed.length) sender = new SesEmailSender({ from, region });
+  notes.unshift(sender.kind === "ses" ? `Sign-in: links are emailed through Amazon SES (${region ?? env.AWS_REGION ?? env.AWS_DEFAULT_REGION ?? "the AWS profile's region"}) from ${from}, to ${allowed.length} allowed address(es).` : "Sign-in: links are printed in this log (set KRITVA_EMAIL_FROM and KRITVA_SIGNIN_EMAILS to email them).");
   if (sender.kind === "ses" && !webUrl) notes.push("Set KRITVA_WEB_URL (https) so emailed links open the console from anywhere.");
   return { settings: { webUrl, allowed, sender }, notes };
 }
