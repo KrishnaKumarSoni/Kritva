@@ -630,8 +630,9 @@ export class NegotiationEngine {
       } else {
         // An approval the principal already gave for these exact terms covers the agreement.
         const approval = approvedFor(state, accepted.termsHash);
-        await this.#recordAgreement(writes, state, { offerId: accepted.offerId, terms: accepted.terms, termsHash: accepted.termsHash, acceptanceId: acceptance.id, approvalId: approval?.responseId ?? null }, agent);
-        await writes.put({ id: newEventId(), type: "status_changed", channel: null, payload: { from: state.status, to: "agreed", reason: "Counterparty accepted terms the principal authorized." } }, agent);
+        const agreed = await this.#recordAgreement(writes, state, { offerId: accepted.offerId, terms: accepted.terms, termsHash: accepted.termsHash, acceptanceId: acceptance.id, approvalId: approval?.responseId ?? null }, agent);
+        // Without the agreement (a claim across negotiations refused it), nothing changes status.
+        if (agreed.recorded) await writes.put({ id: newEventId(), type: "status_changed", channel: null, payload: { from: state.status, to: "agreed", reason: "Counterparty accepted terms the principal authorized." } }, agent);
         plan.offer = { terms: accepted.terms, basis: "final_terms" };
       }
     }
@@ -1132,6 +1133,12 @@ export class NegotiationEngine {
         counter = terms;
       }
 
+      // An approval may be refused before anything is written (for example the item is already held for someone else).
+      if (decision === "approved") {
+        const allowed = await this.#onApproved(state, pending);
+        if (!allowed.ok) return { ok: false, code: "not_pending", message: allowed.message };
+      }
+
       const writes = new Writer(this.#record, input.sessionId);
       try {
         const counterOfferId = counter ? await this.#recordOffer(writes, state, { terms: counter, basis: "final_terms" }, agent) : null;
@@ -1140,7 +1147,6 @@ export class NegotiationEngine {
           { id: newEventId(), type: "approval_responded", channel: null, payload: { requestId: pending.requestId, offerId: pending.offerId, termsHash: pending.termsHash, mandateRevision: state.mandateRevision, decision, note: input.note ?? null, counterOfferId, messageToCounterparty: input.message?.trim() || null } },
           principal,
         );
-        if (decision === "approved") await this.#onApproved(writes, state, response);
         if (decision === "declined") {
           await writes.put({ id: newEventId(), type: "status_changed", channel: null, payload: { from: state.status, to: "no_agreement", reason: "The principal declined these terms.", requestedBy: "principal", outcome: "declined_by_principal" } }, agent);
         } else {
@@ -1249,23 +1255,24 @@ export class NegotiationEngine {
   }
 
   /**
-   * The principal approved these terms. A hook for work across negotiations (for example reserving
-   * the item for this counterparty); it records nothing itself.
+   * The principal is about to approve these terms. A hook for work across negotiations (for example
+   * reserving the item for this counterparty). It runs before anything is written, so a refusal
+   * leaves the record untouched; on its own it allows every approval and records nothing.
    */
-  async #onApproved(writes: Writer, state: NegotiationState, response: RecordedEvent): Promise<void> {
-    void writes;
+  async #onApproved(state: NegotiationState, pending: NonNullable<NegotiationState["pendingApproval"]>): Promise<{ ok: true } | { ok: false; message: string }> {
     void state;
-    void response;
+    void pending;
+    return { ok: true };
   }
 
   /**
    * The one place an agreement is recorded: a single append. An optional claim (for example an item
    * lock across negotiations) runs first; when it fails nothing is written and false comes back.
    */
-  async #recordAgreement(writes: Writer, state: NegotiationState, a: { offerId: string; terms: OfferTerm[]; termsHash: string; acceptanceId: string; approvalId: string | null }, agent: Actor, claim?: () => Promise<boolean>): Promise<boolean> {
-    if (claim && !(await claim())) return false;
+  async #recordAgreement(writes: Writer, state: NegotiationState, a: { offerId: string; terms: OfferTerm[]; termsHash: string; acceptanceId: string; approvalId: string | null }, agent: Actor, claim?: () => Promise<boolean>): Promise<{ recorded: boolean }> {
+    if (claim && !(await claim())) return { recorded: false };
     await writes.put({ id: newEventId(), type: "agreement_recorded", channel: null, payload: { offerId: a.offerId, terms: a.terms, termsHash: a.termsHash, mandateRevision: state.mandateRevision, acceptanceId: a.acceptanceId, approvalId: a.approvalId } }, agent);
-    return true;
+    return { recorded: true };
   }
 
   /** The principal pauses or resumes. While paused, no negotiation content reaches the counterparty. */
