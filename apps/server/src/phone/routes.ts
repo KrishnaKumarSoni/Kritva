@@ -92,6 +92,16 @@ export function acceptPlan(full: Record<string, any>, mode: PhoneSettings["accep
   return { accept: { type: "realtime", model, instructions: full.instructions, audio: { output: full.audio?.output } }, update: session };
 }
 
+/**
+ * A pause between the accept and joining the call (so before the session.update and the greeting).
+ * Answered from far away (the Mac in India: about 400 ms to session.updated), calls had audio; answered
+ * from a server next to OpenAI (AWS us-west-2: about 150 ms), the same calls were silent both ways, as
+ * when the whole session went in the accept. Applying the audio settings before the SIP media leg is up
+ * seems to leave it silent, so the server waits. KRITVA_PHONE_SETUP_DELAY_MS, 0 to 5000, default 0.
+ */
+const SETUP_DELAY_MS = Math.min(5000, Math.max(0, Number(process.env.KRITVA_PHONE_SETUP_DELAY_MS ?? 0) || 0));
+const setupPause = () => (SETUP_DELAY_MS ? new Promise<void>((r) => setTimeout(r, SETUP_DELAY_MS)) : Promise.resolve());
+
 /** Declares the call's audio codec for both directions of a session. */
 function withCodec(session: Record<string, any>, type: string) {
   session.audio = { ...session.audio, input: { ...session.audio?.input, format: { type } }, output: { ...session.audio?.output, format: { type } } };
@@ -192,6 +202,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
     try {
       let link;
       try {
+        await setupPause();
         link = await deps.connector.attach(callId);
       } catch (error) {
         log({ kind: "phone_attach_failed", callId, sessionId, error: String(error) });
@@ -348,6 +359,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
     try {
       let link: RealtimeLink;
       try {
+        await setupPause();
         link = await deps.connector.attach(callId);
       } catch (error) {
         log({ kind: "phone_attach_failed", callId, frontDesk: true, error: String(error) });
