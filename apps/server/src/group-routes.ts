@@ -16,7 +16,7 @@ export interface CallView {
   sessionId: string;
   /** Masked by the dialer (91******4567). */
   to: string;
-  state: "dialling" | "ringing" | "answered" | "connected" | "ended";
+  state: "queued" | "dialling" | "ringing" | "answered" | "connected" | "ended";
   outcome: null | "completed" | "no_answer" | "busy" | "failed" | "blocked" | "cancelled";
   startedAt: string;
   answeredAt?: string | null;
@@ -35,7 +35,7 @@ export interface Dialer {
 export async function hangUpPending(dialer: Dialer | null, sessionId: string): Promise<void> {
   if (!dialer) return;
   for (const call of await dialer.listForSession(sessionId)) {
-    if (call.state === "dialling" || call.state === "ringing") await dialer.hangup(call.callId).catch(() => undefined);
+    if (call.state === "queued" || call.state === "dialling" || call.state === "ringing") await dialer.hangup(call.callId).catch(() => undefined);
   }
 }
 

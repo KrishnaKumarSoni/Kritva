@@ -14,7 +14,8 @@ import type { ListingConfig } from "./main-helpers.ts";
 import { registerVoiceRoutes } from "./voice-routes.ts";
 import { registerRealtimeRoutes, realtimeSettingsFromEnv, type RealtimeCallControl, type RealtimeConnector, type RealtimeSettings } from "./realtime-voice.ts";
 import type { PhoneSettings } from "./phone/config.ts";
-import { registerPhoneRoutes } from "./phone/routes.ts";
+import { registerPhoneRoutes, type LiveCallRegistry, type PhoneDeps } from "./phone/routes.ts";
+import type { OutboundDialer } from "./phone/outbound.ts";
 import {
   formatValue,
   negotiationInsights,
@@ -74,15 +75,15 @@ export interface AppDeps {
   /** Realtime voice (docs/Kritva_Realtime_Voice.md). Without a connector the browser uses turn-based voice. */
   realtime?: { connector: RealtimeConnector | null; settings?: RealtimeSettings; log?: (entry: Record<string, unknown>) => void } | null;
   /** Phone calls through a SIP trunk into OpenAI (docs/Kritva_Phone_Calls.md). Off when absent. */
-  phone?: { settings: PhoneSettings; connector: RealtimeConnector & RealtimeCallControl; log?: (entry: Record<string, unknown>) => void; pollMs?: number; acceptBackoffMs?: number[] } | null;
+  phone?: { settings: PhoneSettings; connector: RealtimeConnector & RealtimeCallControl; log?: (entry: Record<string, unknown>) => void; pollMs?: number; acceptBackoffMs?: number[]; hangUpOnExit?: boolean; outbound?: PhoneDeps["outbound"] } | null;
+  /** Kritva's outbound dialer (phone/outbound.ts), built in main.ts with outboundDialer() and shared by the phone routes and the counterparties' board. */
+  dialer?: OutboundDialer | null;
+  /** Voice calls connected now (browser and phone), with the counterparty's number while each lasts; the engine's break-in uses it too. */
+  liveCalls?: (LiveCallRegistry & Partial<Pick<LiveCalls, "sessions">>) | null;
   /** Required by the network server. In-process tools can call the app as the operator. */
   operatorKey?: string;
   /** Several counterparties per saved mandate (docs/Kritva_Multiple_Counterparties.md). Off when absent. */
   groups?: DealGroups | null;
-  /** Voice calls connected now (browser and phone), shared with the engine's break-in callback. */
-  liveCalls?: LiveCalls | null;
-  /** Kritva calling counterparties' numbers (src/phone/outbound.ts). Off when absent. */
-  dialer?: Dialer | null;
 }
 
 export function createApp(deps: AppDeps): Hono {
@@ -111,7 +112,7 @@ export function createApp(deps: AppDeps): Hono {
   }
 
   if (deps.library) registerLibraryRoutes(app, { library: deps.library, record, engine, locale, examples: deps.examples ?? [], protectedIds: (deps.listings ?? []).map((l) => l.libraryId), groups: deps.groups ?? null });
-  if (deps.library && deps.groups) registerGroupRoutes(app, { record, library: deps.library, groups: deps.groups, locale, liveCalls: deps.liveCalls ? () => deps.liveCalls!.sessions() : undefined, dialer: deps.dialer ?? null });
+  if (deps.library && deps.groups) registerGroupRoutes(app, { record, library: deps.library, groups: deps.groups, locale, liveCalls: deps.liveCalls?.sessions ? () => deps.liveCalls!.sessions!() : undefined, dialer: deps.dialer ?? null });
   if (deps.library && deps.intake) registerIntakeRoutes(app, { intake: deps.intake, library: deps.library, record, engine, locale });
   registerVoiceRoutes(app, {
     record,
@@ -130,7 +131,7 @@ export function createApp(deps: AppDeps): Hono {
 
   registerRealtimeRoutes(app, { record, engine, connector: deps.realtime?.connector ?? null, settings: deps.realtime?.settings ?? realtimeSettingsFromEnv(), log: deps.realtime?.log, liveCalls: deps.liveCalls ?? null });
   if (deps.phone) {
-    registerPhoneRoutes(app, { record, engine, library: deps.library ?? null, groups: deps.groups ?? null, liveCalls: deps.liveCalls ?? null, listings: deps.listings ?? [], connector: deps.phone.connector, settings: deps.phone.settings, realtime: deps.realtime?.settings ?? realtimeSettingsFromEnv(), log: deps.phone.log, pollMs: deps.phone.pollMs, acceptBackoffMs: deps.phone.acceptBackoffMs });
+    registerPhoneRoutes(app, { record, engine, library: deps.library ?? null, groups: deps.groups ?? null, listings: deps.listings ?? [], connector: deps.phone.connector, settings: deps.phone.settings, realtime: deps.realtime?.settings ?? realtimeSettingsFromEnv(), log: deps.phone.log, pollMs: deps.phone.pollMs, acceptBackoffMs: deps.phone.acceptBackoffMs, hangUpOnExit: deps.phone.hangUpOnExit, outbound: deps.phone.outbound ?? null, dialer: deps.dialer ?? null, liveCalls: deps.liveCalls ?? null });
   }
 
   /** Prepared mandates from cases/, plus saved mandates with a confirmed revision. Unconfirmed drafts never appear. */
@@ -699,7 +700,8 @@ function describeEvent(e: RecordedEvent, view: MandateView, locale: string) {
       break;
     case "voice_connection": {
       const phone = p.transport === "phone";
-      title = p.status === "interrupted" ? "Voice connection interrupted" : p.status === "ended" ? (phone ? "Phone call ended" : "Voice call ended") : phone ? "Phone call connected" : "Voice connected";
+      const call = p.direction === "outbound" ? "Kritva's call" : "Phone call";
+      title = p.status === "interrupted" ? "Voice connection interrupted" : p.status === "ended" ? (phone ? `${call} ended` : "Voice call ended") : phone ? `${call} connected` : "Voice connected";
       if (p.status === "ended") summary = CALL_END_LABEL[String(p.reason)] ?? "";
       break;
     }

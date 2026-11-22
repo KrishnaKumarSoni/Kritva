@@ -14,7 +14,7 @@
  *       a number with no route. This leaves one empty session in the record.
  */
 import { randomUUID } from "node:crypto";
-import { INDIA_SIP_HOST, phoneSettingsFromEnv, sipUri } from "../src/phone/config.ts";
+import { GLOBAL_SIP_HOST, phoneSettingsFromEnv, sipUri } from "../src/phone/config.ts";
 import { WEBHOOK_PATH } from "../src/phone/routes.ts";
 import { signWebhook } from "../src/phone/webhook-signature.ts";
 
@@ -28,7 +28,7 @@ const { settings, problems } = phoneSettingsFromEnv();
 console.log(settings ? "Phone calls: on" : "Phone calls: off");
 for (const problem of problems) console.log(`  problem: ${problem}`);
 if (!process.env.OPENAI_API_KEY) console.log("  problem: OPENAI_API_KEY is not set.");
-const host = settings?.sipHost ?? process.env.KRITVA_PHONE_SIP_HOST ?? INDIA_SIP_HOST;
+const host = settings?.sipHost ?? process.env.KRITVA_PHONE_SIP_HOST ?? GLOBAL_SIP_HOST;
 console.log(`\nVobiz origination URI:  ${sipUri({ projectId: settings?.projectId ?? process.env.OPENAI_PROJECT_ID ?? null, sipHost: host })}`);
 console.log("  transport TLS (chosen in the Vobiz console), trunk Secure (SRTP) on");
 console.log(`OpenAI webhook URL:     https://<public host>${WEBHOOK_PATH}   (event: realtime.call.incoming)`);

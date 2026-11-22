@@ -985,7 +985,7 @@ describe("A budget below the price keeps the negotiation moving (reported chat, 
     const text = "Is that your final rate?";
     await say(text, { intent: "question", pressure: "final_offer", public_term_questions: [{ term_id: "term_price", basis: "current", quote: text }] });
     const brief = JSON.parse(llm.seen.findLast((r) => r.purpose === "compose_reply")!.messages[0]!.content);
-    expect(brief.must.join(" ")).toMatch(/Do not answer yes or no/);
+    expect(brief.must.join(" ")).toMatch(/Do not answer yes, no or anything like "not quite"/);
   });
 
   it("a turn cut off after its reading was recorded (a server restart) resumes on retry and sends a reply, without noting it twice", async () => {

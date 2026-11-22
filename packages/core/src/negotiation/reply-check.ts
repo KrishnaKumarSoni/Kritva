@@ -76,7 +76,9 @@ function competitionViolations(text: string, sentences: string[], view: MandateV
   return out;
 }
 
-export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
+export function checkReply(reply: string, ctx: CheckContext): ReplyViolation[] {
+  // Writers use curly apostrophes as often as straight ones: "can’t" declines and "we’re agreed" claims alike.
+  const text = straightApostrophes(reply);
   const violations: ReplyViolation[] = [];
   if (INTERNAL_TERM.test(text) || FIELD_NAME.test(text)) violations.push({ rule: "internal_term", detail: "Uses internal vocabulary or a field name the other party should never see." });
   const { view, plan } = ctx;
@@ -144,6 +146,11 @@ export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
     }
   }
   return dedupe(violations);
+}
+
+/** Curly and other look-alike apostrophes as "'", so every pattern reads "can’t" as "can't". */
+export function straightApostrophes(text: string): string {
+  return text.replace(/[‘’‚‛′ʼ]/g, "'");
 }
 
 function plannedAmounts(plan: Plan): number[] {

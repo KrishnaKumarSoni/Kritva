@@ -309,6 +309,8 @@ export const PAYLOADS = {
     transport: z.enum(["browser", "phone"]).nullable().default(null),
     /** Why a call ended: the line closed (caller hung up or it dropped), silence, the time limit, Kritva ended it, or an error. */
     reason: z.enum(["hung_up", "idle", "max_duration", "server", "error"]).nullable().default(null),
+    /** Phone calls: who placed the call. "outbound" is Kritva calling the counterparty. */
+    direction: z.enum(["inbound", "outbound"]).nullable().default(null),
   }),
   status_changed: z.strictObject({
     from: SessionStatus,

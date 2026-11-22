@@ -6,10 +6,11 @@ import { serve } from "@hono/node-server";
 import { createAgentFromEnv, createIntakeAgentFromEnv, createMappingLlmFromEnv, createSpeechFromEnv, createTurnLlmFromEnv, IntakeService, SqliteIntakeStore, DealGroups, MandateLibrary, MandateRevisions, NegotiationEngine, NegotiationRecord, SqliteLibraryBackend, SqliteRecordBackend } from "@kritva/core";
 import { createApp } from "./app.ts";
 import { OpenAIRealtimeConnector, realtimeSettingsFromEnv } from "./realtime-voice.ts";
-import { phoneFromEnv } from "./phone/routes.ts";
+import { outboundDialer, phoneFromEnv } from "./phone/routes.ts";
+import type { OutboundDialer } from "./phone/outbound.ts";
 import { loadCaseRuntime, maxCounterparties } from "./main-helpers.ts";
 import { LiveCalls } from "./live-calls.ts";
-import { hangUpPending, type Dialer } from "./group-routes.ts";
+import { hangUpPending } from "./group-routes.ts";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
 
@@ -21,8 +22,8 @@ const locale = process.env.KRITVA_LOCALE ?? "en-IN";
 // open negotiations at once, so a mistake can't run up model use (docs/Kritva_Multiple_Counterparties.md).
 const groups = new DealGroups(record, { maxOpen: maxCounterparties(process.env.KRITVA_MAX_COUNTERPARTIES) });
 const liveCalls = new LiveCalls();
-// Kritva calling counterparties (src/phone/outbound.ts) plugs in here when outbound calling is on.
-const dialer: Dialer | null = null;
+// Kritva calling counterparties (src/phone/outbound.ts): set once the phone setup is read, below.
+let dialer: OutboundDialer | null = null;
 const mappingLlm = createMappingLlmFromEnv();
 // Case-level mandates live in their own tables, so they exist before any session starts.
 // The library maps the intake agent's plain-prose brief, which low reasoning effort handles as well as the
@@ -57,6 +58,9 @@ const revisions = new MandateRevisions({ record, engine, mappingLlm });
 const intake = new IntakeService({ store: new SqliteIntakeStore(join(dataDir, "kritva.sqlite")), agent: createIntakeAgentFromEnv(), library, defaultCurrency: process.env.KRITVA_DEFAULT_CURRENCY ?? "Indian rupees (₹)" });
 const configuredKey = process.env.KRITVA_OPERATOR_KEY?.trim();
 const operatorKey = configuredKey || randomBytes(24).toString("base64url");
+// Phone calls (docs/Kritva_Phone_Calls.md), and Kritva's outbound dialer, shared by the phone routes and the counterparties' board.
+const phone = phoneFromEnv();
+dialer = outboundDialer(phone, engine);
 const app = createApp({
   record,
   engine,
@@ -75,8 +79,8 @@ const app = createApp({
     process.env.OPENAI_API_KEY && (process.env.KRITVA_VOICE_MODE ?? "realtime") === "realtime"
       ? { connector: new OpenAIRealtimeConnector(process.env.OPENAI_API_KEY), settings: realtimeSettingsFromEnv(), log: (entry) => console.log("[voice]", JSON.stringify(entry)) }
       : null,
-  // Phone calls (docs/Kritva_Phone_Calls.md): on when OPENAI_WEBHOOK_SECRET and KRITVA_PHONE_ROUTES are set.
-  phone: phoneFromEnv(),
+  // Phone calls: on when OPENAI_WEBHOOK_SECRET and KRITVA_PHONE_ROUTES are set; outbound when Vobiz is configured too.
+  phone,
   groups,
   liveCalls,
   dialer,

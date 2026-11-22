@@ -15,7 +15,7 @@ import {
   type StructuredRequest,
   type StructuredResponse,
 } from "@kritva/core";
-import { createApp } from "../src/app.ts";
+import { createApp, type AppDeps } from "../src/app.ts";
 import { hangUpPending, type CallView, type Dialer } from "../src/group-routes.ts";
 import { loadConfirmedMandates, loadExamples, loadListings } from "../src/main-helpers.ts";
 
@@ -66,7 +66,7 @@ export function groupSetup(maxOpen = 3, dialer: Dialer | null = null) {
   const groups = new DealGroups(record, { maxOpen });
   const engine = new NegotiationEngine({ record, llm, locale: "en-IN", subjectFacts: new Map([["bed-sale", "fact_f_item"]]), listingDetails: new Map(listings.map((l) => [l.caseId, l])), groups });
   const revisions = new MandateRevisions({ record, engine, mappingLlm: llm });
-  const app = createApp({ record, engine, revisions, mandates, locale: "en-IN", library, examples, listings, groups, dialer });
+  const app = createApp({ record, engine, revisions, mandates, locale: "en-IN", library, examples, listings, groups, dialer: dialer as unknown as AppDeps["dialer"] });
   const call = async (method: string, path: string, body?: unknown) => {
     const res = await app.request(path, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
     const text = await res.text();

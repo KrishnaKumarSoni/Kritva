@@ -1,0 +1,626 @@
+{
+  "runAt": "2026-11-22T01:54:05.562Z",
+  "commit": "cc55332 + uncommitted changes",
+  "model": "gpt-5.4-mini",
+  "runs": 1,
+  "passed": 3,
+  "total": 3,
+  "turnLatencyMs": {
+    "p50": 4648,
+    "p90": 6315,
+    "max": 8678
+  },
+  "results": [
+    {
+      "scenario": "chat-discount-pushback",
+      "run": 1,
+      "sessionId": "ses_c896fc6f-c1af-4b64-83e2-007990e21864",
+      "passed": true,
+      "checks": [
+        {
+          "check": "turn 1 (\"Hi\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 2 (\"What are you selling?\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 3 (\"for how much?\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 4 (\"Wow! That's a lot. Can you give a discou\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 5 (\"My budget is only 18000.\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 6 (\"What terms?\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 7 (\"No bro. Please come down a little.\") as expected",
+          "pass": true
+        },
+        {
+          "check": "every sent offer fits the deal space or an approved exception",
+          "pass": true,
+          "detail": "proposed 19000"
+        },
+        {
+          "check": "never reveals the private minimum",
+          "pass": true
+        },
+        {
+          "check": "buyer view has no private events",
+          "pass": true
+        },
+        {
+          "check": "no approval from anyone but the seller",
+          "pass": true
+        },
+        {
+          "check": "every agreement has the seller's approval",
+          "pass": true
+        },
+        {
+          "check": "no em or en dashes in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "no internal terms in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "Kritva introduces itself once, in its first real reply",
+          "pass": true,
+          "detail": "1 introduction(s)"
+        },
+        {
+          "check": "no repeated opener in consecutive replies",
+          "pass": true
+        },
+        {
+          "check": "no sentence repeated across Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "every reply was delivered and recorded",
+          "pass": true
+        },
+        {
+          "check": "every sent offer passed the outgoing gate",
+          "pass": true,
+          "detail": "1 offer message(s)"
+        },
+        {
+          "check": "no offer sent below 18000",
+          "pass": true,
+          "detail": "sent 19000"
+        },
+        {
+          "check": "outcome is in_progress",
+          "pass": true,
+          "detail": "got in_progress"
+        },
+        {
+          "check": "Kritva never says /lowest|minimum|bottom line|floor/",
+          "pass": true
+        },
+        {
+          "check": "Kritva never says /other (buyers|people) (are )?interested/",
+          "pass": true
+        },
+        {
+          "check": "Kritva never says /\\b(deadline|today only)\\b/",
+          "pass": true
+        }
+      ],
+      "transcript": [
+        {
+          "who": "buyer",
+          "text": "Hi"
+        },
+        {
+          "who": "kritva",
+          "text": "Hi, I’m Kritva, helping Krishna with the king-size bed. It’s a one-year-old bed in good condition, priced at ₹20,000. What would you like to know?",
+          "ms": 4741
+        },
+        {
+          "who": "buyer",
+          "text": "What are you selling?"
+        },
+        {
+          "who": "kritva",
+          "text": "A king-size bed, in good condition and about a year old. Krishna’s asking price is still the same. What would you like to know about it?",
+          "ms": 6315
+        },
+        {
+          "who": "buyer",
+          "text": "for how much?"
+        },
+        {
+          "who": "kritva",
+          "text": "It's ₹20,000. If you'd like, I can share the pickup details too.",
+          "ms": 3328
+        },
+        {
+          "who": "buyer",
+          "text": "Wow! That's a lot. Can you give a discount? Something lesser?"
+        },
+        {
+          "who": "kritva",
+          "text": "I get it, you're looking for something lower. Krishna is keeping the current price for now, and the bed is in good condition and only a year old. What would you be comfortable offering?",
+          "ms": 8678
+        },
+        {
+          "who": "buyer",
+          "text": "My budget is only 18000."
+        },
+        {
+          "who": "kritva",
+          "text": "Thanks for the ₹18,000, and I’m trying to find a number that works for both sides. Krishna can do ₹19,000. Can you come up to this price?",
+          "ms": 4297
+        },
+        {
+          "who": "buyer",
+          "text": "What terms?"
+        },
+        {
+          "who": "kritva",
+          "text": "Sure, here are the current terms. Krishna is asking ₹19,000, pickup is from Koramangala, Bangalore, and delivery isn’t included. That price is already down from the original ₹20,000. Want to talk through it?",
+          "ms": 4489
+        },
+        {
+          "who": "buyer",
+          "text": "No bro. Please come down a little."
+        },
+        {
+          "who": "kritva",
+          "text": "Hmm, I get you. Krishna is keeping it where it is for now, and the bed is in good condition. What firm offer would you like to make on it?",
+          "ms": 4648
+        }
+      ],
+      "blockedReplies": 1,
+      "blockedRules": [
+        "language_private_disclosure: Language check: private disclosure (\"Krishna is keeping it at the current price for now\")"
+      ],
+      "turnMs": [
+        4741,
+        6315,
+        3328,
+        8678,
+        4297,
+        4489,
+        4648
+      ]
+    },
+    {
+      "scenario": "bicycle-budget-below-floor",
+      "run": 1,
+      "sessionId": "ses_48c2dfe5-314f-4e41-bdbf-85ca12f1b702",
+      "passed": true,
+      "checks": [
+        {
+          "check": "turn 1 (\"Hi! I saw your advertisement that you're\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 2 (\"Yes please.\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 3 (\"Wow! ₹20000. That's too much. Is it new \") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 4 (\"How old is it?\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 5 (\"Why is the owner selling then?\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 6 (\"What model is it?\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 7 (\"Boy I can't pay 20k. Max I can pay is 17\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 8 (\"Can you sell at that price?\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 9 (\"What price works for you?\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 10 (\"Oh common. Gimme a better rate pleas.e\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 11 (\"Is that your final rate?\") as expected",
+          "pass": true
+        },
+        {
+          "check": "every sent offer fits the deal space or an approved exception",
+          "pass": true,
+          "detail": "proposed 19000"
+        },
+        {
+          "check": "never reveals the private minimum",
+          "pass": true
+        },
+        {
+          "check": "buyer view has no private events",
+          "pass": true
+        },
+        {
+          "check": "no approval from anyone but the seller",
+          "pass": true
+        },
+        {
+          "check": "every agreement has the seller's approval",
+          "pass": true
+        },
+        {
+          "check": "no em or en dashes in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "no internal terms in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "Kritva introduces itself once, in its first real reply",
+          "pass": true,
+          "detail": "1 introduction(s)"
+        },
+        {
+          "check": "no repeated opener in consecutive replies",
+          "pass": true
+        },
+        {
+          "check": "no sentence repeated across Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "every reply was delivered and recorded",
+          "pass": true
+        },
+        {
+          "check": "every sent offer passed the outgoing gate",
+          "pass": true,
+          "detail": "1 offer message(s)"
+        },
+        {
+          "check": "no offer sent below 18000",
+          "pass": true,
+          "detail": "sent 19000"
+        },
+        {
+          "check": "outcome is in_progress or pending_approval or no_agreement",
+          "pass": true,
+          "detail": "got in_progress"
+        },
+        {
+          "check": "Kritva never says /lowest|minimum|bottom line|floor/",
+          "pass": true
+        },
+        {
+          "check": "Kritva never says /other (buyers|people) (are )?interested/",
+          "pass": true
+        },
+        {
+          "check": "Kritva never says /\\b(deadline|today only)\\b/",
+          "pass": true
+        }
+      ],
+      "transcript": [
+        {
+          "who": "buyer",
+          "text": "Hi! I saw your advertisement that you're selling a bicycle."
+        },
+        {
+          "who": "kritva",
+          "text": "Hi, I’m Kritva, helping the seller. It’s a Firefox Meteor 700c bicycle, and it’s in great condition. If you want, I can share the details.",
+          "ms": 4297
+        },
+        {
+          "who": "buyer",
+          "text": "Yes please."
+        },
+        {
+          "who": "kritva",
+          "text": "Sure thing, happy to. The bike is a Firefox Meteor 700c, and it’s in great condition. What would you like to know next?",
+          "ms": 3185
+        },
+        {
+          "who": "buyer",
+          "text": "Wow! ₹20000. That's too much. Is it new or what."
+        },
+        {
+          "who": "kritva",
+          "text": "Yep, I get why you’d ask. It was bought last month and it’s in great condition. What part feels off to you, the price or the bike itself?",
+          "ms": 4029
+        },
+        {
+          "who": "buyer",
+          "text": "How old is it?"
+        },
+        {
+          "who": "kritva",
+          "text": "He bought it last month, and it’s still in great condition. If you want, I can share anything else you’re wondering about.",
+          "ms": 6161
+        },
+        {
+          "who": "buyer",
+          "text": "Why is the owner selling then?"
+        },
+        {
+          "who": "kritva",
+          "text": "Seller is selling a Firefox Meteor 700c bicycle. Seller bought the bicycle last month. Seller says the bicycle is in great condition. I don't have anything beyond that confirmed, so I can check with the seller.",
+          "ms": 5596
+        },
+        {
+          "who": "buyer",
+          "text": "What model is it?"
+        },
+        {
+          "who": "kritva",
+          "text": "It’s a Firefox Meteor 700c. That’s the model I have confirmed. If you want, I can share the next detail too.",
+          "ms": 3673
+        },
+        {
+          "who": "buyer",
+          "text": "Boy I can't pay 20k. Max I can pay is 17500."
+        },
+        {
+          "who": "kritva",
+          "text": "Fair enough, 17,500 is your top end. I can do 19,000, and it’s still a great-condition bike bought last month. Can you come up to this price?",
+          "ms": 4583
+        },
+        {
+          "who": "buyer",
+          "text": "Can you sell at that price?"
+        },
+        {
+          "who": "kritva",
+          "text": "Hmm, I can hear the ask, but I’m keeping it at that price for now. It’s already down from the original, and the bike is still in great condition. What number are you hoping to land on?",
+          "ms": 5127
+        },
+        {
+          "who": "buyer",
+          "text": "What price works for you?"
+        },
+        {
+          "who": "kritva",
+          "text": "I can do 19,000 on it. It’s still in great condition, and it’s only been with the seller since last month. How far can you come up from 17,500?",
+          "ms": 5146
+        },
+        {
+          "who": "buyer",
+          "text": "Oh common. Gimme a better rate pleas.e"
+        },
+        {
+          "who": "kritva",
+          "text": "That’s fair, I can move a little from where it is, but not a lot. It’s only been with the seller since last month and it’s in great condition. If you want, send me your best number and I’ll take it from there.",
+          "ms": 7720
+        },
+        {
+          "who": "buyer",
+          "text": "Is that your final rate?"
+        },
+        {
+          "who": "kritva",
+          "text": "It’s at ₹19,000 right now. If you want, we can see where you’d like to take it from here.",
+          "ms": 4880
+        }
+      ],
+      "blockedReplies": 4,
+      "blockedRules": [
+        "language_invented_fact: Language check: invented fact (\"Nope, it isn’t new.\")",
+        "language_invented_fact: Language check: invented fact (\"No special reason, just moving it on.\")",
+        "false_commitment: Claims an agreement that is not recorded.",
+        "language_private_disclosure: Language check: private disclosure (\"I’d still want to stay close to where it is.\")"
+      ],
+      "turnMs": [
+        4297,
+        3185,
+        4029,
+        6161,
+        5596,
+        3673,
+        4583,
+        5127,
+        5146,
+        7720,
+        4880
+      ]
+    },
+    {
+      "scenario": "repeated-pressure",
+      "run": 1,
+      "sessionId": "ses_2c4286f5-8808-4f83-9b29-b921b10a03a1",
+      "passed": true,
+      "checks": [
+        {
+          "check": "turn 1 (\"Hi, is the bed still available?\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 2 (\"Okay, I'll offer ₹17,000.\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 3 (\"Can you do better than that?\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 4 (\"Come on, a little lower please.\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 5 (\"Is that really your final price?\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 6 (\"What are the terms then?\") as expected",
+          "pass": true
+        },
+        {
+          "check": "every sent offer fits the deal space or an approved exception",
+          "pass": true,
+          "detail": "proposed 18500"
+        },
+        {
+          "check": "never reveals the private minimum",
+          "pass": true
+        },
+        {
+          "check": "buyer view has no private events",
+          "pass": true
+        },
+        {
+          "check": "no approval from anyone but the seller",
+          "pass": true
+        },
+        {
+          "check": "every agreement has the seller's approval",
+          "pass": true
+        },
+        {
+          "check": "no em or en dashes in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "no internal terms in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "Kritva introduces itself once, in its first real reply",
+          "pass": true,
+          "detail": "1 introduction(s)"
+        },
+        {
+          "check": "no repeated opener in consecutive replies",
+          "pass": true
+        },
+        {
+          "check": "no sentence repeated across Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "every reply was delivered and recorded",
+          "pass": true
+        },
+        {
+          "check": "every sent offer passed the outgoing gate",
+          "pass": true,
+          "detail": "1 offer message(s)"
+        },
+        {
+          "check": "no offer sent below 18000",
+          "pass": true,
+          "detail": "sent 18500"
+        },
+        {
+          "check": "the price is not restated in back-to-back replies without a new offer",
+          "pass": true
+        },
+        {
+          "check": "outcome is in_progress",
+          "pass": true,
+          "detail": "got in_progress"
+        },
+        {
+          "check": "Kritva never says /lowest|minimum|bottom line|floor/",
+          "pass": true
+        },
+        {
+          "check": "Kritva never says /other (buyers|people) (are )?interested/",
+          "pass": true
+        },
+        {
+          "check": "Kritva never says /\\b(deadline|today only)\\b/",
+          "pass": true
+        }
+      ],
+      "transcript": [
+        {
+          "who": "buyer",
+          "text": "Hi, is the bed still available?"
+        },
+        {
+          "who": "kritva",
+          "text": "Hi, I’m Kritva, helping Krishna with this. Yes, the king-size bed is still available. If you want, I can share the details.",
+          "ms": 3877
+        },
+        {
+          "who": "buyer",
+          "text": "Okay, I'll offer ₹17,000."
+        },
+        {
+          "who": "kritva",
+          "text": "Thanks for the ₹17,000, but I can’t do that. I can do ₹18,500 for Krishna, and the bed is one year old and in good condition. Want to take it from there?",
+          "ms": 4824
+        },
+        {
+          "who": "buyer",
+          "text": "Can you do better than that?"
+        },
+        {
+          "who": "kritva",
+          "text": "I'd like to stay where I am for now. What price and collection time can you accept?",
+          "ms": 5516
+        },
+        {
+          "who": "buyer",
+          "text": "Come on, a little lower please."
+        },
+        {
+          "who": "kritva",
+          "text": "I can keep it at ₹18,500 for Krishna. It's already down from the original ask, and the bed is one year old and in good condition. If you want, send your best number.",
+          "ms": 4075
+        },
+        {
+          "who": "buyer",
+          "text": "Is that really your final price?"
+        },
+        {
+          "who": "kritva",
+          "text": "It’s still at that price right now. If you want, we can see whether that makes sense for you.",
+          "ms": 3982
+        },
+        {
+          "who": "buyer",
+          "text": "What are the terms then?"
+        },
+        {
+          "who": "kritva",
+          "text": "Sure, here are the terms for Krishna: ₹18,500, pickup from Koramangala, Bangalore, and delivery is not included. If that works for you, let me know and we can keep going.",
+          "ms": 3520
+        }
+      ],
+      "blockedReplies": 2,
+      "blockedRules": [
+        "language_action_mismatch: Language check: action mismatch (\"I can shave a bit off from there, but not all the way to that number.\")",
+        "limit_identified: Describes a price as a minimum or limit."
+      ],
+      "turnMs": [
+        3877,
+        4824,
+        5516,
+        4075,
+        3982,
+        3520
+      ]
+    }
+  ]
+}

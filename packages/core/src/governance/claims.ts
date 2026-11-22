@@ -9,6 +9,7 @@
  * These are deliberately conservative English patterns. A model-based language check runs on
  * composed text as a second layer; neither is a universal guarantee.
  */
+import { straightApostrophes } from "../negotiation/reply-check.ts";
 import type { OfferTerm } from "../record/events.ts";
 
 export interface ClaimViolation {
@@ -34,7 +35,9 @@ const DEADLINE = /\btoday only\b|\bonly today\b|\boffer (expires|ends|is valid u
 const MARKET = /\bmarket (price|value|rate)\b|\bretail (price|cost)s?\b|\b(price|cost)s? (when|if bought|brand) new\b|\bnew (price|cost)s? (of|is|was) (a|an|the|one|this|it)\b|\bworth (at least|more than|much more)\b|\b(costs?|sells?) for \S+ new\b|\bbelow market\b/i;
 const PROMISE = /\b(we|i)( will|'ll| can| could| would)? (deliver|drop (it )?off|bring (it )?(over|to you)|assemble|install|include|throw in|add in)\b/i;
 
-export function checkClaims(text: string, checked: { offerTerms: OfferTerm[] | null; termNames: Map<string, string>; counterpartyRole?: string | null }): ClaimViolation[] {
+export function checkClaims(reply: string, checked: { offerTerms: OfferTerm[] | null; termNames: Map<string, string>; counterpartyRole?: string | null }): ClaimViolation[] {
+  // "can’t go lower" is the same claim as "can't go lower".
+  const text = straightApostrophes(reply);
   const violations: ClaimViolation[] = [];
   for (const pattern of LIMIT_IDENTIFIED) {
     if (pattern.test(text)) {

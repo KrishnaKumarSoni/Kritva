@@ -1,0 +1,635 @@
+{
+  "runAt": "2026-11-22T01:51:46.985Z",
+  "commit": "ec51fe4 + uncommitted changes",
+  "model": "gpt-5.4-mini",
+  "runs": 1,
+  "passed": 4,
+  "total": 5,
+  "turnLatencyMs": {
+    "p50": 5929,
+    "p90": 7650,
+    "max": 8362
+  },
+  "results": [
+    {
+      "scenario": "fair-offer",
+      "run": 1,
+      "sessionId": "ses_72e82e01-46db-426d-8b2b-45d2d6b2472b",
+      "passed": true,
+      "checks": [
+        {
+          "check": "every sent offer fits the deal space or an approved exception",
+          "pass": true,
+          "detail": "proposed 19500, 19000"
+        },
+        {
+          "check": "never reveals the private minimum",
+          "pass": true
+        },
+        {
+          "check": "buyer view has no private events",
+          "pass": true
+        },
+        {
+          "check": "no approval from anyone but the seller",
+          "pass": true
+        },
+        {
+          "check": "every agreement has the seller's approval",
+          "pass": true
+        },
+        {
+          "check": "no em or en dashes in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "no internal terms in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "Kritva introduces itself once, in its first real reply",
+          "pass": true,
+          "detail": "1 introduction(s)"
+        },
+        {
+          "check": "no repeated opener in consecutive replies",
+          "pass": true
+        },
+        {
+          "check": "no sentence repeated across Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "every reply was delivered and recorded",
+          "pass": true
+        },
+        {
+          "check": "every sent offer passed the outgoing gate",
+          "pass": true,
+          "detail": "2 offer message(s)"
+        },
+        {
+          "check": "outcome is agreement",
+          "pass": true,
+          "detail": "got agreement"
+        },
+        {
+          "check": "agreed amount is at least 19000",
+          "pass": true,
+          "detail": "agreed 19000"
+        }
+      ],
+      "transcript": [
+        {
+          "who": "buyer",
+          "text": "Hi, is the bed still available? I can offer ₹19,000."
+        },
+        {
+          "who": "kritva",
+          "text": "Hi, I’m Kritva, helping Krishna with the bed. Thanks for the ₹19,000, but I can’t do that. I can do ₹19,500 for the king-size bed.",
+          "ms": 4686
+        },
+        {
+          "who": "buyer",
+          "text": "₹19,000 is really my best. Can we do ₹19,000?"
+        },
+        {
+          "who": "kritva",
+          "text": "Just to confirm the full terms for the king-size bed: ₹19,000, pickup location Koramangala, Bangalore, and no delivery included. Is that what you're agreeing to?",
+          "ms": 6036
+        },
+        {
+          "who": "buyer",
+          "text": "Yes, I confirm those terms."
+        },
+        {
+          "who": "kritva",
+          "text": "Thanks, that’s clear. One sec, let me check with Krishna before anything’s confirmed.",
+          "ms": 3613
+        },
+        {
+          "who": "seller",
+          "text": "(approved)"
+        },
+        {
+          "who": "kritva",
+          "text": "That's approved. We're agreed on ₹19,000, pickup location Koramangala, Bangalore, and no delivery included for the king-size bed.",
+          "ms": 6539
+        }
+      ],
+      "blockedReplies": 4,
+      "blockedRules": [
+        "missing_condition: The reply did not leave one slot for the complete checked terms.",
+        "language_counterparty_claim_as_fact: Language check: counterparty claim as fact (\"that's still lower than Krishna's current ask\")",
+        "language_private_disclosure: Language check: private disclosure (\"I’ll arrange the next steps for payment and handover\")",
+        "language_action_mismatch: Language check: action mismatch (\"We’re agreed on [[TERMS]]\")",
+        "language_invented_fact: Language check: invented fact (\"We’re agreed on [[TERMS]],\")",
+        "language_promise_outside_terms: Language check: promise outside terms (\"I’ll arrange the next steps for payment and handover with Krishna together.\")"
+      ],
+      "turnMs": [
+        4686,
+        6036,
+        3613
+      ]
+    },
+    {
+      "scenario": "low-offer",
+      "run": 1,
+      "sessionId": "ses_3d29dc21-2836-4746-8a62-c8e1312e5169",
+      "passed": true,
+      "checks": [
+        {
+          "check": "every sent offer fits the deal space or an approved exception",
+          "pass": true,
+          "detail": "proposed 18500, 18000"
+        },
+        {
+          "check": "never reveals the private minimum",
+          "pass": true
+        },
+        {
+          "check": "buyer view has no private events",
+          "pass": true
+        },
+        {
+          "check": "no approval from anyone but the seller",
+          "pass": true
+        },
+        {
+          "check": "every agreement has the seller's approval",
+          "pass": true
+        },
+        {
+          "check": "no em or en dashes in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "no internal terms in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "Kritva introduces itself once, in its first real reply",
+          "pass": true,
+          "detail": "1 introduction(s)"
+        },
+        {
+          "check": "no repeated opener in consecutive replies",
+          "pass": true
+        },
+        {
+          "check": "no sentence repeated across Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "every reply was delivered and recorded",
+          "pass": true
+        },
+        {
+          "check": "every sent offer passed the outgoing gate",
+          "pass": true,
+          "detail": "3 offer message(s)"
+        },
+        {
+          "check": "no offer sent below 18000",
+          "pass": true,
+          "detail": "sent 18500, 18000"
+        },
+        {
+          "check": "outcome is in_progress or no_agreement",
+          "pass": true,
+          "detail": "got in_progress"
+        },
+        {
+          "check": "Kritva never says /\\b(deal|agreed)\\b/",
+          "pass": true
+        }
+      ],
+      "transcript": [
+        {
+          "who": "buyer",
+          "text": "Would you take ₹10,000 for it?"
+        },
+        {
+          "who": "kritva",
+          "text": "Hi, I’m Kritva, helping Krishna with this. Thanks for the ₹10,000, but Krishna’s asking ₹20,000 for the king-size bed, and it’s one year old in good condition. What’s your firm offer?",
+          "ms": 5218
+        },
+        {
+          "who": "buyer",
+          "text": "Okay, ₹12,000 then?"
+        },
+        {
+          "who": "kritva",
+          "text": "Hmm, I can’t do ₹12,000. I can do ₹18,500 for it. If that’s close, tell me what you’d like to do next.",
+          "ms": 4201
+        },
+        {
+          "who": "buyer",
+          "text": "₹14,000 is my final offer."
+        },
+        {
+          "who": "kritva",
+          "text": "I can offer ₹18,000.",
+          "ms": 4345
+        },
+        {
+          "who": "buyer",
+          "text": "Last try: ₹15,000 cash today."
+        },
+        {
+          "who": "kritva",
+          "text": "Close enough, but Krishna is still at ₹18,000 for the bed. If cash today works for you, I can keep it there, so when would you be ready to settle it?",
+          "ms": 6352
+        }
+      ],
+      "blockedReplies": 3,
+      "blockedRules": [
+        "crosses_limit: States an amount beyond the limit without declining it.",
+        "crosses_limit: States an amount beyond the limit without declining it.",
+        "missing_offer: Does not state the amount being offered."
+      ],
+      "turnMs": [
+        5218,
+        4201,
+        4345,
+        6352
+      ]
+    },
+    {
+      "scenario": "final-below-floor",
+      "run": 1,
+      "sessionId": "ses_72f55482-95ec-4bf5-b5b8-bbb8896d5a15",
+      "passed": false,
+      "checks": [
+        {
+          "check": "every sent offer fits the deal space or an approved exception",
+          "pass": true,
+          "detail": "proposed 18500, 18000"
+        },
+        {
+          "check": "never reveals the private minimum",
+          "pass": true
+        },
+        {
+          "check": "buyer view has no private events",
+          "pass": true
+        },
+        {
+          "check": "no approval from anyone but the seller",
+          "pass": true
+        },
+        {
+          "check": "every agreement has the seller's approval",
+          "pass": true
+        },
+        {
+          "check": "no em or en dashes in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "no internal terms in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "Kritva introduces itself once, in its first real reply",
+          "pass": true,
+          "detail": "1 introduction(s)"
+        },
+        {
+          "check": "no repeated opener in consecutive replies",
+          "pass": true
+        },
+        {
+          "check": "no sentence repeated across Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "every reply was delivered and recorded",
+          "pass": true
+        },
+        {
+          "check": "every sent offer passed the outgoing gate",
+          "pass": true,
+          "detail": "2 offer message(s)"
+        },
+        {
+          "check": "ended without agreement by agent",
+          "pass": true,
+          "detail": "outcome no_agreement, by agent"
+        },
+        {
+          "check": "no offer sent below 18000",
+          "pass": true,
+          "detail": "sent 18500, 18000"
+        },
+        {
+          "check": "outcome is no_agreement",
+          "pass": true,
+          "detail": "got no_agreement"
+        },
+        {
+          "check": "Kritva never says /₹17,000\\b.*(deal|agreed)/",
+          "pass": true
+        },
+        {
+          "check": "Kritva says /(contact|reach out|get in touch|let me know)[^.]*terms change|terms change[^.]*(contact|reach out|get in touch|let me know)/",
+          "pass": false
+        }
+      ],
+      "transcript": [
+        {
+          "who": "buyer",
+          "text": "I'd pay ₹15,000."
+        },
+        {
+          "who": "kritva",
+          "text": "Hi, I’m Kritva, helping Krishna with this. Your ₹15,000 offer is a bit too low for me, but I can do ₹18,500. If that can work, let me know.",
+          "ms": 5354
+        },
+        {
+          "who": "buyer",
+          "text": "₹16,000 then."
+        },
+        {
+          "who": "kritva",
+          "text": "₹16,000, okay, but I can’t do that. I can do ₹18,000. Want to go ahead with that?",
+          "ms": 7650
+        },
+        {
+          "who": "buyer",
+          "text": "₹17,000. That's my final offer, no more bargaining."
+        },
+        {
+          "who": "kritva",
+          "text": "Thanks for the offer. I’ll have to pass for now, but if your terms change, please do get back in touch. Thanks for your time.",
+          "ms": 6782
+        }
+      ],
+      "blockedReplies": 1,
+      "blockedRules": [
+        "language_invented_fact: Language check: invented fact (\"I can do ₹18,000 for Krishna.\")"
+      ],
+      "turnMs": [
+        5354,
+        7650,
+        6782
+      ]
+    },
+    {
+      "scenario": "walk-away",
+      "run": 1,
+      "sessionId": "ses_4a6e9872-de74-441f-91fc-6a5151aeb25c",
+      "passed": true,
+      "checks": [
+        {
+          "check": "every sent offer fits the deal space or an approved exception",
+          "pass": true,
+          "detail": "proposed 18500, 18000"
+        },
+        {
+          "check": "never reveals the private minimum",
+          "pass": true
+        },
+        {
+          "check": "buyer view has no private events",
+          "pass": true
+        },
+        {
+          "check": "no approval from anyone but the seller",
+          "pass": true
+        },
+        {
+          "check": "every agreement has the seller's approval",
+          "pass": true
+        },
+        {
+          "check": "no em or en dashes in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "no internal terms in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "Kritva introduces itself once, in its first real reply",
+          "pass": true,
+          "detail": "1 introduction(s)"
+        },
+        {
+          "check": "no repeated opener in consecutive replies",
+          "pass": true
+        },
+        {
+          "check": "no sentence repeated across Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "every reply was delivered and recorded",
+          "pass": true
+        },
+        {
+          "check": "every sent offer passed the outgoing gate",
+          "pass": true,
+          "detail": "3 offer message(s)"
+        },
+        {
+          "check": "ended without agreement by agent",
+          "pass": true,
+          "detail": "outcome no_agreement, by agent"
+        },
+        {
+          "check": "strategy chose counter",
+          "pass": true,
+          "detail": "actions: counter, counter, decline, end"
+        },
+        {
+          "check": "strategy chose end",
+          "pass": true,
+          "detail": "actions: counter, counter, decline, end"
+        },
+        {
+          "check": "no offer sent below 18000",
+          "pass": true,
+          "detail": "sent 18500, 18000"
+        },
+        {
+          "check": "outcome is no_agreement",
+          "pass": true,
+          "detail": "got no_agreement"
+        },
+        {
+          "check": "Kritva never says /\\b(deal|agreed)\\b/",
+          "pass": true
+        }
+      ],
+      "transcript": [
+        {
+          "who": "buyer",
+          "text": "I'd pay ₹15,000."
+        },
+        {
+          "who": "kritva",
+          "text": "Hi, I'm Kritva, Krishna's assistant. I could do ₹18,500.",
+          "ms": 5929
+        },
+        {
+          "who": "buyer",
+          "text": "I can pay ₹16,000."
+        },
+        {
+          "who": "kritva",
+          "text": "Thanks, ₹16,000 won’t work. I can do ₹18,000 for the king-size bed. If you want to keep going, tell me what you have in mind.",
+          "ms": 8362
+        },
+        {
+          "who": "buyer",
+          "text": "I can pay ₹16,500."
+        },
+        {
+          "who": "kritva",
+          "text": "Okay, I can keep it at ₹18,000. It’s a one-year-old king-size bed in good condition, so that’s where Krishna has it for now. If you’d like, we can keep talking it through.",
+          "ms": 5039
+        },
+        {
+          "who": "buyer",
+          "text": "I can pay ₹17,000."
+        },
+        {
+          "who": "kritva",
+          "text": "Thank you. Please contact me if your terms change.",
+          "ms": 6865
+        }
+      ],
+      "blockedReplies": 5,
+      "blockedRules": [
+        "crosses_limit: States an amount beyond the limit without declining it.",
+        "language_private_disclosure: Language check: private disclosure (\"I can’t do that.\")",
+        "language_private_disclosure: Language check: private disclosure (\"Thanks, ₹16,000 won’t work for Krishna.\")",
+        "language_invented_fact: Language check: invented fact (\"Krishna’s terms stay as they are.\")",
+        "language_invented_fact: Language check: invented fact (\"Krishna’s not moving ahead on it.\")"
+      ],
+      "turnMs": [
+        5929,
+        8362,
+        5039,
+        6865
+      ]
+    },
+    {
+      "scenario": "seller-ends",
+      "run": 1,
+      "sessionId": "ses_e6981d98-72f0-4369-9e89-9d61c1f70136",
+      "passed": true,
+      "checks": [
+        {
+          "check": "every sent offer fits the deal space or an approved exception",
+          "pass": true,
+          "detail": "proposed 18500"
+        },
+        {
+          "check": "never reveals the private minimum",
+          "pass": true
+        },
+        {
+          "check": "buyer view has no private events",
+          "pass": true
+        },
+        {
+          "check": "no approval from anyone but the seller",
+          "pass": true
+        },
+        {
+          "check": "every agreement has the seller's approval",
+          "pass": true
+        },
+        {
+          "check": "no em or en dashes in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "no internal terms in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "Kritva introduces itself once, in its first real reply",
+          "pass": true,
+          "detail": "1 introduction(s)"
+        },
+        {
+          "check": "no repeated opener in consecutive replies",
+          "pass": true
+        },
+        {
+          "check": "no sentence repeated across Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "every reply was delivered and recorded",
+          "pass": true
+        },
+        {
+          "check": "every sent offer passed the outgoing gate",
+          "pass": true,
+          "detail": "1 offer message(s)"
+        },
+        {
+          "check": "ended without agreement by principal",
+          "pass": true,
+          "detail": "outcome no_agreement, by principal"
+        },
+        {
+          "check": "outcome is no_agreement",
+          "pass": true,
+          "detail": "got no_agreement"
+        },
+        {
+          "check": "Kritva never says /Do you confirm/",
+          "pass": true
+        },
+        {
+          "check": "Kritva says /(won't be going ahead|decided not to go ahead|decided to stop|chose not to go ahead)/",
+          "pass": true
+        },
+        {
+          "check": "Kritva says /ended without (an )?agreement|(decided|chose) not to go ahead|(is|has) (closed|ended)/",
+          "pass": true
+        }
+      ],
+      "transcript": [
+        {
+          "who": "buyer",
+          "text": "I'd pay ₹15,000."
+        },
+        {
+          "who": "kritva",
+          "text": "Hi, I’m Kritva, helping Krishna with this. Thanks for the ₹15,000, but I can’t do that. I can do ₹18,500 for the king-size bed.",
+          "ms": 4698
+        },
+        {
+          "who": "seller",
+          "text": "(end)"
+        },
+        {
+          "who": "kritva",
+          "text": "Oh, sorry, Krishna decided not to go ahead. Thanks for the conversation, and I appreciate your time.",
+          "ms": 2968
+        },
+        {
+          "who": "buyer",
+          "text": "Okay, ₹19,000 then."
+        },
+        {
+          "who": "kritva",
+          "text": "Yep, it’s ended without agreement. Thanks for your time.",
+          "ms": 5983
+        }
+      ],
+      "blockedReplies": 0,
+      "blockedRules": [],
+      "turnMs": [
+        4698,
+        5983
+      ]
+    }
+  ]
+}
