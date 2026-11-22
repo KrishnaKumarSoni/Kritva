@@ -18,14 +18,13 @@ The passkey is set on the server with `KRITVA_PASSKEY` (default `kritva-jury-202
 
 ## Run it locally
 
-Requires Node 24 and an OpenAI API key.
+Requires Node 24. The real keys are in `JURY-env.txt` in the project root (included in the submission zip, not in git). Copy it to `.env` before starting.
 
 ```bash
-git clone https://github.com/KrishnaKumarSoni/Kritva.git
 cd Kritva
 nvm install 24 && nvm use 24
 npm install
-echo "OPENAI_API_KEY=sk-..." > .env
+cp JURY-env.txt .env
 ```
 
 Start the server (port 8787) in one terminal:
