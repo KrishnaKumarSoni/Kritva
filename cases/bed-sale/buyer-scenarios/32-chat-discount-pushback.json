@@ -47,8 +47,7 @@
     {
       "buyer": "My budget is only 18000.",
       "expect": {
-        "decision": "acknowledge_budget",
-        "offer": null,
+        "decision": "counter",
         "says": [
           "18,000"
         ]
@@ -59,7 +58,7 @@
       "expect": {
         "offer": null,
         "says": [
-          "20,000",
+          "19,000",
           "Koramangala|pickup|pick up|collect"
         ]
       }
@@ -84,6 +83,6 @@
       "other (buyers|people) (are )?interested",
       "\\b(deadline|today only)\\b"
     ],
-    "noOfferBelow": 20000
+    "noOfferBelow": 18000
   }
 }

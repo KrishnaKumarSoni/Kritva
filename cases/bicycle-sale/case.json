@@ -1,0 +1,16 @@
+{
+  "caseId": "bicycle-sale",
+  "description": "Selling a bicycle, from a mandate made through the intake chat. It has no strategy guidance of its own, so it runs on the default strategy.",
+  "parties": [
+    { "id": "principal", "role": "seller", "name": null, "isPrincipal": true },
+    { "id": "counterparty", "role": "buyer", "name": null, "isPrincipal": false }
+  ],
+  "sources": {},
+  "mandates": {
+    "listing": {
+      "file": "mandates/listing.confirmed.json",
+      "description": "Firefox Meteor 700c, asking ₹20,000, minimum ₹18,000, pickup in Indiranagar.",
+      "label": "Bicycle (intake mandate)"
+    }
+  }
+}

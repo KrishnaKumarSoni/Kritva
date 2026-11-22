@@ -137,7 +137,7 @@ export interface StrategyContext {
   guidance: StrategyGuidance;
   /** Questions prepared from this message (e.g. about a non-price obstacle), not yet asked. */
   freshQuestions: Array<{ questionId: string; text: string; kind: string; purpose?: string }>;
-  counterparty?: Pick<CounterpartyModel, "estimates" | "offers" | "questions">;
+  counterparty?: Pick<CounterpartyModel, "estimates" | "offers" | "questions"> & Partial<Pick<CounterpartyModel, "items">>;
   listingAvailable?: boolean;
   /** Discount the counterparty's commitments have earned and not yet used. Absent: no allowance cap. */
   allowance?: AllowanceLedger | null;
@@ -287,9 +287,25 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
   // Non-commitments can raise relevant questions but cannot move the offer or start approval.
   if (tentative || (budget?.type === "money" && amount === null && interp.offerTerms.length === 0)) {
     if (plan.declined.length > 0) return { ...plan, action: "decline", decision: { kind: "decline_request", reason: "Requested term changes are outside the mandate." } };
+    // A stated budget below the current ask is their position, not a commitment. Never accept it, but keep
+    // the negotiation moving: one permitted step toward it and a nudge to meet it. A "would you take X?" is
+    // a probe, so it gets no step (concessions answer firm offers): it gets a nudge for a firm offer instead.
+    const enquired = interp.offerKind === "enquiry" ? interp.offerTerms.find((t) => t.termId === n?.termId)?.value : undefined;
+    if (!enquired && budget?.type === "money" && budget.currency === n?.currency) {
+      const toward = towardPosition(plan, state, g, deal, context, budget.amount, "budget");
+      if (toward) return toward;
+    }
     if (interp.offerKind === "enquiry" && interp.offerTerms.length > 0) {
       const queried = interp.offerTerms.find((t) => t.termId === n?.termId)?.value;
-      return { ...plan, move: "answer_enquiry", referenceAmount, enquiredAmount: queried && "amount" in queried ? queried.amount : undefined, questions: [], decision: { kind: "answer_enquiry", reason: "Respond to an enquiry without treating it as a committed offer." } };
+      const enquiredAmount = queried && "amount" in queried ? (queried.amount as number) : undefined;
+      // Below the current price: invite a firm offer, once, rather than only restating the price.
+      const below = enquiredAmount !== undefined && referenceAmount !== undefined && n && (n.direction === "up" ? enquiredAmount < referenceAmount : enquiredAmount > referenceAmount);
+      const nudgeKey = "strategy:firm_offer_after_enquiry";
+      const nudged = context.counterparty?.questions.some((question) => question.issueKey === nudgeKey && question.status !== "open");
+      const nudge = below && !nudged && plan.clarify.length === 0 && plan.unresolved.length === 0
+        ? { key: nudgeKey, kind: "terms_probe" as const, text: "What's the best firm offer you can make?", purpose: "Their figure is below the current price. Invite a firm offer closer to it. Do not name a new amount or accept theirs." }
+        : undefined;
+      return { ...plan, move: "answer_enquiry", referenceAmount, enquiredAmount, questions: [], ...(nudge ? { action: "ask" as const, strategyQuestion: nudge } : {}), decision: { kind: "answer_enquiry", reason: "Respond to an enquiry without treating it as a committed offer." } };
     }
     if (budget?.type === "money") {
       const question = context.freshQuestions.find((q) => q.kind === "budget_scope");
@@ -444,10 +460,18 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
       decision: { kind: "answer", reason: asked ? "The comparison question was already asked; use confirmed facts for the current package." : "Check whether the cited alternative is comparable before reacting." },
     };
   }
-  if (interp.pressure === "lowest_price" && referenceAmount !== undefined) {
+  // "What's your lowest?", "better rate?", or "is that your final price?" with no number of their own.
+  const asksOurFinal = interp.pressure === "final_offer" && interp.offerTerms.length === 0 && !interp.acceptsStatedTerms;
+  if ((interp.pressure === "lowest_price" || asksOurFinal) && referenceAmount !== undefined) {
     const probe = g.pressureQuestions.lowestPrice;
     const budgetKnown = context.counterparty?.estimates.some((entry) => entry.statedMaximum !== null);
-    const followUp = budgetKnown ? commitmentProbe(state, context) : probe ? { text: probe, kind: "terms_probe" as const, purpose: "Learn what price and terms the counterparty is prepared to offer." } : undefined;
+    const stretchKey = "strategy:stretch";
+    const stretchAsked = context.counterparty?.questions.some((question) => question.issueKey === stretchKey && question.status !== "open");
+    // Their budget is below what works: ask, once, how far they can come up rather than restating the price alone.
+    const stretch = stretchAsked ? undefined : { key: stretchKey, kind: "terms_probe" as const, text: "How close to that can you come?", purpose: "Their stated budget is below the current price. Ask how far they can come up toward the current price. Do not name a new price or reveal any limit." };
+    const floorNow = n ? applicableLimit(state.space, n.termId, publicDealTerms(state))?.amount ?? n.limit : null;
+    const budgetBelowFloor = n?.direction === "up" && floorNow !== null && context.counterparty?.estimates.some((entry) => entry.statedMaximum !== null && entry.maximum.status === "working_estimate" && entry.maximum.atMost < floorNow);
+    const followUp = budgetKnown ? commitmentProbe(state, context) ?? (budgetBelowFloor ? stretch : undefined) : probe ? { text: probe, kind: "terms_probe" as const, purpose: "Learn what price and terms the counterparty is prepared to offer." } : undefined;
     return {
       ...plan, move: "price_pressure", referenceAmount, questions: [], refuseDisclosure: false,
       action: followUp ? "ask" : "answer", strategyQuestion: followUp,
@@ -516,7 +540,8 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
   }
 
   // An objection with no new terms ("that's too much because ..."): the current offer stands.
-  const objects = interp.intent === "reject" || (interp.notes ?? []).some((x) => x.kind === "reason" || x.kind === "constraint");
+  // A greeting ("Hi! I saw your ad") is never an objection, whatever note the reading attached to it.
+  const objects = interp.intent === "reject" || (interp.intent !== "greeting" && (interp.notes ?? []).some((x) => x.kind === "reason" || x.kind === "constraint"));
   if (objects && n && state.currentAsk !== null && interp.questions.length === 0 && interp.pressure !== "cheaper_elsewhere" && state.status === "active") {
     return holdAt(plan, view, state.currentAsk, packageExtras(state, []), "The counterparty objected without new terms; the current offer stands.");
   }
@@ -566,6 +591,48 @@ function concede(state: NegotiationState, g: StrategyGuidance, n: NegotiableTerm
 export function nextConcessionCap(state: NegotiationState, g: StrategyGuidance): number | null {
   if (g.concessionSteps.length === 0 || state.currentAsk === null) return null;
   return stepCap(state, g, state.currentAsk);
+}
+
+/**
+ * Their stated budget or enquired amount is below the current ask: counter one permitted step toward
+ * it (the same steps, caps, limit and counteroffer count as a counter to an offer) and ask them to meet
+ * it. Null when no step fits, the position was already answered, or it is at or above the closing point;
+ * the caller then keeps the existing non-commitment handling. A position is never accepted or closed on.
+ */
+function towardPosition(plan: Plan, state: NegotiationState, g: StrategyGuidance, deal: DealInput, context: StrategyContext, position: number, kind: "budget" | "enquiry"): Plan | null {
+  const { view } = state;
+  const n = view.negotiable;
+  if (!n || n.valueType !== "money" || !n.canConcede || state.currentAsk === null || state.status !== "active") return null;
+  // Settle a missing or unclear detail before moving on price.
+  if (plan.clarify.length > 0 || plan.unresolved.length > 0 || deal.check.findings.some((f) => f.status === "needs_clarification")) return null;
+  const atLeast = (x: number, y: number) => (n.direction === "up" ? x >= y : x <= y);
+  const ask = state.currentAsk;
+  const limit = applicableLimit(state.space, n.termId, deal.package)?.amount ?? n.limit;
+  const target = applicableTarget(state, n.termId, deal.package);
+  const closeAt = target !== null && atLeast(target, limit) && !atLeast(target, ask) ? target : ask;
+  if (atLeast(position, closeAt) || atLeast(limit, ask)) return null;
+  if (g.maxCounteroffers !== null && state.countersMade >= g.maxCounteroffers) return null;
+  // Repeating a position earns no further step.
+  const seen = kind === "budget"
+    ? (context.counterparty?.items ?? []).filter((item) => item.kind === "budget" && item.value?.type === "money" && item.value.amount === position).length
+    : (context.counterparty?.offers ?? []).filter((offer) => offer.amount === position).length;
+  const earlierBudget = (context.counterparty?.items ?? []).some((item) => item.kind === "budget" && item.value?.type === "money" && item.value.amount === position);
+  if (seen > 1 || (kind === "enquiry" && earlierBudget && state.countersMade > 0)) return null;
+  const q = g.increment ?? niceStep(n.opening);
+  // A first stated position counts like a first offer for the allowance: it may earn one step. A claim is
+  // not a firm offer, so it never moves the price more than half of the remaining room to the limit.
+  const earned = context.allowance && context.allowance.remaining <= 0 && state.countersMade === 0 ? (g.commitmentAllowance?.betterOffer ?? Number.POSITIVE_INFINITY) : allowanceCap(context);
+  const cap = Math.min(earned, Math.abs(ask - limit) / 2);
+  const next = concede(state, g, n, ask, limit, position, q, cap);
+  if (next.value === ask || atLeast(position, next.value)) return null;
+  const said = kind === "budget" ? "stated budget" : "enquiry";
+  return {
+    ...counterAt(plan, view, next.value, packageExtras(state, []), `Their ${said} is below the current price: move one permitted step toward it and ask them to meet it, without accepting it.`, next.tactic),
+    ...(kind === "budget" ? { statedBudget: position } : { enquiredAmount: position }),
+    referenceAmount: ask,
+    questions: [],
+    strategyQuestion: { key: `strategy:meet:${next.value}`, kind: "terms_probe", text: "Could you come up to that?", purpose: "Ask whether they can come up to this price. Keep their figure a claim, not an agreement." },
+  };
 }
 
 /** The largest reduction the next step allows: the next approved step, and smaller than the last actual reduction. */

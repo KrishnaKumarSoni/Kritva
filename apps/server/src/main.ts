@@ -21,9 +21,9 @@ const mappingLlm = createMappingLlmFromEnv();
 // default in the live mapping suite at about half the time. Mid-negotiation changes keep mappingLlm.
 const libraryMappingLlm = createMappingLlmFromEnv({ ...process.env, KRITVA_MAPPING_REASONING_EFFORT: process.env.KRITVA_INTAKE_MAPPING_REASONING_EFFORT ?? "low" });
 const library = new MandateLibrary({ backend: new SqliteLibraryBackend(join(dataDir, "kritva.sqlite")), mappingLlm: libraryMappingLlm });
-const { mandates, examples, listings, guidanceByCase, subjectFacts, listingDetails } = loadCaseRuntime(ROOT, library);
+const { mandates, examples, listings, guidanceByCase, defaultGuidance, subjectFacts, listingDetails } = loadCaseRuntime(ROOT, library);
 // Kritva runs each turn as an agent (OpenAI Agents SDK); the turn model reviews its wording.
-const engine = new NegotiationEngine({ record, llm: createTurnLlmFromEnv(), ...createAgentFromEnv(), locale, guidanceByCase, subjectFacts, listingDetails });
+const engine = new NegotiationEngine({ record, llm: createTurnLlmFromEnv(), ...createAgentFromEnv(), locale, guidance: defaultGuidance, guidanceByCase, subjectFacts, listingDetails });
 const revisions = new MandateRevisions({ record, engine, mappingLlm });
 // The intake agent: a separate chat agent that gathers a new or changed mandate before any negotiation.
 const intake = new IntakeService({ store: new SqliteIntakeStore(join(dataDir, "kritva.sqlite")), agent: createIntakeAgentFromEnv(), library, defaultCurrency: process.env.KRITVA_DEFAULT_CURRENCY ?? "Indian rupees (₹)" });

@@ -21,8 +21,8 @@ const key = process.env.OPENAI_API_KEY;
 if (!key) throw new Error("OPENAI_API_KEY is not set.");
 
 const record = new NegotiationRecord(new SqliteRecordBackend(join(mkdtempSync(join(tmpdir(), "kritva-rt-")), "record.sqlite")));
-const { mandates, guidanceByCase, subjectFacts, listingDetails } = loadCaseRuntime(ROOT, null);
-const engine = new NegotiationEngine({ record, llm: createTurnLlmFromEnv(), ...createAgentFromEnv(), locale: "en-IN", guidanceByCase, subjectFacts, listingDetails });
+const { mandates, guidanceByCase, defaultGuidance, subjectFacts, listingDetails } = loadCaseRuntime(ROOT, null);
+const engine = new NegotiationEngine({ record, llm: createTurnLlmFromEnv(), ...createAgentFromEnv(), locale: "en-IN", guidance: defaultGuidance, guidanceByCase, subjectFacts, listingDetails });
 const mandate = mandates.find((m) => m.mandate.caseId === (process.env.CASE ?? "bed-sale"))?.mandate ?? mandates[0]!.mandate;
 const started = await record.startSession({ mandate });
 if (!started.ok) throw new Error(started.error.message);

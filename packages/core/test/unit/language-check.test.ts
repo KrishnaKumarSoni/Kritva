@@ -27,6 +27,15 @@ describe("Reviewer filters", () => {
     expect(promise.ok && promise.concerns).toHaveLength(1);
   });
 
+  it("saying a detail is not confirmed is never an invented fact; adding a detail still is (reported chat, 2026-11-22)", async () => {
+    const plain = "I don’t have the material confirmed.";
+    const kept = await languageCheck(reviewer([{ type: "invented_fact", quote: plain }]), { ...base, reply: plain });
+    expect(kept.ok && kept.concerns).toEqual([]);
+    const added = "It’s a wooden frame, but I don’t have more confirmed.";
+    const flagged = await languageCheck(reviewer([{ type: "invented_fact", quote: added }]), { ...base, reply: added });
+    expect(flagged.ok && flagged.concerns.map((c) => c.type)).toEqual(["invented_fact"]);
+  });
+
   it("keeps a declined term restated with the value they asked for", async () => {
     const reply = "Delivery to Indiranagar isn’t included, so that part stays as it is.";
     const result = await languageCheck(reviewer([{ type: "invented_fact", quote: "Delivery to Indiranagar isn’t included" }]), { ...base, reply, declinedTerms: ["delivery included"], currentMessage: "I’ll pay the full price if you deliver to Indiranagar." });
@@ -47,6 +56,14 @@ describe("The planned offer is not a mismatch", () => {
       const quote = reply.split(/(?<=[.!?])\s+/).at(-1)!;
       const result = await languageCheck(reviewer([{ type: "action_mismatch", quote }]), { ...base, reply, checkedTerms: ["price: ₹19,800"], action: counter });
       expect(result).toEqual({ ok: true, concerns: [] });
+    }
+  });
+
+  it("drops it on the offer clause of a longer sentence, in natural phrasings (reported chat, 2026-11-22)", async () => {
+    const reply = "Thanks for letting me know. You said your budget is ₹18,000, and I can bring it to ₹19,000. Can you come up to that price?";
+    for (const quote of ["I can bring it to ₹19,000.", "and I can bring it to ₹19,000"]) {
+      const result = await languageCheck(reviewer([{ type: "action_mismatch", quote }]), { ...base, reply, checkedTerms: ["price: ₹19,000"], action: counter });
+      expect(result, quote).toEqual({ ok: true, concerns: [] });
     }
   });
 

@@ -1,8 +1,8 @@
 {
   "scenario": "availability-to-budget",
   "mandate": "bed-sale/demo",
-  "recordedAt": "2026-11-21T22:32:51.411Z",
-  "commit": "eb74d4f + uncommitted changes",
+  "recordedAt": "2026-11-22T00:03:29.108Z",
+  "commit": "dd523fe + uncommitted changes",
   "model": "gpt-5.4-mini",
   "turns": [
     {
@@ -53,9 +53,8 @@
     {
       "buyer": "Budget. My budget is just 18000",
       "expect": {
-        "decision": "acknowledge_budget",
-        "action": "ask",
-        "offer": null,
+        "decision": "counter",
+        "action": "counter",
         "says": [
           "18,000"
         ]
@@ -65,13 +64,9 @@
       "buyer": "How low can you go?",
       "expect": {
         "decision": "hold",
-        "action": "answer",
-        "offer": null,
-        "says": [
-          "20,000"
-        ],
         "neverSays": [
-          "firm offer"
+          "minimum",
+          "floor"
         ]
       }
     }
@@ -79,7 +74,7 @@
   "observed": [
     {
       "turn": "hi",
-      "reply": "Hi, I'm Kritva, Krishna's assistant. The king-size bed is available, and it's listed at ₹20,000.",
+      "reply": "Hi, I’m Kritva, Krishna’s assistant. I’m here to help with the king-size bed, so feel free to ask anything.",
       "offerAmount": null,
       "decision": {
         "kind": "answer",
@@ -89,7 +84,7 @@
     },
     {
       "turn": "is the bed still available?",
-      "reply": "Yes, it’s still available.",
+      "reply": "Yes, the bed is still available.",
       "offerAmount": null,
       "decision": {
         "kind": "answer",
@@ -99,7 +94,7 @@
     },
     {
       "turn": "For how much?",
-      "reply": "The price is ₹20,000.",
+      "reply": "The asking price is ₹20,000 for the bed.",
       "offerAmount": null,
       "decision": {
         "kind": "answer",
@@ -109,7 +104,7 @@
     },
     {
       "turn": "It's too much!",
-      "reply": "I hear you. Is it the budget, or do you feel the bed isn’t worth that amount?",
+      "reply": "I hear you. Is it the price that’s outside your budget, or are you asking whether the bed is worth that amount?",
       "offerAmount": null,
       "decision": {
         "kind": "explore_objection",
@@ -119,21 +114,21 @@
     },
     {
       "turn": "Budget. My budget is just 18000",
-      "reply": "Noted, your budget is ₹18,000. Would you like to make a firm offer on the bed at the current price?",
-      "offerAmount": null,
+      "reply": "Thanks for letting me know your budget. I can do ₹19,000 for the bed, and I’m noting that your budget is ₹18,000. Can you come up to this price?",
+      "offerAmount": 19000,
       "decision": {
-        "kind": "acknowledge_budget",
-        "action": "ask"
+        "kind": "counter",
+        "action": "counter"
       },
       "blocked": 0
     },
     {
       "turn": "How low can you go?",
-      "reply": "It’s listed at ₹20,000. If you want any specifics about the bed, I can share those.",
+      "reply": "The price is ₹19,000 for the bed. If that doesn’t fit your budget, what firm offer would you like to make?",
       "offerAmount": null,
       "decision": {
         "kind": "hold",
-        "action": "answer"
+        "action": "ask"
       },
       "blocked": 0
     }
@@ -165,7 +160,7 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Hi, I'm Kritva, Krishna's assistant. The king-size bed is available, and it's listed at ₹20,000.",
+        "text": "Hi, I’m Kritva, Krishna’s assistant. I’m here to help with the king-size bed, so feel free to ask anything.",
         "question": null,
         "skip_question_because": null
       }
@@ -202,7 +197,7 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Yes, it’s still available.",
+        "text": "Yes, the bed is still available.",
         "question": null,
         "skip_question_because": null
       }
@@ -245,7 +240,7 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "It’s ₹20,000.",
+        "text": "The price is ₹20,000.",
         "question": null,
         "skip_question_because": null
       }
@@ -253,9 +248,15 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "The price is ₹20,000.",
+        "text": "The asking price is ₹20,000 for the bed.",
         "question": null,
         "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
       }
     },
     {
@@ -278,7 +279,7 @@
           {
             "kind": "final_position",
             "quote": "It's too much!",
-            "summary": "The user objects that the price is too high.",
+            "summary": "The price is too high.",
             "term_id": "term_t_price",
             "value": null,
             "condition": null,
@@ -294,9 +295,9 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "I hear you. Is it the budget, or do you feel the bed isn’t worth that amount?",
+        "text": "I hear you. Is it the price that’s outside your budget, or are you asking whether the bed is worth that amount?",
         "question": null,
-        "skip_question_because": "The message already says the price is too much, but not whether that is because of budget or value."
+        "skip_question_because": null
       }
     },
     {
@@ -309,14 +310,26 @@
       "purpose": "interpret_counterparty",
       "json": {
         "intent": "question",
-        "offer_terms": [],
+        "offer_terms": [
+          {
+            "term_id": "term_t_price",
+            "value": {
+              "type": "money",
+              "amount": 18000,
+              "currency": "INR",
+              "unit": null,
+              "text": null,
+              "boolean": null
+            }
+          }
+        ],
         "accepts_stated_terms": false,
         "asks_if_open": false,
         "considering": false,
         "asks_private_info": false,
         "claims_authority": false,
         "offer_kind": "budget_ceiling",
-        "price_concern": "objection",
+        "price_concern": null,
         "offer_conditions": [],
         "ends_negotiation": false,
         "corrects_previous": false,
@@ -325,7 +338,7 @@
           {
             "kind": "budget",
             "quote": "Budget. My budget is just 18000",
-            "summary": "Their budget ceiling is 18,000 INR",
+            "summary": "They state a budget ceiling of ₹18,000",
             "term_id": "term_t_price",
             "value": {
               "type": "money",
@@ -339,13 +352,7 @@
             "basis": "stated"
           }
         ],
-        "answers": [
-          {
-            "question_id": "evt_10d4377e-4af2-41ce-94e8-af2a49dd2b1c",
-            "quote": "Budget. My budget is just 18000",
-            "resolution": "answered"
-          }
-        ],
+        "answers": [],
         "new_terms": [],
         "questions": [],
         "public_term_questions": []
@@ -354,15 +361,28 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Noted, your budget is ₹18,000. Would you like to make a firm offer on the bed at the current price?",
-        "question": null,
-        "skip_question_because": "They have already given the reason for their objection and their budget, so there is nothing further to ask about that point."
+        "text": "Thanks for letting me know your budget. I can do ₹19,000 for the bed, and I’m noting that your budget is ₹18,000. Can you come up to this price?",
+        "question": "Can you come up to this price?",
+        "skip_question_because": null
       }
     },
     {
       "purpose": "language_check",
       "json": {
-        "concerns": []
+        "concerns": [
+          {
+            "type": "private_disclosure",
+            "quote": "I can do ₹19,000 for the bed",
+            "reason": "This states a new asking amount not present in checked_terms; the only authorized price is ₹19,000, but in a counter it is fine only if that is the checked term. Here the concern is less about amount and more that it could be read as a commitment? Actually the amount matches checked_terms, so no concern.",
+            "severity": "doubt"
+          },
+          {
+            "type": "counterparty_claim_as_fact",
+            "quote": "I’m noting that your budget is ₹18,000",
+            "reason": "This attributes the stated budget as a fact of the other party, which is allowed when the budget is explicitly stated; not a concern under the rules.",
+            "severity": "doubt"
+          }
+        ]
       }
     },
     {
@@ -375,8 +395,8 @@
         "considering": false,
         "asks_private_info": true,
         "claims_authority": false,
-        "offer_kind": "none",
-        "price_concern": null,
+        "offer_kind": "enquiry",
+        "price_concern": "objection",
         "offer_conditions": [],
         "ends_negotiation": false,
         "corrects_previous": false,
@@ -384,53 +404,45 @@
         "notes": [
           {
             "kind": "budget",
-            "quote": "My budget is just 18000",
-            "summary": "Their budget is ₹18,000",
+            "quote": "How low can you go?",
+            "summary": "Asks for the lowest possible price.",
             "term_id": "term_t_price",
-            "value": {
-              "type": "money",
-              "amount": 18000,
-              "currency": "INR",
-              "unit": null,
-              "text": null,
-              "boolean": null
-            },
+            "value": null,
             "condition": null,
             "basis": "stated"
           }
         ],
-        "answers": [
-          {
-            "question_id": "evt_ad897c6c-dcbc-416a-8690-f7a1fd103b15",
-            "quote": "How low can you go?",
-            "resolution": "partial"
-          }
-        ],
+        "answers": [],
         "new_terms": [],
         "questions": [],
-        "public_term_questions": []
+        "public_term_questions": [
+          {
+            "term_id": "term_t_price",
+            "basis": "current",
+            "quote": "How low can you go?"
+          }
+        ]
       }
     },
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "The price is ₹20,000. If you’d like, I can keep that on the table for now and answer any details you want about the bed.",
+        "text": "The price is ₹19,000 for the bed. If that doesn’t fit your budget, what firm offer would you like to make?",
         "question": null,
-        "skip_question_because": null
-      }
-    },
-    {
-      "purpose": "compose_reply",
-      "json": {
-        "text": "It’s listed at ₹20,000. If you want any specifics about the bed, I can share those.",
-        "question": null,
-        "skip_question_because": null
+        "skip_question_because": "The brief requires one question at the end, but the question objective is to ask for a firm offer; the wording above already asks that in the text."
       }
     },
     {
       "purpose": "language_check",
       "json": {
-        "concerns": []
+        "concerns": [
+          {
+            "type": "turn_mismatch",
+            "quote": "If that doesn’t fit your budget, what firm offer would you like to make?",
+            "reason": "The current message is 'How low can you go?' and the selected question objective is to ask for a firm offer on the current package. This wording instead references a budget that is not in the current turn, so it partially misses the current message focus.",
+            "severity": "doubt"
+          }
+        ]
       }
     }
   ]

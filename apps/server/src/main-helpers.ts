@@ -29,6 +29,14 @@ export function loadConfirmedMandates(casesDir: string): MandateEntry[] {
 /**
  * Each case opts into its own strategy guidance. KRITVA_GUIDANCE=none uses the built-in defaults.
  */
+/** cases/default-strategy-guidance.json: the strategy document's controls, used when a case has no guidance of its own. */
+export function loadDefaultGuidance(root: string): StrategyGuidance | undefined {
+  if (process.env.KRITVA_GUIDANCE === "none") return undefined;
+  const path = join(root, "cases", "default-strategy-guidance.json");
+  if (!existsSync(path)) return undefined;
+  return parseGuidance(JSON.parse(readFileSync(path, "utf8")));
+}
+
 export function loadCaseGuidance(root: string): Map<string, StrategyGuidance> {
   const guidance = new Map<string, StrategyGuidance>();
   if (process.env.KRITVA_GUIDANCE === "none") return guidance;
@@ -129,6 +137,8 @@ export function loadCaseRuntime(root: string, library: MandateLibrary | null) {
     examples,
     listings,
     guidanceByCase: loadCaseGuidance(root),
+    /** The strategy for every mandate without its own guidance, such as those made through the intake chat. */
+    defaultGuidance: loadDefaultGuidance(root),
     subjectFacts: new Map(listings.flatMap((l) => (l.subjectFactId ? [[l.caseId, l.subjectFactId] as const] : []))),
     listingDetails: new Map(listings.map((listing) => [listing.caseId, listing])),
   };

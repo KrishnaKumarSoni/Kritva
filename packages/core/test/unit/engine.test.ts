@@ -4,6 +4,7 @@ import type { StructuredLlm, StructuredRequest, StructuredResponse } from "../..
 import { NegotiationEngine, type TurnResult } from "../../src/negotiation/engine.ts";
 import { readMandate } from "../../src/negotiation/mandate-view.ts";
 import { checkReply, findAmounts } from "../../src/negotiation/reply-check.ts";
+import { checkClaims } from "../../src/governance/claims.ts";
 import type { Plan } from "../../src/negotiation/policy.ts";
 import { demoTerms, loadDemoMandate, openRecord } from "../support/record.ts";
 
@@ -94,6 +95,20 @@ describe("outgoing reply check (code, not prompt)", () => {
   it("blocks claims of agreement or approval that the record does not hold", () => {
     expect(checkReply("Great, it's a deal at ₹19,500!", ctx(planFor("counter", 19_500))).map((x) => x.rule)).toContain("false_commitment");
     expect(checkReply("The seller has approved ₹19,500.", ctx(planFor("counter", 19_500))).map((x) => x.rule)).toContain("false_commitment");
+  });
+
+  it("an agreement claim is a claim; wanting a price that works for both is not (reported chat, 2026-11-22)", () => {
+    for (const claim of ["That works.", "Okay, that works for me.", "₹19,500 works."]) {
+      expect(checkReply(claim, ctx(planFor("counter", 19_500))).map((x) => x.rule), claim).toContain("false_commitment");
+    }
+    const nudge = "I hear you, and I want to find something that works for both of us. I can do ₹19,500. Could you come up to this price?";
+    expect(checkReply(nudge, ctx(planFor("counter", 19_500))).map((x) => x.rule)).not.toContain("false_commitment");
+  });
+
+  it("asking whether they can meet the new price is not a market claim", () => {
+    const checked = { offerTerms: null, termNames: new Map<string, string>() };
+    expect(checkClaims("I can do ₹19,500. Can you meet the new price?", checked).map((x) => x.rule)).not.toContain("market_claim");
+    expect(checkClaims("The new price of a bike like this is much higher.", checked).map((x) => x.rule)).toContain("market_claim");
   });
 
   it("blocks passages copied from private instructions", () => {

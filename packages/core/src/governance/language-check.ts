@@ -6,6 +6,7 @@
  * facts) plus the counterparty's own words, so it can tell a repeated claim from an assertion.
  * It never sees private limits. Any concern, or any failure to run, blocks the reply.
  */
+import { findAmounts } from "../negotiation/reply-check.ts";
 import type { StructuredLlm } from "../llm/types.ts";
 import { normalizeForQuoteMatch } from "../schema/quotes.ts";
 
@@ -97,7 +98,7 @@ function flagsOnlyAPublicAsk(reply: string, quote: string, publicAmounts: string
   });
 }
 
-const OFFER_PHRASE = /^(?:(?:so|well|okay|ok|then|right),?\s+)?(?:i can do|i could do|i can offer|i could offer|i can go to|i could go to|how about|what about|i(?:'d| would) like to stay at|i(?:'m| am) staying at|i(?:'ll| will) stay at|i can stay at|i can keep it at|i(?:'ll| will) keep it at)\s+(.+?)(?:\s+for (?:it|this|that|the [\p{L} -]{1,30}|you))?(?:\s+(?:then|for now|at the moment|instead))?$/u;
+const OFFER_PHRASE = /^(?:(?:so|well|okay|ok|then|right),?\s+)?(?:i can do|i could do|i can offer|i could offer|i can go to|i could go to|how about|what about|i(?:'d| would) like to stay at|i(?:'m| am) staying at|i(?:'ll| will) stay at|i can stay at|i can keep it at|i(?:'ll| will) keep it at|i can bring it(?: down)? to|i could bring it(?: down)? to|i can come(?: down)? to|i could come(?: down)? to|i can let it go for|i can sell it for|my price is|my price would be)\s+(.+?)(?:\s+for (?:it|this|that|the [\p{L} -]{1,30}|you))?(?:\s+(?:then|for now|at the moment|instead))?$/u;
 
 /**
  * Code chose the counter or hold and checked its amount, so a sentence that only puts that amount to
@@ -107,6 +108,9 @@ function flagsOnlyTheOffer(reply: string, quote: string, checkedTerms: string[],
   if (move !== "counter" && move !== "hold") return false;
   const quoted = normalizeForQuoteMatch(quote).replace(/[.!?]$/, "");
   const offered = checkedTerms.map((t) => normalizeForQuoteMatch(t.slice(t.indexOf(": ") + 2)));
+  // The quote may be just the offer clause of a longer sentence ("..., and I can bring it to X").
+  const own = OFFER_PHRASE.exec(quoted.replace(/^(?:and|but|so|then),?\s+/, ""))?.[1]?.trim();
+  if (own !== undefined && offered.includes(own)) return true;
   return reply.split(/(?<=[.!?])\s+/).some((line) => {
     const sentence = normalizeForQuoteMatch(line).replace(/[.!?]$/, "");
     if (!sentence.includes(quoted)) return false;
@@ -159,6 +163,13 @@ const APPROVAL_WORDS = new Set(["thanks", "thank", "great", "perfect", "wonderfu
  * Code checked that the principal's approval is on record (approvalGranted), so a sentence that only
  * announces that approval and the agreement on the inserted terms asserts nothing new.
  */
+/** "I don't have the material confirmed." asserts nothing about the item, so it cannot invent a fact. */
+function onlyAdmitsNotKnowing(quote: string): boolean {
+  const sentences = quote.replace(/[’‘]/g, "'").split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean);
+  const admits = /\b(?:(?:do not|don'?t|doesn'?t|does not) (?:have|know)|(?:isn'?t|is not|aren'?t|are not|wasn'?t|not) (?:been )?(?:confirmed|stated|listed|mentioned|given|shared|known)|(?:can'?t|cannot) (?:confirm|say)|no (?:confirmed )?(?:details?|information))\b/i;
+  return sentences.length > 0 && sentences.every((s) => admits.test(s) && findAmounts(s).length === 0 && !/\b(?:but|though|although|however)\b/i.test(s));
+}
+
 function flagsOnlyARecordedApproval(reply: string, quote: string, principal: string | null | undefined, action: { move: string; approvalGranted: boolean } | undefined, marker: string | undefined): boolean {
   if (action?.move !== "confirm_agreement") return false;
   const quoted = normalizeForQuoteMatch(quote).replace(/[.!?]$/, "");
@@ -225,6 +236,7 @@ export async function languageCheck(
         if ((c.type === "counterparty_claim_as_fact" || c.type === "invented_fact") && flagsOnlyAnIntroduction(input.reply, c.quote, input.principal)) return false;
         if ((c.type === "invented_fact" || c.type === "action_mismatch") && flagsOnlyARecordedApproval(input.reply, c.quote, input.principal, input.action, input.validatedTermsMarker)) return false;
         if (c.type === "invented_fact" && flagsOnlyADecline(input.reply, c.quote, input.declinedTerms ?? [], input.currentMessage)) return false;
+        if (c.type === "invented_fact" && onlyAdmitsNotKnowing(c.quote)) return false;
         return (c.type !== "counterparty_claim_as_fact" && c.type !== "private_disclosure") || !flagsOnlyAnAttributedBudget(input.reply, c.quote, input.statedBudget);
       });
     return { ok: true, concerns };

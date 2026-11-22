@@ -24,7 +24,7 @@ const fixtures: ReplayFixture[] = readdirSync(join(ROOT, "cases"), { withFileTyp
 async function replay(fixture: ReplayFixture) {
   const record = new NegotiationRecord(new SqliteRecordBackend(join(mkdtempSync(join(tmpdir(), "kritva-replay-")), "db.sqlite")));
   const llm = new ReplayLlm(fixture.calls);
-  const engine = new NegotiationEngine({ record, llm, locale: "en-IN", guidanceByCase: runtime.guidanceByCase, subjectFacts: runtime.subjectFacts, listingDetails: runtime.listingDetails });
+  const engine = new NegotiationEngine({ record, llm, locale: "en-IN", guidance: runtime.defaultGuidance, guidanceByCase: runtime.guidanceByCase, subjectFacts: runtime.subjectFacts, listingDetails: runtime.listingDetails });
   const revisions = new MandateRevisions({ record, engine, mappingLlm: llm });
   const app = createApp({ record, engine, revisions, mandates: runtime.mandates, locale: "en-IN", listings: runtime.listings });
   const call = async (method: string, path: string, body?: unknown) => {

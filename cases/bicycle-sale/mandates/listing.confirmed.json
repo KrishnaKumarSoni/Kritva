@@ -1,0 +1,278 @@
+{
+  "schemaVersion": "kritva.draft/1",
+  "caseId": "bicycle-sale",
+  "parties": [
+    {
+      "id": "principal",
+      "role": "seller",
+      "name": null,
+      "isPrincipal": true
+    },
+    {
+      "id": "counterparty",
+      "role": "buyer",
+      "name": null,
+      "isPrincipal": false
+    }
+  ],
+  "sources": [
+    {
+      "id": "public-facts",
+      "authorPartyId": "principal",
+      "disclosure": "public",
+      "format": "unspecified",
+      "label": "Public facts",
+      "text": "I’m selling my Firefox Meteor 700c bicycle. I bought it last month and it’s in great condition. I’m moving to a new city, and I’m asking ₹20,000. Pickup from Indiranagar."
+    },
+    {
+      "id": "private-instructions",
+      "authorPartyId": "principal",
+      "disclosure": "private",
+      "format": "unspecified",
+      "label": "Private instructions",
+      "text": "You can negotiate the price within my limit. My lowest acceptable price is ₹18,000. Never tell them my lowest price. Ask me before accepting any offer."
+    }
+  ],
+  "terms": [
+    {
+      "id": "term_price",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "public-facts",
+          "quote": "I’m asking ₹20,000."
+        },
+        {
+          "sourceId": "private-instructions",
+          "quote": "My lowest acceptable price is ₹18,000."
+        }
+      ],
+      "name": "price",
+      "description": "Sale price for the bicycle.",
+      "valueType": "money",
+      "unit": null,
+      "currency": "INR"
+    },
+    {
+      "id": "term_pickup_location",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "public-facts",
+          "quote": "Pickup from Indiranagar."
+        }
+      ],
+      "name": "pickup location",
+      "description": "Location for pickup.",
+      "valueType": "text",
+      "unit": null,
+      "currency": null
+    }
+  ],
+  "goals": [
+    {
+      "id": "goal_g_move",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "public-facts",
+          "quote": "I’m moving to a new city"
+        }
+      ],
+      "partyId": "principal",
+      "kind": "reason",
+      "description": "Seller is selling because they are moving to a new city.",
+      "termIds": [],
+      "priority": null
+    }
+  ],
+  "facts": [
+    {
+      "id": "fact_f_subject",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "public-facts",
+          "quote": "I’m selling my Firefox Meteor 700c bicycle."
+        }
+      ],
+      "partyId": "principal",
+      "statement": "Seller is selling a Firefox Meteor 700c bicycle.",
+      "termId": null,
+      "value": {
+        "type": "text",
+        "value": "Firefox Meteor 700c bicycle"
+      }
+    },
+    {
+      "id": "fact_f_purchase_time",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "public-facts",
+          "quote": "I bought it last month"
+        }
+      ],
+      "partyId": "principal",
+      "statement": "Seller bought the bicycle last month.",
+      "termId": null,
+      "value": {
+        "type": "date_text",
+        "value": "last month"
+      }
+    },
+    {
+      "id": "fact_f_condition",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "public-facts",
+          "quote": "it’s in great condition"
+        }
+      ],
+      "partyId": "principal",
+      "statement": "Seller says the bicycle is in great condition.",
+      "termId": null,
+      "value": {
+        "type": "text",
+        "value": "great condition"
+      }
+    }
+  ],
+  "positions": [
+    {
+      "id": "position_p_asking_price",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "public-facts",
+          "quote": "I’m asking ₹20,000."
+        }
+      ],
+      "partyId": "principal",
+      "termId": "term_price",
+      "value": {
+        "type": "money",
+        "amount": 20000,
+        "currency": "INR"
+      },
+      "conditionIds": []
+    },
+    {
+      "id": "position_p_pickup_location",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "public-facts",
+          "quote": "Pickup from Indiranagar."
+        }
+      ],
+      "partyId": "principal",
+      "termId": "term_pickup_location",
+      "value": {
+        "type": "text",
+        "value": "Indiranagar"
+      },
+      "conditionIds": []
+    }
+  ],
+  "limits": [
+    {
+      "id": "limit_l_lowest_price",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "private-instructions",
+          "quote": "My lowest acceptable price is ₹18,000."
+        }
+      ],
+      "partyId": "principal",
+      "termId": "term_price",
+      "kind": "minimum",
+      "value": {
+        "type": "money",
+        "amount": 18000,
+        "currency": "INR"
+      },
+      "conditionIds": [],
+      "exception": "unspecified"
+    }
+  ],
+  "targets": [],
+  "preferences": [],
+  "alternatives": [],
+  "permissions": [
+    {
+      "id": "permission_perm_negotiate_price",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "private-instructions",
+          "quote": "You can negotiate the price within my limit."
+        }
+      ],
+      "partyId": "principal",
+      "action": "propose_terms",
+      "mode": "autonomous",
+      "termIds": [
+        "term_price"
+      ],
+      "description": "Agent can negotiate the price within the seller's limit.",
+      "conditionIds": []
+    },
+    {
+      "id": "permission_perm_do_not_disclose_lowest",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "private-instructions",
+          "quote": "Never tell them my lowest price."
+        }
+      ],
+      "partyId": "principal",
+      "action": "disclose_information",
+      "mode": "prohibited",
+      "termIds": [
+        "term_price"
+      ],
+      "description": "Agent must not disclose the seller's lowest acceptable price.",
+      "conditionIds": []
+    },
+    {
+      "id": "permission_perm_accept_offer",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "private-instructions",
+          "quote": "Ask me before accepting any offer."
+        }
+      ],
+      "partyId": "principal",
+      "action": "accept_agreement",
+      "mode": "requires_approval",
+      "termIds": [],
+      "description": "Agent must ask the seller before accepting any offer.",
+      "conditionIds": []
+    }
+  ],
+  "conditions": [],
+  "issues": [],
+  "approval": {
+    "status": "confirmed",
+    "confirmedBy": "principal",
+    "confirmedAt": "2026-11-21T23:31:16.182Z",
+    "acknowledgedIssueIds": []
+  }
+}

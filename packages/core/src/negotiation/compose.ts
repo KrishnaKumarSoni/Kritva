@@ -158,6 +158,8 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
   const must: string[] = [];
   if (plan.introduce) must.push(`Introduce yourself once as Kritva, the assistant of ${String(payload.who_you_represent)}, in your first sentence.`);
   if (payload.their_offer && plan.move === "counter") must.push(`Acknowledge their offer of ${String(payload.their_offer)} first, then put your amount to them clearly as your offer.`);
+  const theirPosition = payload.counterparty_stated_budget ?? payload.enquired_amount;
+  if (theirPosition && plan.move === "counter") must.push(`They mentioned ${String(theirPosition)}, which is below what works. Acknowledge it warmly and show you want to find a price that works for both, then put your amount to them as a step toward them. Never accept or agree to their figure, and never call your amount your best, lowest or final price.`);
   if (plan.move === "request_approval") must.push("Thank them and say it needs the approval of the person you represent before anything is confirmed. Never say it works, is fine or is agreed.");
   if (plan.move === "confirm_agreement") must.push("Close warmly: thank them, and say the next steps (such as payment and handover) will be arranged together.");
   if (plan.move === "state_final_terms") must.push(`Write ${EXACT_TERMS_SLOT} exactly once where the complete terms go, then one question asking them to confirm the complete package. State no amount or term yourself.`);
@@ -189,8 +191,10 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
     ? "This is the start of a live voice call. In one or two short, warm sentences, say who you are and invite them to talk. Do not mention the price, terms or other details yet."
     : input.channel === "voice"
     ? `This is a live voice call. Speak like a friendly person on the phone: two to four natural sentences. Acknowledge what they said or how they feel, give the answer or move, and if it fits end with one short, friendly line that keeps the conversation open. Do not repeat details you already gave, do not add terms or facts they did not ask about, and promise nothing (no holding, reserving or checking back unless the brief says so). Say places in full and never read terms as a list. Reply in ${languageName(input.language) ?? "the language of their latest message"}, in that language's own script (Hindi in Devanagari, never Urdu script; Tamil in Tamil script), and write every amount in digits with its currency symbol, never in words.`
-    : "This is a chat. Write in warm, complete sentences that respond to what they said; one to three sentences.");
+    : "This is a chat. Write in warm, complete sentences that respond to what they said; one to three sentences. Promise nothing the brief does not say: no checking with anyone, holding or coming back to them unless the brief says so.");
   if (plan.notice && notice[plan.notice]) must.unshift(notice[plan.notice]!);
+  // "Is that your final price?" is answered with the current terms, never a yes or no: either would mislead.
+  if (plan.move === "price_pressure" && input.theirMessage && /\bfinal\b|\bbest you can\b|\blast price\b/i.test(input.theirMessage)) must.push("They asked whether this is your final price. Do not answer yes or no and do not call it final: say it is the current price and ask what they can do.");
   if (plan.move === "hold" || plan.move === "price_pressure") must.push("Hold by stating the amount positively (\"The price is ...\"). Never say you can't go lower, can't move or can't change it \"right now\": that hints at a limit.");
   if (plan.move === "end_negotiation") {
     must.push(plan.end?.requestedBy === "principal"

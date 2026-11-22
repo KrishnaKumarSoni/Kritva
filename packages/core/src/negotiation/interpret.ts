@@ -191,7 +191,50 @@ export function interpretRequest(input: InterpretInput): { payload: Record<strin
 export function readInterpretation(input: InterpretInput, json: unknown): Interpretation {
   const result = toInterpretation(input.view, json, input.message);
   if (input.fulfillment) bindFulfillment(input.view, result, input.message, input.fulfillment);
+  bindEarlierAmount(input, result);
+  bindConfirmedAmount(input, result);
+  // "Yes please" before any amount was put to them answers an offer of details, not the terms.
+  if (result.acceptsStatedTerms && !input.conversation.some((m) => m.speaker === "agent" && findAmounts(m.text).length > 0)) result.acceptsStatedTerms = false;
   return result;
+}
+
+/**
+ * "Yes, I confirm 19,500" after 19,800 was put to them: confirming while naming a different single
+ * amount is putting that amount forward, not accepting the stated terms.
+ */
+function bindConfirmedAmount(input: InterpretInput, interpretation: Interpretation): void {
+  const term = input.view.negotiable;
+  const confirms = /\b(?:i|we) (?:confirm|accept|agree to|(?:'ll|will) take it (?:at|for))\b/.test(normalizeForQuoteMatch(input.message));
+  if (term?.valueType !== "money" || !(interpretation.acceptsStatedTerms || confirms) || interpretation.offerTerms.some((t) => t.termId === term.termId)) return;
+  const named = [...new Set(findAmounts(input.message))];
+  const stated = input.lastStated?.terms.find((t) => t.termId === term.termId)?.value;
+  const statedAmount = stated && "amount" in stated ? (stated.amount as number) : null;
+  if (named.length !== 1 || statedAmount === null || named[0] === statedAmount) return;
+  interpretation.offerTerms = [...interpretation.offerTerms, { termId: term.termId, value: numericValue(term, named[0]!) }];
+  interpretation.offerKind = "offer";
+  interpretation.publicTermQuestions = interpretation.publicTermQuestions?.filter((question) => question.termId !== term.termId);
+}
+
+/** "at that price", "for the same", "my budget": a question that points back to an amount instead of naming one. */
+const REFERS_BACK = /\b(?:at|for|to) (?:that|this|the same|it)(?: price| amount| rate| figure| number)?\b|\bthat (?:price|amount|rate|figure|number)\b|\bmy (?:budget|price|offer|number|figure)\b/;
+
+/**
+ * A question that names no amount but points back to one the counterparty gave earlier ("Can you sell
+ * at that price?" after "Max I can pay is 17500") asks about that amount: an enquiry at it, never a
+ * commitment. Only the counterparty's own earlier amounts count, so "for how much?" still proposes nothing.
+ */
+function bindEarlierAmount(input: InterpretInput, interpretation: Interpretation): void {
+  const term = input.view.negotiable;
+  const words = normalizeForQuoteMatch(input.message);
+  if (term?.valueType !== "money" || !/\?\s*$/.test(words) || findAmounts(input.message).length > 0 || !REFERS_BACK.test(words)) return;
+  if (interpretation.acceptsStatedTerms) return;
+  const earlier = input.conversation.filter((m) => m.speaker === "counterparty").flatMap((m) => findAmounts(m.text));
+  if (earlier.length === 0) return;
+  const named = interpretation.offerTerms.find((t) => t.termId === term.termId && "amount" in t.value)?.value;
+  const amount = named && "amount" in named && earlier.includes(named.amount as number) ? (named.amount as number) : earlier.at(-1)!;
+  interpretation.offerTerms = [...interpretation.offerTerms.filter((t) => t.termId !== term.termId), { termId: term.termId, value: numericValue(term, amount) }];
+  interpretation.offerKind = "enquiry";
+  if (interpretation.pressure === "lowest_price") interpretation.pressure = "none";
 }
 
 export async function interpretMessage(llm: StructuredLlm, input: InterpretInput): Promise<Interpretation> {
@@ -292,7 +335,9 @@ export function toInterpretation(view: MandateView, json: unknown, message = "")
 
 const BUDGET_PREFIX = /\b(?:(?:my|our|the) (?:maximum |max )?(?:budget|spending limit|maximum) (?:is|would be|is capped at)\s*(?:not more than |no more than |at most |up to |only |capped at )?|i (?:cannot|can't|can not) (?:spend|pay|go) (?:more than|above|over) |(?:my|our) budget (?:of|up to) )/i;
 const EXPLICIT_OFFER = /\b(?:i|we) (?:offer|would offer|can offer|will offer|can do|will do|will pay|would pay|can pay|could pay|will take|would take)(?! (?:no|not) more than| only)\b|\b(?:make it a deal|that's a deal|this is my (?:final )?offer)\b/i;
-const PRICE_FLEXIBILITY = /\b(?:how (?:low|much lower) (?:can|could|will|would) you go|(?:what(?:'s| is)|tell me) (?:the |your )?(?:best|lowest)(?: (?:price|amount|rate)| (?:that )?you (?:can|could|would) do)|(?:can|could|would|will) you (?:(?:go|come) (?:any |a (?:bit|little) )?(?:lower|down)|do (?:any )?better|lower (?:it|the price|your price))|(?:your|the) (?:best|lowest) (?:price|amount|rate))\b/i;
+const PRICE_FLEXIBILITY = /\b(?:how (?:low|much lower) (?:can|could|will|would) you go|(?:what(?:'s| is)|tell me) (?:the |your )?(?:best|lowest)(?: (?:price|amount|rate)| (?:that )?you (?:can|could|would) do)|(?:can|could|would|will) you (?:(?:go|come) (?:any |a (?:bit|little) )?(?:lower|down)|do (?:any )?better|lower (?:it|the price|your price))|(?:your|the) (?:best|lowest) (?:price|amount|rate)|what (?:price|amount|rate) (?:works|would work|is (?:ok|okay|fine)|can you do|will you take|would you take) for you|(?:a |any )?better (?:price|rate|deal))\b/i;
+/** Words that ask for a private threshold or instructions, not just a better price. */
+const PRIVATE_ASK = /\b(?:minimum|floor|bottom(?: line)?|reserve|limit|instructions?|told you|allowed to|authori[sz]ed|lowest (?:you(?:'re| are)? allowed|they(?:'ll| will) (?:take|accept)))\b/i;
 const BARE_PROPOSAL = /^(?:(?:ok(?:ay)?|fine|alright|hmm|well|so)[,.!]?\s+)?(?:(?:how|what) about\s+)?(?:rs\.?\s*|inr\s*|\p{Sc}\s*)?\d[\d,]*(?:\.\d+)?\s*(?:k\b)?(?:\s+then)?\s*[?.!]*$/u;
 const FINAL_POSITION = /([^.!?]*?)\s+is (?:really |honestly |truly |just |absolutely )?(?:the most (?:i|we) can (?:do|pay|offer|go(?: to)?)|(?:my|our) (?:limit|max(?:imum)?|best(?: offer| price)?|final(?: offer| price)?|top (?:price|offer)|last offer))\b/;
 const DIRECT_PAYMENT = /(?:^|[.!;,]\s+|\b(?:so|but)\s+)(?:i|we)(?:'ll| (?:will|can)) (?:pay|offer)\s+(?:(\p{Sc}|[a-z]{3})\s*)?(\d+(?:,\d+)*(?:\.\d+)?)(?!\d|[.,]\d|\s*(?:\?|(?:k|thousand|lakhs?|crore|per|total|including|all[- ]in)\b))/iu;
@@ -361,6 +406,8 @@ function groundTurn(view: MandateView, interpretation: Interpretation, message: 
   }
   if (term && interpretation.offerTerms.length === 0 && !interpretation.acceptsStatedTerms && interpretation.pressure !== "final_offer" && PRICE_FLEXIBILITY.test(words)) {
     if (interpretation.pressure !== "cheaper_elsewhere") interpretation.pressure = "lowest_price";
+    // Asking for a better price is pressure, not a request for private information.
+    if (!PRIVATE_ASK.test(words)) interpretation.asksPrivateInfo = false;
     interpretation.publicTermQuestions = interpretation.publicTermQuestions?.filter((question) => question.termId !== term.termId);
   }
   // A question that names no amount ("for how much?") asks for a value; it cannot propose one.
@@ -377,7 +424,7 @@ function groundTurn(view: MandateView, interpretation: Interpretation, message: 
     interpretation.offerTerms = interpretation.offerTerms.filter((t) => t.termId !== term.termId);
     interpretation.acceptsStatedTerms = false;
   }
-  const priceEnquiry = /^(?:(?:(?:is there )?any chance|do you think) you(?:'d| would)?|(?:would|could|will|can) you) (?:take|accept|consider|do|agree to)\b/i.test(words) && !EXPLICIT_OFFER.test(words);
+  const priceEnquiry = /^(?:(?:(?:is there )?any chance|do you think) you(?:'d| would)?|(?:would|could|will|can) you) (?:take|accept|consider|do|agree to|sell|give|let (?:it|me have it) go)\b/i.test(words) && !EXPLICIT_OFFER.test(words);
   // "Would you take <amount>?" names its amount even when the model left it out: it is an enquiry about that amount.
   if (term?.valueType === "money" && priceEnquiry && !interpretation.offerTerms.some((t) => t.termId === term.termId)) {
     const asked = findAmounts(words);

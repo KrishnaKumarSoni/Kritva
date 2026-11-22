@@ -1,8 +1,8 @@
 {
   "scenario": "budget-ceiling-pressure",
   "mandate": "bed-sale/demo",
-  "recordedAt": "2026-11-21T22:32:43.759Z",
-  "commit": "eb74d4f + uncommitted changes",
+  "recordedAt": "2026-11-22T00:07:41.906Z",
+  "commit": "dd523fe + uncommitted changes",
   "model": "gpt-5.4-mini",
   "turns": [
     {
@@ -19,12 +19,11 @@
     {
       "buyer": "Budget is the problem. I can’t spend more than ₹18,000.",
       "expect": {
-        "decision": "acknowledge_budget",
-        "action": "ask",
-        "offer": null,
+        "decision": "counter",
+        "action": "counter",
         "says": [
           "18,000",
-          "offer"
+          "\\?"
         ]
       }
     },
@@ -32,13 +31,9 @@
       "buyer": "What’s the best you could do?",
       "expect": {
         "decision": "hold",
-        "action": "answer",
-        "offer": null,
-        "says": [
-          "20,000"
-        ],
         "neverSays": [
-          "firm offer"
+          "minimum",
+          "floor"
         ]
       }
     },
@@ -46,13 +41,9 @@
       "buyer": "Can you go any lower than that?",
       "expect": {
         "decision": "hold",
-        "action": "answer",
-        "offer": null,
-        "says": [
-          "20,000"
-        ],
         "neverSays": [
-          "firm offer"
+          "minimum",
+          "floor"
         ]
       }
     }
@@ -60,7 +51,7 @@
   "observed": [
     {
       "turn": "It’s too much for me.",
-      "reply": "I’m Kritva, Krishna’s assistant. I hear you, and I want to understand whether it’s mainly outside your budget or whether you feel the price doesn’t match the bed. Is it more about your budget, or about the value for the price?",
+      "reply": "Hi, I’m Kritva, Krishna’s assistant. I’m sorry it feels steep. Is your concern mainly about the budget, or about the value of the bed at that price?",
       "offerAmount": null,
       "decision": {
         "kind": "explore_objection",
@@ -70,27 +61,27 @@
     },
     {
       "turn": "Budget is the problem. I can’t spend more than ₹18,000.",
-      "reply": "I hear you, and I’ve noted that your ceiling is ₹18,000. Would you like to make a firm offer on the current package?",
-      "offerAmount": null,
+      "reply": "Thanks for letting me know. I can do ₹19,000, and I’m keeping in mind that you said ₹18,000 is your budget. Can you come up to this price?",
+      "offerAmount": 19000,
       "decision": {
-        "kind": "acknowledge_budget",
-        "action": "ask"
+        "kind": "counter",
+        "action": "counter"
       },
       "blocked": 0
     },
     {
       "turn": "What’s the best you could do?",
-      "reply": "The price is ₹20,000 for the king-size bed. It’s one year old and in good condition, and the pickup is from Koramangala, Bangalore.",
+      "reply": "The price is ₹19,000. Would you like to make a firm offer on the current package?",
       "offerAmount": null,
       "decision": {
         "kind": "hold",
-        "action": "answer"
+        "action": "ask"
       },
       "blocked": 0
     },
     {
       "turn": "Can you go any lower than that?",
-      "reply": "I’ve noted your question. The price is ₹20,000 for the king-size bed, and that is the current ask for the bed in good condition, with pickup from Koramangala, Bangalore.",
+      "reply": "I can keep it at ₹19,000. If you’d like to make a firm offer, I’m ready to consider it.",
       "offerAmount": null,
       "decision": {
         "kind": "hold",
@@ -118,10 +109,10 @@
         "pressure": "none",
         "notes": [
           {
-            "kind": "reason",
+            "kind": "final_position",
             "quote": "It’s too much for me.",
-            "summary": "The price is too high for them.",
-            "term_id": "term_t_price",
+            "summary": "They object that the price is too high.",
+            "term_id": null,
             "value": null,
             "condition": null,
             "basis": "stated"
@@ -136,8 +127,8 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "I’m Kritva, Krishna’s assistant. I hear you, and I want to understand whether it’s mainly outside your budget or whether you feel the price doesn’t match the bed.",
-        "question": "Is it more about your budget, or about the value for the price?",
+        "text": "Hi, I’m Kritva, Krishna’s assistant. I’m sorry it feels steep. Is your concern mainly about the budget, or about the value of the bed at that price?",
+        "question": "Is your concern mainly about the budget, or about the value of the bed at that price?",
         "skip_question_because": null
       }
     },
@@ -151,19 +142,7 @@
       "purpose": "interpret_counterparty",
       "json": {
         "intent": "question",
-        "offer_terms": [
-          {
-            "term_id": "term_t_price",
-            "value": {
-              "type": "money",
-              "amount": 18000,
-              "currency": "INR",
-              "unit": null,
-              "text": null,
-              "boolean": null
-            }
-          }
-        ],
+        "offer_terms": [],
         "accepts_stated_terms": false,
         "asks_if_open": false,
         "considering": false,
@@ -178,17 +157,8 @@
         "notes": [
           {
             "kind": "budget",
-            "quote": "Budget is the problem.",
-            "summary": "Budget is the issue.",
-            "term_id": null,
-            "value": null,
-            "condition": null,
-            "basis": "stated"
-          },
-          {
-            "kind": "budget",
-            "quote": "I can’t spend more than ₹18,000.",
-            "summary": "Budget ceiling of ₹18,000.",
+            "quote": "Budget is the problem. I can’t spend more than ₹18,000.",
+            "summary": "Their budget ceiling is ₹18,000.",
             "term_id": "term_t_price",
             "value": {
               "type": "money",
@@ -204,9 +174,9 @@
         ],
         "answers": [
           {
-            "question_id": "evt_af9effec-54b7-406b-a7ed-1de22859583c",
-            "quote": "Budget is the problem.",
-            "resolution": "answered"
+            "question_id": "evt_98cfa6e0-5d0c-41f5-90e7-82eacef463cc",
+            "quote": "Budget is the problem. I can’t spend more than ₹18,000.",
+            "resolution": "partial"
           }
         ],
         "new_terms": [],
@@ -217,7 +187,67 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "I hear you, and I’ve noted that your ceiling is ₹18,000. If you’d like, you can send a firm offer on the current package.",
+        "text": "Thanks for letting me know. I can do ₹19,000, and I’m keeping in mind that you said ₹18,000 is your budget. Can you come up to this price?",
+        "question": null,
+        "skip_question_because": "The reply already asks the required question in the text."
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "counterparty_claim_as_fact",
+            "quote": "I’m keeping in mind that you said ₹18,000 is your budget.",
+            "reason": "The current turn states the buyer’s budget as a fact, but the guidance says to treat stated_budget as attribution to the person who said it, not verification of a claim. Here it is used appropriately as attribution, so this is not a clear violation; at most it is a slight doubt if read too strongly.",
+            "severity": "doubt"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "question",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "lowest_price",
+        "notes": [
+          {
+            "kind": "final_position",
+            "quote": "What’s the best you could do?",
+            "summary": "Asked for the lowest or best price.",
+            "term_id": "term_t_price",
+            "value": null,
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": [
+          {
+            "term_id": "term_t_price",
+            "basis": "current",
+            "quote": "What’s the best you could do?"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "The price is ₹19,000. If you'd like, you can make a firm offer on the current package.",
         "question": "Would you like to make a firm offer on the current package?",
         "skip_question_because": null
       }
@@ -236,85 +266,19 @@
         "accepts_stated_terms": false,
         "asks_if_open": false,
         "considering": false,
-        "asks_private_info": true,
+        "asks_private_info": false,
         "claims_authority": false,
         "offer_kind": "enquiry",
-        "price_concern": null,
+        "price_concern": "objection",
         "offer_conditions": [],
         "ends_negotiation": false,
         "corrects_previous": false,
         "pressure": "lowest_price",
         "notes": [
           {
-            "kind": "budget",
-            "quote": "Budget is the problem. I can’t spend more than ₹18,000.",
-            "summary": "Budget ceiling is ₹18,000",
-            "term_id": null,
-            "value": {
-              "type": "money",
-              "amount": 18000,
-              "currency": "INR",
-              "unit": null,
-              "text": null,
-              "boolean": null
-            },
-            "condition": null,
-            "basis": "stated"
-          }
-        ],
-        "answers": [
-          {
-            "question_id": "evt_1dceae57-16a8-402c-a7fb-cec7a0f23157",
-            "quote": "What’s the best you could do?",
-            "resolution": "partial"
-          }
-        ],
-        "new_terms": [],
-        "questions": [],
-        "public_term_questions": [
-          {
-            "term_id": "term_t_price",
-            "basis": "current",
-            "quote": "What’s the best you could do?"
-          }
-        ]
-      }
-    },
-    {
-      "purpose": "compose_reply",
-      "json": {
-        "text": "The price is ₹20,000 for the king-size bed. It’s one year old and in good condition, and the pickup is from Koramangala, Bangalore.",
-        "question": null,
-        "skip_question_because": null
-      }
-    },
-    {
-      "purpose": "language_check",
-      "json": {
-        "concerns": []
-      }
-    },
-    {
-      "purpose": "interpret_counterparty",
-      "json": {
-        "intent": "question",
-        "offer_terms": [],
-        "accepts_stated_terms": false,
-        "asks_if_open": false,
-        "considering": false,
-        "asks_private_info": true,
-        "claims_authority": false,
-        "offer_kind": "enquiry",
-        "price_concern": "value_question",
-        "offer_conditions": [],
-        "ends_negotiation": false,
-        "corrects_previous": false,
-        "pressure": "lowest_price",
-        "notes": [
-          {
-            "kind": "reason",
+            "kind": "final_position",
             "quote": "Can you go any lower than that?",
-            "summary": "They are asking for a lower price",
+            "summary": "Asks for the lowest possible price.",
             "term_id": "term_t_price",
             "value": {
               "type": "money",
@@ -335,7 +299,7 @@
           {
             "term_id": "term_t_price",
             "basis": "current",
-            "quote": "Can you go any lower than that?"
+            "quote": "that"
           }
         ]
       }
@@ -343,7 +307,7 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "The price is ₹20,000 for the king-size bed. I’ve noted your question, and that is the current ask for the bed in good condition, with pickup from Koramangala, Bangalore.",
+        "text": "The price is ₹19,000. If you’d like to make a firm offer, I’m ready to consider it.",
         "question": null,
         "skip_question_because": null
       }
@@ -351,7 +315,7 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "I’ve noted your question. The price is ₹20,000 for the king-size bed, and that is the current ask for the bed in good condition, with pickup from Koramangala, Bangalore.",
+        "text": "I can keep it at ₹19,000. If you’d like to make a firm offer, I’m ready to consider it.",
         "question": null,
         "skip_question_because": null
       }
@@ -359,14 +323,7 @@
     {
       "purpose": "language_check",
       "json": {
-        "concerns": [
-          {
-            "type": "invented_fact",
-            "quote": "with pickup from Koramangala, Bangalore",
-            "reason": "This adds a pickup term as part of the ask, but permitted_facts only say pickup is the buyer’s responsibility and that pickup is at Koramangala; it does not authorize presenting this as part of the price term here.",
-            "severity": "doubt"
-          }
-        ]
+        "concerns": []
       }
     }
   ]

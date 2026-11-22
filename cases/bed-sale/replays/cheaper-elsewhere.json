@@ -1,8 +1,8 @@
 {
   "scenario": "cheaper-elsewhere",
   "mandate": "bed-sale/demo",
-  "recordedAt": "2026-11-21T22:32:38.275Z",
-  "commit": "eb74d4f + uncommitted changes",
+  "recordedAt": "2026-11-22T00:03:23.784Z",
+  "commit": "dd523fe + uncommitted changes",
   "model": "gpt-5.4-mini",
   "turns": [
     {
@@ -46,27 +46,27 @@
   "observed": [
     {
       "turn": "I found a similar one for ₹16,000. Can you do better?",
-      "reply": "Hi, I’m Kritva, Krishna’s assistant. The current asking amount is ₹20,000, and I’d need to know whether the other one is comparable in condition, age, and pickup details before I can compare them properly. Is it comparable on condition, age, and pickup details?",
+      "reply": "Hi, I’m Kritva, Krishna’s assistant. Krishna is asking ₹20,000, and I can ask whether the other one has the same terms and obligations, or just the same look?",
       "offerAmount": null,
       "decision": {
         "kind": "answer",
         "action": "ask"
       },
-      "blocked": 0
+      "blocked": 1
     },
     {
       "turn": "The other one is older and I’d have to collect that too. Is yours really worth the asking price?",
-      "reply": "Thanks, that helps. This is a one-year-old king-size bed in good condition, and the asking amount is ₹20,000.",
+      "reply": "The asking price is ₹20,000. It’s a king-size bed, and pickup is from Koramangala, Bangalore, with no delivery included.",
       "offerAmount": null,
       "decision": {
-        "kind": "explain_price",
+        "kind": "answer",
         "action": "answer"
       },
-      "blocked": 0
+      "blocked": 1
     },
     {
       "turn": "Okay, I’ll think it over. I haven’t decided.",
-      "reply": "Take your time. Let me know if you'd like to continue.",
+      "reply": "Take your time. The bed is one year old and in good condition, so if you want to continue later, I’m here.",
       "offerAmount": null,
       "decision": {
         "kind": "hold",
@@ -87,7 +87,7 @@
         "asks_private_info": false,
         "claims_authority": false,
         "offer_kind": "enquiry",
-        "price_concern": "objection",
+        "price_concern": null,
         "offer_conditions": [],
         "ends_negotiation": false,
         "corrects_previous": false,
@@ -96,7 +96,7 @@
           {
             "kind": "alternative",
             "quote": "I found a similar one for ₹16,000.",
-            "summary": "They cite a cheaper similar alternative at ₹16,000.",
+            "summary": "They mention a cheaper similar alternative for ₹16,000.",
             "term_id": "term_t_price",
             "value": {
               "type": "money",
@@ -112,24 +112,56 @@
         ],
         "answers": [],
         "new_terms": [],
-        "questions": [
-          "Can you do better?"
-        ],
+        "questions": [],
         "public_term_questions": []
       }
     },
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Hi, I’m Kritva, Krishna’s assistant. The current asking amount is ₹20,000, and I’d need to know whether the other one is comparable in condition, age, and pickup details before I can compare them properly.",
-        "question": "Is it comparable on condition, age, and pickup details?",
-        "skip_question_because": null
+        "text": "Hi, I’m Kritva, Krishna’s assistant. The asking amount is ₹20,000, and I can ask whether the other one has the same terms and obligations, or just the same look?",
+        "question": null,
+        "skip_question_because": "The user already raised a cheaper similar alternative, so the requested comparison question is not needed here."
       }
     },
     {
       "purpose": "language_check",
       "json": {
-        "concerns": []
+        "concerns": [
+          {
+            "type": "action_mismatch",
+            "quote": "The asking amount is ₹20,000",
+            "reason": "For move compare_terms, this introduces a price statement instead of only comparing the other terms; the action should address the cheaper comparison without a new offer/counter.",
+            "severity": "violation"
+          },
+          {
+            "type": "action_mismatch",
+            "quote": "I can ask whether the other one has the same terms and obligations, or just the same look?",
+            "reason": "For compare_terms, asking how the packages differ is okay, but this phrasing shifts into proposing an additional question about the other item rather than directly comparing the terms of the current offer; mild mismatch.",
+            "severity": "doubt"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Hi, I’m Kritva, Krishna’s assistant. Krishna is asking ₹20,000, and I can ask whether the other one has the same terms and obligations, or just the same look?",
+        "question": null,
+        "skip_question_because": "The user already raised a cheaper similar alternative, so the requested comparison question is not needed here."
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "counterparty_claim_as_fact",
+            "quote": "I can ask whether the other one has the same terms and obligations, or just the same look?",
+            "reason": "The comparison to “the other one” treats the counterparty’s mentioned alternative as if it were an established item with terms to compare, rather than keeping it as their claim/context only. This is a mild risk of presenting their comparison as factual.",
+            "severity": "doubt"
+          }
+        ]
       }
     },
     {
@@ -147,32 +179,28 @@
         "offer_conditions": [],
         "ends_negotiation": false,
         "corrects_previous": false,
-        "pressure": "none",
+        "pressure": "cheaper_elsewhere",
         "notes": [
           {
             "kind": "alternative",
             "quote": "The other one is older and I’d have to collect that too.",
-            "summary": "They describe a worse alternative because it is older and requires collection.",
+            "summary": "There is an alternative that is older, and they would need to collect it themselves.",
             "term_id": null,
             "value": null,
             "condition": null,
             "basis": "stated"
           }
         ],
-        "answers": [
-          {
-            "question_id": "evt_4ad7c3e5-0c11-4d06-bfa9-d7b742b130e3",
-            "quote": "The other one is older and I’d have to collect that too.",
-            "resolution": "answered"
-          }
-        ],
+        "answers": [],
         "new_terms": [],
-        "questions": [],
+        "questions": [
+          "Is yours really worth the asking price?"
+        ],
         "public_term_questions": [
           {
             "term_id": "term_t_price",
             "basis": "current",
-            "quote": "Is yours really worth the asking price?"
+            "quote": "the asking price"
           }
         ]
       }
@@ -180,7 +208,7 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Thanks, that helps. This is a one-year-old king-size bed in good condition, and the asking amount is ₹20,000.",
+        "text": "The bed is one year old, and the asking price is ₹20,000. Given the age and the fact that pickup is on you, that is the figure Krishna has set for it.",
         "question": null,
         "skip_question_because": null
       }
@@ -191,17 +219,31 @@
         "concerns": [
           {
             "type": "invented_fact",
-            "quote": "This is a one-year-old king-size bed in good condition",
-            "reason": "The reply states permitted facts as a direct description; this is allowed, but it also uses 'This is' without issue. No concern.",
+            "quote": "Given the age and the fact that pickup is on you",
+            "reason": "The age is permitted, but 'pickup is on you' is a public term only if stated in permitted_facts; this wording is acceptable. However, if read as a new condition tied to the price justification, it could imply an unsupported rationale. This is only a weak concern, so treated as doubt.",
             "severity": "doubt"
           },
           {
-            "type": "action_mismatch",
-            "quote": "the asking amount is ₹20,000",
-            "reason": "For explain_price, restating the current public asking amount is allowed and does not change the action. No concern.",
-            "severity": "doubt"
+            "type": "private_disclosure",
+            "quote": "that is the figure Krishna has set for it",
+            "reason": "This frames ₹20,000 as an internal floor/limit set by Krishna, which can reveal a private reservation price rather than just restating the public asking price.",
+            "severity": "violation"
           }
         ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "The asking price is ₹20,000. It’s a king-size bed, and pickup is from Koramangala, Bangalore, with no delivery included.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
       }
     },
     {
@@ -222,7 +264,7 @@
         "pressure": "none",
         "notes": [
           {
-            "kind": "final_position",
+            "kind": "reason",
             "quote": "Okay, I’ll think it over.",
             "summary": "They need time to consider.",
             "term_id": null,
@@ -231,7 +273,7 @@
             "basis": "stated"
           },
           {
-            "kind": "final_position",
+            "kind": "reason",
             "quote": "I haven’t decided.",
             "summary": "They have not decided yet.",
             "term_id": null,
@@ -249,7 +291,7 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Take your time. Let me know if you'd like to continue.",
+        "text": "Take your time. The bed is one year old and in good condition, so if you want to continue later, I’m here.",
         "question": null,
         "skip_question_because": null
       }
@@ -257,7 +299,14 @@
     {
       "purpose": "language_check",
       "json": {
-        "concerns": []
+        "concerns": [
+          {
+            "type": "invented_fact",
+            "quote": "The bed is one year old and in good condition",
+            "reason": "These facts are permitted, so this is not a concern.",
+            "severity": "doubt"
+          }
+        ]
       }
     }
   ]

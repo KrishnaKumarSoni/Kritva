@@ -760,6 +760,12 @@ export class NegotiationEngine {
     const fallbackGate = gateWording(state, plan, fallback);
     if (fallbackGate.decision === "allow") return { text: fallback, question: plan.ask && fallback.includes(plan.ask.text) ? plan.ask.text : null };
     await this.#block(writes, fallback, fallbackGate.reasons.map((r) => ({ rule: r.rule as ReplyViolation["rule"], detail: r.detail })), agent);
+    // Never leave the turn silent because one checked sentence failed: send the rest when it passes on its own.
+    const sentences = fallback.split(/(?<=[.!?])\s+/);
+    for (let i = 0; i < sentences.length && sentences.length > 1; i += 1) {
+      const rest = sentences.filter((_, j) => j !== i).join(" ");
+      if (gateWording(state, plan, rest).decision === "allow") return { text: rest, question: plan.ask && rest.includes(plan.ask.text) ? plan.ask.text : null };
+    }
     return null;
   }
 

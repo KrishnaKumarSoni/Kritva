@@ -91,7 +91,7 @@ const scenarios: Scenario[] = readdirSync(scenarioDir)
   .filter((f) => f.endsWith(".json"))
   .sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
   .map((f) => JSON.parse(readFileSync(join(scenarioDir, f), "utf8")) as Scenario)
-  .filter((s) => !only || s.name === only);
+  .filter((s) => !only || only.split(",").includes(s.name));
 
 const runtimeDir = mkdtempSync(join(tmpdir(), "kritva-scenarios-"));
 const mappingLlm = createMappingLlmFromEnv();
@@ -177,7 +177,7 @@ const agentModel = bridge ? null : await new OpenAIProvider().getModel(agentConf
 function stack() {
   const recording = new RecordingLlm(llm);
   const agent = agentModel ? { agentModel: new RecordingAgentModel(agentModel, recording.calls), agentModelSettings: agentConfig.agentModelSettings } : {};
-  const engine = new NegotiationEngine({ record, llm: recording, ...agent, locale: "en-IN", guidanceByCase: runtime.guidanceByCase, subjectFacts: runtime.subjectFacts, listingDetails: runtime.listingDetails });
+  const engine = new NegotiationEngine({ record, llm: recording, ...agent, locale: "en-IN", guidance: runtime.defaultGuidance, guidanceByCase: runtime.guidanceByCase, subjectFacts: runtime.subjectFacts, listingDetails: runtime.listingDetails });
   const revisions = new MandateRevisions({ record, engine, mappingLlm });
   const app = createApp({ record, engine, revisions, mandates, locale: "en-IN", library, examples: runtime.examples, listings: runtime.listings });
   const call = async (method: string, path: string, body?: unknown) => {

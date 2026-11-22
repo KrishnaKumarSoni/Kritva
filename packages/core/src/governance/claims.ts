@@ -31,7 +31,7 @@ function competitionPattern(role: string | null): RegExp {
   );
 }
 const DEADLINE = /\btoday only\b|\bonly today\b|\boffer (expires|ends|is valid until)\b|\blast chance\b|\blimited time\b|\bby (tonight|end of (the )?day)\b|\bbefore (it'?s|it is) gone\b/i;
-const MARKET = /\bmarket (price|value|rate)\b|\b(retail|new) (price|cost)s?\b|\bworth (at least|more than|much more)\b|\b(costs?|sells?) for \S+ new\b|\bbelow market\b/i;
+const MARKET = /\bmarket (price|value|rate)\b|\bretail (price|cost)s?\b|\b(price|cost)s? (when|if bought|brand) new\b|\bnew (price|cost)s? (of|is|was) (a|an|the|one|this|it)\b|\bworth (at least|more than|much more)\b|\b(costs?|sells?) for \S+ new\b|\bbelow market\b/i;
 const PROMISE = /\b(we|i)( will|'ll| can| could| would)? (deliver|drop (it )?off|bring (it )?(over|to you)|assemble|install|include|throw in|add in)\b/i;
 
 export function checkClaims(text: string, checked: { offerTerms: OfferTerm[] | null; termNames: Map<string, string>; counterpartyRole?: string | null }): ClaimViolation[] {

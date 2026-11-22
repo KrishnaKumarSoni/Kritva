@@ -113,7 +113,7 @@ export function templateReply(view: MandateView, plan: Plan, locale: string, sub
       break;
     case "answer_enquiry": {
       const enquired = n && plan.enquiredAmount !== undefined ? formatValue(numericValue(n, plan.enquiredAmount), locale) : null;
-      if (enquired && reference) parts.push(pick([`You asked about ${enquired}. The current asking amount is ${reference}.`, `On ${enquired}: the asking amount is still ${reference} for now.`], turn));
+      if (enquired && reference) parts.push(pick([`You asked about ${enquired}. The current asking amount is ${reference}.`, `You asked about ${enquired}; the asking amount is still ${reference} for now.`], turn));
       else if (enquired) parts.push(`You asked about ${enquired}.`);
       else if (reference) parts.push(`The current asking amount is ${reference}.`);
       if (!options.offerInvitedRecently) parts.push("If you'd like to make an offer, I can consider it.");
@@ -138,6 +138,8 @@ export function templateReply(view: MandateView, plan: Plan, locale: string, sub
       }
       break;
     case "counter":
+      // A step toward their stated budget acknowledges it first, as theirs.
+      if (budget) parts.push(`You said your budget is ${budget}.`);
       parts.push(amountText ? pick([`I could do ${amountText}.`, `How about ${amountText}?`, `I can offer ${amountText}.`], turn) : "Here's what I can offer.");
       break;
     case "hold":

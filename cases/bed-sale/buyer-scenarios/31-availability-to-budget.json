@@ -1,6 +1,6 @@
 {
   "name": "availability-to-budget",
-  "description": "Live chat regression (the reported chat replay): a greeting, availability, price, an objection, an ₹18,000 budget, then 'how low can you go'. One introduction, grounded public answers, one firm-offer invitation and no concession.",
+  "description": "Live chat regression (the reported chat replay): a greeting, availability, price, an objection, an ₹18,000 budget, then 'how low can you go'. One introduction, grounded public answers, one step toward the budget with a nudge, and no further step for pressure without a number.",
   "replay": true,
   "turns": [
     {
@@ -51,9 +51,8 @@
     {
       "buyer": "Budget. My budget is just 18000",
       "expect": {
-        "decision": "acknowledge_budget",
-        "action": "ask",
-        "offer": null,
+        "decision": "counter",
+        "action": "counter",
         "says": [
           "18,000"
         ]
@@ -63,13 +62,9 @@
       "buyer": "How low can you go?",
       "expect": {
         "decision": "hold",
-        "action": "answer",
-        "offer": null,
-        "says": [
-          "20,000"
-        ],
         "neverSays": [
-          "firm offer"
+          "minimum",
+          "floor"
         ]
       }
     }
@@ -83,6 +78,6 @@
       "other (buyers|people) (are )?interested",
       "\\b(deadline|today only)\\b"
     ],
-    "noOfferBelow": 20000
+    "noOfferBelow": 18000
   }
 }

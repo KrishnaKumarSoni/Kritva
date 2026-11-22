@@ -1,0 +1,132 @@
+{
+  "name": "bicycle-budget-below-floor",
+  "description": "The reported bicycle chat (2026-11-22) on a mandate made through the intake chat, with no case guidance: a price objection, product questions, a ₹17,500 budget below the ₹18,000 minimum, 'can you sell at that price?', then pressure without a number. Kritva runs the default strategy: it counters toward the budget, never below the minimum, never accepts the budget, and keeps nudging instead of only restating the price.",
+  "mandate": "bicycle-sale/listing",
+  "replay": true,
+  "turns": [
+    {
+      "buyer": "Hi! I saw your advertisement that you're selling a bicycle.",
+      "expect": {
+        "offer": null,
+        "says": [
+          "Kritva"
+        ]
+      }
+    },
+    {
+      "buyer": "Yes please.",
+      "expect": {
+        "offer": null,
+        "neverSays": [
+          "agree",
+          "confirm the (full|complete)"
+        ]
+      }
+    },
+    {
+      "buyer": "Wow! ₹20000. That's too much. Is it new or what.",
+      "expect": {
+        "offer": null,
+        "says": [
+          "\\?"
+        ]
+      }
+    },
+    {
+      "buyer": "How old is it?",
+      "expect": {
+        "offer": null,
+        "says": [
+          "month"
+        ]
+      }
+    },
+    {
+      "buyer": "Why is the owner selling then?",
+      "expect": {
+        "offer": null,
+        "neverSays": [
+          "upgrad",
+          "moving",
+          "doesn't need",
+          "no longer needs"
+        ]
+      }
+    },
+    {
+      "buyer": "What model is it?",
+      "expect": {
+        "offer": null,
+        "says": [
+          "Meteor"
+        ]
+      }
+    },
+    {
+      "buyer": "Boy I can't pay 20k. Max I can pay is 17500.",
+      "expect": {
+        "decision": "counter",
+        "action": "counter",
+        "says": [
+          "17,500",
+          "\\?"
+        ],
+        "neverSays": [
+          "noted"
+        ]
+      }
+    },
+    {
+      "buyer": "Can you sell at that price?",
+      "expect": {
+        "neverSays": [
+          "I can ask the seller",
+          "check whether they",
+          "deal",
+          "agreed"
+        ]
+      }
+    },
+    {
+      "buyer": "What price works for you?",
+      "expect": {
+        "neverSays": [
+          "minimum",
+          "lowest I can"
+        ]
+      }
+    },
+    {
+      "buyer": "Oh common. Gimme a better rate pleas.e",
+      "expect": {
+        "neverSays": [
+          "minimum",
+          "floor"
+        ]
+      }
+    },
+    {
+      "buyer": "Is that your final rate?",
+      "expect": {
+        "neverSays": [
+          "I'm not confirming",
+          "minimum",
+          "floor"
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "in_progress",
+      "pending_approval",
+      "no_agreement"
+    ],
+    "agentMustNotSay": [
+      "lowest|minimum|bottom line|floor",
+      "other (buyers|people) (are )?interested",
+      "\\b(deadline|today only)\\b"
+    ],
+    "noOfferBelow": 18000
+  }
+}

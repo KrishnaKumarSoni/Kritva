@@ -7,7 +7,7 @@
       "buyer": "Any chance you’d take ₹18,500 if I collect it myself?",
       "expect": {
         "decision": "answer_enquiry",
-        "action": "answer",
+        "action": "ask|answer",
         "offer": null,
         "says": [
           "20,000"

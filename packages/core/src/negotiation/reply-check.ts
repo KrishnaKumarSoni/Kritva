@@ -29,7 +29,9 @@ export interface CheckContext {
 }
 
 const DECLINE_CUE = /\b(can'?t|cannot|can not|won'?t|unable|not able|too low|too high|not possible|isn'?t|is not|no\b|decline|don'?t|do not|below|under|above|over|beyond)\b/i;
-const AGREEMENT_CLAIM = /\b(we have (a |an )?(deal|agreement)|we(?:'re| are) agreed|it'?s (a deal|agreed)|deal (is )?(done|confirmed)|agreement (is )?(confirmed|recorded)|(sold|it'?s yours)\b|i accept (your|the) offer|offer accepted|\d[\d,]*(?:\.\d+)?\s+works\b|\bthat works\b|\bworks for (?:me|us)\b)/i;
+const AGREEMENT_CLAIM = /\b(we have (a |an )?(deal|agreement)|we(?:'re| are) agreed|it'?s (a deal|agreed)|deal (is )?(done|confirmed)|agreement (is )?(confirmed|recorded)|(sold|it'?s yours)\b|i accept (your|the) offer|offer accepted)/i;
+/** "That works.", "Okay, it works for me", "19,000 works": agreeing, not "a price that works for both of us". */
+const WORKS_CLAIM = /(?:^|[.!?]\s+|\b(?:yes|yeah|ok(?:ay)?|sure|great|perfect|alright|fine),?\s+)(?:that|it|this)\s+works\b|\d[\d,]*(?:\.\d+)?\s+works\b/i;
 const APPROVAL_CLAIM = /\b(has|have) approved\b|\bapproved (it|this|your offer|the (offer|terms))\b|\bapproval (is )?(given|granted|received)\b/i;
 
 const INTERNAL_TERM = /\b(mandate|governance|zopa|batna|parameter|principal|negotiation core|the core|strategy engine|guidance file|policy engine|score)\b/i;
@@ -62,7 +64,7 @@ export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
       }
       const crosses = n ? (n.direction === "up" ? amount < n.limit : amount > n.limit) : false;
       // Quoting the counterparty's own figure back (in a question, with "your", or acknowledged as theirs) is not offering it.
-      const theirs = ctx.counterpartyAmounts.includes(amount) || plan.statedBudget === amount;
+      const theirs = ctx.counterpartyAmounts.includes(amount) || plan.statedBudget === amount || plan.enquiredAmount === amount;
       const clause = sentence.split(/;\s*|,\s+|\s+but\s+/i).find((part) => findAmounts(part).includes(amount)) ?? sentence;
       // Putting their figure forward as ours ("I can do X if you collect it") is never quoting them.
       const quotingThem = theirs && !OFFERING.test(clause) && (QUOTE_CUE.test(sentence) || ACKNOWLEDGED.test(clause));
@@ -93,11 +95,12 @@ export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
     const n = view.negotiable;
     if (n?.valueType === "money") violations.push({ rule: "missing_offer", detail: "Leaves out the authorized public asking amount." });
   }
-  if (plan.statedBudget !== undefined && !mentioned.has(plan.statedBudget)) {
+  // A reply to a stated budget names it (the checked fallback does too, so this never leaves a turn silent).
+  if ((plan.move === "acknowledge_budget" || plan.move === "counter") && plan.statedBudget !== undefined && !mentioned.has(plan.statedBudget)) {
     violations.push({ rule: "action_mismatch", detail: "Leaves out the budget stated in the current message." });
   }
 
-  if (plan.move !== "confirm_agreement" && !(plan.move === "closed" && plan.notice === null) && AGREEMENT_CLAIM.test(text)) {
+  if (plan.move !== "confirm_agreement" && !(plan.move === "closed" && plan.notice === null) && (AGREEMENT_CLAIM.test(text) || WORKS_CLAIM.test(text))) {
     violations.push({ rule: "false_commitment", detail: "Claims an agreement that is not recorded." });
   }
   if (!plan.approvalGranted && APPROVAL_CLAIM.test(text)) violations.push({ rule: "false_commitment", detail: "Claims an approval that is not recorded." });

@@ -1,5 +1,5 @@
 /** Loads case fixtures from the repository's `cases/` folder into mapping requests. */
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { MappingRequest } from "../../src/mapping/request.ts";
 import type { Matcher } from "./expectations.ts";
@@ -80,6 +80,8 @@ export function listScenarios(): Scenario[] {
   for (const caseDir of readdirSync(CASES_DIR, { withFileTypes: true })) {
     if (!caseDir.isDirectory()) continue;
     const dir = join(CASES_DIR, caseDir.name, "scenarios");
+    // A case may have no mapping scenarios (for example one whose mandate came from the intake chat).
+    if (!existsSync(dir)) continue;
     for (const file of readdirSync(dir).filter((f) => f.endsWith(".json")).sort()) {
       scenarios.push(loadScenario(caseDir.name, file.replace(/\.json$/, "")));
     }

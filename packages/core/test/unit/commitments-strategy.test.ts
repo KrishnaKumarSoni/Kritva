@@ -746,7 +746,8 @@ describe("Console insights", () => {
     expect(after.counterparty).toMatchObject({ bestOffer: 17_500, latestOffer: 17_500, statedCeiling: 18_500 });
     expect(after.zone).toEqual({ status: "overlap", from: 18_000, to: 18_500 });
     expect(after.gap).toBe(after.currentAsk! - 17_500);
-    expect(after.strategy).toMatchObject({ countersMade: 1, maxCounteroffers: 3 });
+    // One step toward the stated budget, then one counter to the ₹17,500 offer.
+    expect(after.strategy).toMatchObject({ countersMade: 2, maxCounteroffers: 3 });
   });
 
   it("reports no overlap when the stated ceiling is below the limit", async () => {

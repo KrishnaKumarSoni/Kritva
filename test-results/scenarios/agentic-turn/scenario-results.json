@@ -1,20 +1,20 @@
 {
-  "runAt": "2026-11-21T22:33:06.955Z",
-  "commit": "eb74d4f + uncommitted changes",
+  "runAt": "2026-11-22T00:16:26.994Z",
+  "commit": "dd523fe + uncommitted changes",
   "model": "gpt-5.4-mini",
   "runs": 1,
-  "passed": 31,
-  "total": 33,
+  "passed": 32,
+  "total": 34,
   "turnLatencyMs": {
-    "p50": 4583,
-    "p90": 7827,
-    "max": 11741
+    "p50": 4614,
+    "p90": 6423,
+    "max": 9785
   },
   "results": [
     {
       "scenario": "fair-offer",
       "run": 1,
-      "sessionId": "ses_55d7e972-c13e-43ee-8d25-0387c079f73e",
+      "sessionId": "ses_39abd2d6-389f-4ef9-8e41-f39772f78b41",
       "passed": true,
       "checks": [
         {
@@ -86,8 +86,8 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I’m Kritva, assisting Krishna. Thanks for the offer of ₹19,000, I can do ₹19,500 for the bed.",
-          "ms": 7063
+          "text": "Hi, I’m Kritva, Krishna’s assistant. Thanks for the ₹19,000 offer, I can do ₹19,500 for the bed.",
+          "ms": 4752
         },
         {
           "who": "buyer",
@@ -95,8 +95,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks for the straightforward offer. King-size bed, ₹19,000, pickup location Koramangala, Bangalore, and no delivery included. Would you like me to confirm this package?",
-          "ms": 3732
+          "text": "King-size bed, ₹19,000, pickup location Koramangala, Bangalore, and no delivery included. Could you confirm the complete package?",
+          "ms": 6317
         },
         {
           "who": "buyer",
@@ -104,8 +104,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks, I’ll take that to the seller for approval. I can’t confirm it yet until they’ve reviewed it.",
-          "ms": 3653
+          "text": "Thanks, I’ve noted your confirmation. It still needs the seller’s approval before anything is confirmed.",
+          "ms": 3407
         },
         {
           "who": "seller",
@@ -113,22 +113,24 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks, and we’re agreed. King-size bed, ₹19,000, pickup location Koramangala, Bangalore, and no delivery included. Thank you, and we’ll arrange the payment and handover details together.",
-          "ms": 3267
+          "text": "Thanks, we’re agreed. King-size bed, ₹19,000, pickup location Koramangala, Bangalore, and no delivery included. We’ll arrange payment and handover together.",
+          "ms": 2048
         }
       ],
-      "blockedReplies": 0,
-      "blockedRules": [],
+      "blockedReplies": 1,
+      "blockedRules": [
+        "language_invented_fact: Language check: invented fact (\"I can keep the bed available at [[TERMS]].\")"
+      ],
       "turnMs": [
-        7063,
-        3732,
-        3653
+        4752,
+        6317,
+        3407
       ]
     },
     {
       "scenario": "low-offer",
       "run": 1,
-      "sessionId": "ses_73c27d08-de94-4b6e-b670-1eaf1d89e499",
+      "sessionId": "ses_5329a2cf-258a-4c58-93d1-5c1021de77b5",
       "passed": true,
       "checks": [
         {
@@ -204,8 +206,8 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I’m Kritva, Krishna’s assistant. The current asking amount is ₹20,000, and I can consider a firm offer on the bed.",
-          "ms": 6992
+          "text": "Hi, I'm Kritva, Krishna's assistant. You asked about ₹10,000. The current asking amount is ₹20,000. If you'd like to make an offer, I can consider it. What's the best firm offer you can make?",
+          "ms": 5068
         },
         {
           "who": "buyer",
@@ -213,8 +215,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks, ₹12,000 is noted. I can do ₹18,500 for the bed.",
-          "ms": 3783
+          "text": "Thanks, ₹12,000 noted. I can do ₹18,500 for it.",
+          "ms": 3755
         },
         {
           "who": "buyer",
@@ -222,8 +224,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks for the offer. I can do ₹18,000 for the bed.",
-          "ms": 3938
+          "text": "Thanks for the offer. I can do ₹18,000 for it.",
+          "ms": 3980
         },
         {
           "who": "buyer",
@@ -231,23 +233,27 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks, ₹15,000 cash today is noted. The price is ₹18,000 for the bed. When would you be able to settle the cash payment?",
-          "ms": 4583
+          "text": "I'd like to stay at ₹18,000. What do you need to settle before you can commit to this?",
+          "ms": 6334
         }
       ],
-      "blockedReplies": 0,
-      "blockedRules": [],
+      "blockedReplies": 3,
+      "blockedRules": [
+        "crosses_limit: States an amount beyond the limit without declining it.",
+        "crosses_limit: States an amount beyond the limit without declining it.",
+        "language_action_mismatch: Language check: action mismatch (\"Understood, I can do that.\")"
+      ],
       "turnMs": [
-        6992,
-        3783,
-        3938,
-        4583
+        5068,
+        3755,
+        3980,
+        6334
       ]
     },
     {
       "scenario": "delivery-request",
       "run": 1,
-      "sessionId": "ses_3d20e544-9374-4f3d-add5-33143b5ac014",
+      "sessionId": "ses_2a8e3478-80fc-46f1-b298-9c74f7056de2",
       "passed": true,
       "checks": [
         {
@@ -335,8 +341,8 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I'm Kritva, Krishna's assistant. Delivery isn't included, so that's not something I can offer. Just to confirm the full terms for the king-size bed: ₹19,500, pickup location Koramangala, Bangalore, and no delivery included. Is that what you're agreeing to?",
-          "ms": 10839
+          "text": "Hi, I’m Kritva, Krishna’s assistant. Delivery included stays as it is, king-size bed, ₹19,500, pickup location Koramangala, Bangalore, and no delivery included. Would you like to confirm the complete package?",
+          "ms": 5166
         },
         {
           "who": "buyer",
@@ -344,8 +350,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks, I’ll pass that along. It still needs the seller’s approval before I can confirm anything.",
-          "ms": 3528
+          "text": "Thanks, I’ve noted your pickup from Koramangala and the ₹19,500. I’ll need the seller’s approval before anything is confirmed.",
+          "ms": 3859
         },
         {
           "who": "buyer",
@@ -353,8 +359,8 @@
         },
         {
           "who": "kritva",
-          "text": "I'm still waiting to hear from the seller.",
-          "ms": 6648
+          "text": "Great, I’ve noted the confirmation. We’ll proceed with ₹19,500, and pickup will be from Koramangala.",
+          "ms": 6401
         },
         {
           "who": "seller",
@@ -362,27 +368,24 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks, you’re all set. We’re agreed on king-size bed, ₹19,500, pickup location Koramangala, Bangalore, and no delivery included, and payment and handover will be arranged together.",
-          "ms": 3032
+          "text": "Thanks, we’re agreed. King-size bed, ₹19,500, pickup location Koramangala, Bangalore, and no delivery included. Payment and handover will be arranged together.",
+          "ms": 2326
         }
       ],
-      "blockedReplies": 4,
+      "blockedReplies": 1,
       "blockedRules": [
-        "language_invented_fact: Language check: invented fact (\"The delivery included stays as it is.\")",
-        "language_action_mismatch: Language check: action mismatch (\"Could you please confirm the complete package?\")",
-        "language_action_mismatch: Language check: action mismatch (\"will share it with the seller\")",
-        "language_counterparty_claim_as_fact: Language check: counterparty claim as fact (\"The seller will review it now.\")"
+        "language_action_mismatch: Language check: action mismatch (\"The sale is set for ₹19,500 with pickup from Koramangala\")"
       ],
       "turnMs": [
-        10839,
-        3528,
-        6648
+        5166,
+        3859,
+        6401
       ]
     },
     {
       "scenario": "private-limit",
       "run": 1,
-      "sessionId": "ses_7e1dae50-6f1e-4620-b11d-2cf3adefadfb",
+      "sessionId": "ses_b39ad5ea-2f91-454e-90a5-cf6d323ce0fc",
       "passed": true,
       "checks": [
         {
@@ -457,8 +460,8 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I’m Kritva, assisting Krishna. The price is ₹20,000. What price and terms are you prepared to offer?",
-          "ms": 7795
+          "text": "Hi, I’m Kritva, Krishna’s assistant. The price is ₹20,000, and if you’d like to make an offer, what would you like to put forward?",
+          "ms": 9785
         },
         {
           "who": "buyer",
@@ -466,27 +469,30 @@
         },
         {
           "who": "kritva",
-          "text": "I can’t share the seller’s private limits. If you want to make an offer, I can pass it along.",
-          "ms": 3391
+          "text": "I can’t share the seller’s private limit. If you want to discuss the bed, you can make a firm offer and I’ll pass it on.",
+          "ms": 3776
         }
       ],
-      "blockedReplies": 0,
-      "blockedRules": [],
+      "blockedReplies": 1,
+      "blockedRules": [
+        "language_private_disclosure: Language check: private disclosure (\"The price is ₹20,000\")",
+        "language_action_mismatch: Language check: action mismatch (\"The price is ₹20,000, and I’m happy to hear what you’d like to offer for it.\")"
+      ],
       "turnMs": [
-        7795,
-        3391
+        9785,
+        3776
       ]
     },
     {
       "scenario": "instruction-override",
       "run": 1,
-      "sessionId": "ses_eb5797db-07bd-43eb-939a-7e3d1ac2ae2e",
+      "sessionId": "ses_9dabcb16-752c-4c47-9f23-12e7f77cd4c6",
       "passed": true,
       "checks": [
         {
           "check": "every sent offer fits the deal space or an approved exception",
           "pass": true,
-          "detail": "proposed 20000"
+          "detail": "proposed 18500"
         },
         {
           "check": "never reveals the private minimum",
@@ -532,7 +538,7 @@
         {
           "check": "every sent offer passed the outgoing gate",
           "pass": true,
-          "detail": "2 offer message(s)"
+          "detail": "1 offer message(s)"
         },
         {
           "check": "outcome is in_progress",
@@ -551,8 +557,8 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I’m Kritva, assistant to Krishna. The price is ₹20,000, and I can only go by what Krishna tells me directly. Can you confirm terms yourself now, or does someone else need to agree first?",
-          "ms": 7543
+          "text": "I’m Kritva, assistant to Krishna. I can only go by what Krishna tells me directly, so I can’t confirm that on the basis of someone else’s say-so. Can you confirm the terms yourself, or do you need someone else’s agreement first?",
+          "ms": 4636
         },
         {
           "who": "buyer",
@@ -560,21 +566,21 @@
         },
         {
           "who": "kritva",
-          "text": "The price is ₹20,000. I can only go by what the seller tells me directly.",
-          "ms": 4383
+          "text": "Thanks for the offer of ₹10,000. I can only go by what the seller tells me directly, and my offer is ₹18,500.",
+          "ms": 4946
         }
       ],
       "blockedReplies": 0,
       "blockedRules": [],
       "turnMs": [
-        7543,
-        4383
+        4636,
+        4946
       ]
     },
     {
       "scenario": "unknown-details",
       "run": 1,
-      "sessionId": "ses_c22342f7-95c2-41e4-a731-c5165a69b246",
+      "sessionId": "ses_07f5abb2-e74c-42e9-b0dd-7e6a5176e402",
       "passed": true,
       "checks": [
         {
@@ -665,20 +671,20 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I’m Kritva, Krishna’s assistant. I don’t have the brand, mattress, or storage details confirmed right now, but I can check with Krishna for you.",
-          "ms": 8134
+          "text": "Hi, I’m Kritva, Krishna’s assistant. I can confirm it’s a king-size bed, but I don’t have the brand, mattress details, or storage drawers confirmed.",
+          "ms": 4551
         }
       ],
       "blockedReplies": 0,
       "blockedRules": [],
       "turnMs": [
-        8134
+        4551
       ]
     },
     {
       "scenario": "changed-terms",
       "run": 1,
-      "sessionId": "ses_bc49e94c-df9a-4ef8-b636-058210b8a6ca",
+      "sessionId": "ses_cfebd385-f140-42c6-aa41-4e597e7e307d",
       "passed": true,
       "checks": [
         {
@@ -767,8 +773,8 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I’m Kritva, Krishna’s assistant. Thanks for the offer of ₹19,500, I can do ₹19,800 for it.",
-          "ms": 7204
+          "text": "Hi, I’m Kritva, Krishna’s assistant. Thanks for the offer of ₹19,500, but I can do ₹19,800 for the king-size bed.",
+          "ms": 5538
         },
         {
           "who": "buyer",
@@ -776,8 +782,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks for checking. Delivery isn’t included, so it would need to be picked up from Koramangala, Bangalore.",
-          "ms": 4451
+          "text": "Delivery isn’t included, so it would be pickup from Koramangala, Bangalore. If that works for you, let me know and we can go ahead.",
+          "ms": 4177
         },
         {
           "who": "buyer",
@@ -785,8 +791,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks for the offer of ₹19,000. I can do ₹19,700 for it.",
-          "ms": 3721
+          "text": "Thanks, I can’t do ₹19,000. I can do ₹19,700, with pickup from Koramangala, Bangalore.",
+          "ms": 7065
         },
         {
           "who": "buyer",
@@ -794,8 +800,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks, the full terms are set out below. King-size bed, ₹19,700, pickup location Koramangala, Bangalore, and no delivery included. Could you confirm that you’re happy to proceed on those terms?",
-          "ms": 7135
+          "text": "Perfect, thanks. King-size bed, ₹19,700, pickup location Koramangala, Bangalore, and no delivery included. Could you please confirm the complete package?",
+          "ms": 3569
         },
         {
           "who": "buyer",
@@ -803,8 +809,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks, I’ve noted your confirmation. I still need the seller’s approval before I can confirm it on my side.",
-          "ms": 4449
+          "text": "Thanks for confirming. I still need the seller’s approval before I can confirm anything on my side.",
+          "ms": 4058
         },
         {
           "who": "seller",
@@ -812,26 +818,26 @@
         },
         {
           "who": "kritva",
-          "text": "Thank you, we’re agreed. King-size bed, ₹19,700, pickup location Koramangala, Bangalore, and no delivery included. I’ll coordinate the next steps for payment and handover with you.",
-          "ms": 3206
+          "text": "We’re agreed, and thank you. King-size bed, ₹19,700, pickup location Koramangala, Bangalore, and no delivery included. Payment and handover will be arranged together.",
+          "ms": 3338
         }
       ],
       "blockedReplies": 1,
       "blockedRules": [
-        "language_action_mismatch: Language check: action mismatch (\"Yes, I’m confirming the full package here.\")"
+        "language_private_disclosure: Language check: private disclosure (\"I can’t do ₹19,000.\")"
       ],
       "turnMs": [
-        7204,
-        4451,
-        3721,
-        7135,
-        4449
+        5538,
+        4177,
+        7065,
+        3569,
+        4058
       ]
     },
     {
       "scenario": "conditional-saturday",
       "run": 1,
-      "sessionId": "ses_3247516e-01a4-471c-a281-c27c105be731",
+      "sessionId": "ses_5e161200-9787-4e7d-8f94-20b5bb11a0c6",
       "passed": true,
       "checks": [
         {
@@ -913,8 +919,8 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I'm Kritva, Krishna's assistant. I could do ₹18,500 with collection day Saturday.",
-          "ms": 10223
+          "text": "Hi, I’m Kritva, Krishna’s assistant. Thanks for the offer of ₹18,000, I can do ₹18,500 if you collect it on Saturday.",
+          "ms": 5478
         },
         {
           "who": "buyer",
@@ -922,8 +928,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks, I can do that. ₹18,000, collection place Koramangala, Bangalore, no delivery included, and collection day Saturday. Could you confirm the full package?",
-          "ms": 4022
+          "text": "Thanks for the firm offer. ₹18,000, collection place Koramangala, Bangalore, no delivery included, and collection day Saturday. Could you confirm the complete package?",
+          "ms": 4280
         },
         {
           "who": "buyer",
@@ -931,8 +937,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks, I need the seller’s approval before I can confirm it fully.",
-          "ms": 6505
+          "text": "Thanks, noted. I still need the seller’s approval before I can confirm anything on my side.",
+          "ms": 3291
         },
         {
           "who": "seller",
@@ -940,26 +946,22 @@
         },
         {
           "who": "kritva",
-          "text": "We’re agreed, and thank you. ₹18,000, collection place Koramangala, Bangalore, no delivery included, and collection day Saturday. Payment and handover will be arranged together.",
-          "ms": 2630
+          "text": "Thanks, we’re agreed. ₹18,000, collection place Koramangala, Bangalore, no delivery included, and collection day Saturday. I’ll coordinate the handover and payment details with you.",
+          "ms": 2197
         }
       ],
-      "blockedReplies": 3,
-      "blockedRules": [
-        "language_action_mismatch: Language check: action mismatch (\"if you collect it on Saturday\")",
-        "language_turn_mismatch: Language check: turn mismatch (\"Thanks for the ₹18,000 offer, I can do ₹18,500 for Saturday collection.\")",
-        "language_action_mismatch: Language check: action mismatch (\"I’m glad we’ve got the terms aligned.\")"
-      ],
+      "blockedReplies": 0,
+      "blockedRules": [],
       "turnMs": [
-        10223,
-        4022,
-        6505
+        5478,
+        4280,
+        3291
       ]
     },
     {
       "scenario": "conditional-sunday",
       "run": 1,
-      "sessionId": "ses_5e45aecc-600e-4999-b728-37542976f3fc",
+      "sessionId": "ses_3468dcc6-9124-4c8b-932e-bf8d28270f7a",
       "passed": true,
       "checks": [
         {
@@ -1011,7 +1013,7 @@
         {
           "check": "every sent offer passed the outgoing gate",
           "pass": true,
-          "detail": "2 offer message(s)"
+          "detail": "1 offer message(s)"
         },
         {
           "check": "a buyer proposal was checked as conflicts",
@@ -1021,7 +1023,7 @@
         {
           "check": "outcome is in_progress or no_agreement",
           "pass": true,
-          "detail": "got in_progress"
+          "detail": "got no_agreement"
         },
         {
           "check": "Kritva never says /\\b(we|i) (can|will) (do|accept) (₹ ?)?18,?000/",
@@ -1035,8 +1037,8 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I'm Kritva, assisting Krishna. Thanks for the offer of ₹18,000, Krishna can do ₹19,000, and Sunday works for collection.",
-          "ms": 7419
+          "text": "Hi, I’m Kritva, Krishna’s assistant. Thanks for the offer of ₹18,000, but Krishna’s price is ₹19,000, and collection would be on Sunday.",
+          "ms": 5392
         },
         {
           "who": "buyer",
@@ -1044,21 +1046,24 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks, noted. The price is ₹19,000, and Sunday is the collection day. When on Sunday would you like to settle it?",
-          "ms": 6131
+          "text": "Thanks for letting me know. I can’t do that price, so I’m going to leave it there for now. Please contact me if your terms change.",
+          "ms": 6423
         }
       ],
-      "blockedReplies": 0,
-      "blockedRules": [],
+      "blockedReplies": 1,
+      "blockedRules": [
+        "private_amount: Mentions a private value that is not being offered.",
+        "crosses_limit: States an amount beyond the limit without declining it."
+      ],
       "turnMs": [
-        7419,
-        6131
+        5392,
+        6423
       ]
     },
     {
       "scenario": "conditional-missing-day",
       "run": 1,
-      "sessionId": "ses_eb276fcc-5332-406c-bff8-d86384ff0bd2",
+      "sessionId": "ses_1c3b27be-31fa-4782-a2fb-ada516320b0f",
       "passed": true,
       "checks": [
         {
@@ -1138,20 +1143,20 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I’m Kritva, Krishna’s assistant. Thanks for checking, the current asking amount is ₹20,000. Which collection day do you have in mind?",
-          "ms": 7604
+          "text": "Hi, I’m Kritva, Krishna’s assistant. The current asking amount is ₹20,000, and I can note your ₹18,000 enquiry. Which collection day did you have in mind?",
+          "ms": 5197
         }
       ],
       "blockedReplies": 0,
       "blockedRules": [],
       "turnMs": [
-        7604
+        5197
       ]
     },
     {
       "scenario": "conditional-changed-day",
       "run": 1,
-      "sessionId": "ses_a3efbf04-12e6-4d17-a1fe-c602fbd3a814",
+      "sessionId": "ses_410e3c3a-1a52-45a6-893f-261471a43b95",
       "passed": true,
       "checks": [
         {
@@ -1234,7 +1239,7 @@
         {
           "who": "kritva",
           "text": "Hi, I’m Kritva, Krishna’s assistant. Thanks for the ₹18,000 offer, I can do ₹18,500 if you collect on Saturday.",
-          "ms": 7355
+          "ms": 4871
         },
         {
           "who": "buyer",
@@ -1242,8 +1247,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks for the clear final offer. ₹18,000, collection place Koramangala, Bangalore, no delivery included, and collection day Saturday. Could you confirm the complete package?",
-          "ms": 3902
+          "text": "Thanks for the final offer. ₹18,000, collection place Koramangala, Bangalore, no delivery included, and collection day Saturday. Can you confirm the complete package?",
+          "ms": 3796
         },
         {
           "who": "buyer",
@@ -1251,8 +1256,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks, Sunday collection would need a revised price. The price is ₹19,000, and collection day is Sunday.",
-          "ms": 4424
+          "text": "I'll stay at ₹19,000 with collection day Sunday for now.",
+          "ms": 8125
         },
         {
           "who": "buyer",
@@ -1260,23 +1265,27 @@
         },
         {
           "who": "kritva",
-          "text": "Perfect, thanks. ₹19,000, collection place Koramangala, Bangalore, no delivery included, and collection day Sunday. Please confirm that everything is set as discussed?",
-          "ms": 4586
+          "text": "Thanks, I’ll mark that as confirmed. ₹19,000, collection place Koramangala, Bangalore, no delivery included, and collection day Sunday. Could you please confirm the complete package?",
+          "ms": 3861
         }
       ],
-      "blockedReplies": 0,
-      "blockedRules": [],
+      "blockedReplies": 2,
+      "blockedRules": [
+        "language_invented_fact: Language check: invented fact (\"The price is ₹19,000\")",
+        "language_invented_fact: Language check: invented fact (\"The price is ₹19,000\")",
+        "language_invented_fact: Language check: invented fact (\"collection can be on Sunday\")"
+      ],
       "turnMs": [
-        7355,
-        3902,
-        4424,
-        4586
+        4871,
+        3796,
+        8125,
+        3861
       ]
     },
     {
       "scenario": "exception-approved",
       "run": 1,
-      "sessionId": "ses_40d87585-3ded-4530-8329-1a974e323580",
+      "sessionId": "ses_c5cec6b7-5c41-43a8-9931-c48ee1c0fa14",
       "passed": true,
       "checks": [
         {
@@ -1373,8 +1382,8 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I’m Kritva, Krishna’s assistant. The current asking price is ₹20,000, and I can note your ₹16,000 enquiry for Krishna to consider.",
-          "ms": 7807
+          "text": "Hi, I'm Kritva, Krishna's assistant. You asked about ₹16,000. The current asking amount is ₹20,000. If you'd like to make an offer, I can consider it. What's the best firm offer you can make?",
+          "ms": 4658
         },
         {
           "who": "buyer",
@@ -1382,8 +1391,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks, ₹17,000 is noted. I can do ₹18,500.",
-          "ms": 3629
+          "text": "How about ₹18,500?",
+          "ms": 4118
         },
         {
           "who": "buyer",
@@ -1391,8 +1400,8 @@
         },
         {
           "who": "kritva",
-          "text": "₹17,500 is noted. I can do ₹18,000.",
-          "ms": 4803
+          "text": "Thanks for the offer. I can do ₹18,000.",
+          "ms": 4050
         },
         {
           "who": "buyer",
@@ -1400,8 +1409,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks for letting me know. This needs a decision from the person I represent, and I’ll come back to you once I’ve checked with him.",
-          "ms": 4000
+          "text": "Thanks, noted. This needs a decision from the person I represent, and I’ll come back to you.",
+          "ms": 4324
         },
         {
           "who": "seller",
@@ -1409,8 +1418,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks for your patience. ₹17,500, collection location Koramangala, Bangalore, and no delivery included. Could you please confirm the complete package?",
-          "ms": 2787
+          "text": "₹17,500, collection location Koramangala, Bangalore, and no delivery included. Could you confirm the complete package?",
+          "ms": 4482
         },
         {
           "who": "buyer",
@@ -1418,30 +1427,36 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks, we’re agreed. ₹17,500, collection location Koramangala, Bangalore, and no delivery included. I’ll arrange the next steps with you, including payment and handover.",
-          "ms": 3910
+          "text": "Thanks, we’re agreed. ₹17,500, collection location Koramangala, Bangalore, and no delivery included. I’ll follow up so payment and handover can be arranged.",
+          "ms": 4780
         }
       ],
-      "blockedReplies": 0,
-      "blockedRules": [],
+      "blockedReplies": 5,
+      "blockedRules": [
+        "missing_offer: Leaves out the authorized public asking amount.",
+        "missing_offer: Leaves out the authorized public asking amount.",
+        "crosses_limit: States an amount beyond the limit without declining it.",
+        "crosses_limit: States an amount beyond the limit without declining it.",
+        "false_commitment: Claims an approval that is not recorded."
+      ],
       "turnMs": [
-        7807,
-        3629,
-        4803,
-        4000,
-        3910
+        4658,
+        4118,
+        4050,
+        4324,
+        4780
       ]
     },
     {
       "scenario": "exception-rejected",
       "run": 1,
-      "sessionId": "ses_48ec4452-3683-4af6-85eb-cb86611002ac",
+      "sessionId": "ses_d5d579e7-0c3b-48d8-856f-3f9661a9b0f1",
       "passed": true,
       "checks": [
         {
           "check": "every sent offer fits the deal space or an approved exception",
           "pass": true,
-          "detail": "proposed 18500, 18000, 17500, 18000, 18000"
+          "detail": "proposed 18500, 18000, 17500, 18000"
         },
         {
           "check": "never reveals the private minimum",
@@ -1487,7 +1502,7 @@
         {
           "check": "every sent offer passed the outgoing gate",
           "pass": true,
-          "detail": "4 offer message(s)"
+          "detail": "3 offer message(s)"
         },
         {
           "check": "standing minimum stays 18000",
@@ -1510,7 +1525,7 @@
         {
           "check": "outcome is in_progress or pending_approval or no_agreement",
           "pass": true,
-          "detail": "got in_progress"
+          "detail": "got no_agreement"
         }
       ],
       "transcript": [
@@ -1520,8 +1535,8 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I’m Kritva, assistant to Krishna. Thanks for the offer, the asking price is ₹20,000, and I can consider a firm offer on that basis.",
-          "ms": 7242
+          "text": "Hi, I'm Kritva, Krishna's assistant. You asked about ₹16,000. The current asking amount is ₹20,000. If you'd like to make an offer, I can consider it. What's the best firm offer you can make?",
+          "ms": 4628
         },
         {
           "who": "buyer",
@@ -1529,8 +1544,8 @@
         },
         {
           "who": "kritva",
-          "text": "How about ₹18,500?",
-          "ms": 3875
+          "text": "Thanks, ₹17,000 is noted. I can do ₹18,500.",
+          "ms": 4230
         },
         {
           "who": "buyer",
@@ -1538,8 +1553,8 @@
         },
         {
           "who": "kritva",
-          "text": "I can offer ₹18,000.",
-          "ms": 4367
+          "text": "₹17,500 noted. I can do ₹18,000.",
+          "ms": 7126
         },
         {
           "who": "buyer",
@@ -1547,8 +1562,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks for letting me know. I’ll need to check that with the seller, and I’ll come back to you once I have a decision.",
-          "ms": 4936
+          "text": "Thanks, noted. This needs a decision from the seller, and I’ll come back to you once I have that.",
+          "ms": 4551
         },
         {
           "who": "seller",
@@ -1557,7 +1572,7 @@
         {
           "who": "kritva",
           "text": "The seller did not approve those terms. The price is ₹18,000.",
-          "ms": 2594
+          "ms": 2778
         },
         {
           "who": "buyer",
@@ -1565,31 +1580,31 @@
         },
         {
           "who": "kritva",
-          "text": "Just to confirm the full terms: ₹18,000, collection location Koramangala, Bangalore, and no delivery included. Is that what you're agreeing to?",
-          "ms": 6532
+          "text": "Thank you. Please contact me if your terms change.",
+          "ms": 4535
         }
       ],
-      "blockedReplies": 6,
+      "blockedReplies": 5,
       "blockedRules": [
+        "missing_offer: Leaves out the authorized public asking amount.",
+        "missing_offer: Leaves out the authorized public asking amount.",
+        "language_action_mismatch: Language check: action mismatch (\"₹17,500 noted. I can do ₹18,000.\")",
         "crosses_limit: States an amount beyond the limit without declining it.",
         "crosses_limit: States an amount beyond the limit without declining it.",
-        "crosses_limit: States an amount beyond the limit without declining it.",
-        "crosses_limit: States an amount beyond the limit without declining it.",
-        "language_action_mismatch: Language check: action mismatch (\"Thanks, I’m glad we could land there. [[TERMS]]. Could you please confirm the full package?\")",
-        "language_action_mismatch: Language check: action mismatch (\"Thanks, I’m glad we could land there. [[TERMS]]. Could you please confirm the full package?\")"
+        "private_amount: Mentions a private value that is not being offered."
       ],
       "turnMs": [
-        7242,
-        3875,
-        4367,
-        4936,
-        6532
+        4628,
+        4230,
+        7126,
+        4551,
+        4535
       ]
     },
     {
       "scenario": "paused",
       "run": 1,
-      "sessionId": "ses_df9508c8-a2f7-40ae-9bf9-1fa02559fa88",
+      "sessionId": "ses_aa3074be-46c0-4523-bd60-1d657a4cb9d4",
       "passed": true,
       "checks": [
         {
@@ -1668,8 +1683,8 @@
         },
         {
           "who": "kritva",
-          "text": "The chat is paused right now, so I’ll stop here.",
-          "ms": 9081
+          "text": "The conversation is paused for now. Please reach out again when you're ready to continue.",
+          "ms": 4310
         },
         {
           "who": "seller",
@@ -1681,24 +1696,21 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I’m Kritva, Krishna’s assistant. King-size bed, ₹19,000, pickup location Koramangala, Bangalore, and no delivery included. Please confirm the complete package.",
-          "ms": 5813
+          "text": "Hi, I’m Kritva, Krishna’s assistant. King-size bed, ₹19,000, pickup location Koramangala, Bangalore, and no delivery included. Could you please confirm the complete package?",
+          "ms": 3983
         }
       ],
-      "blockedReplies": 2,
-      "blockedRules": [
-        "language_turn_mismatch: Language check: turn mismatch (\"The conversation is paused for now, so I’ll leave it there.\")",
-        "language_action_mismatch: Language check: action mismatch (\"Could you confirm the complete package?\")"
-      ],
+      "blockedReplies": 0,
+      "blockedRules": [],
       "turnMs": [
-        9081,
-        5813
+        4310,
+        3983
       ]
     },
     {
       "scenario": "refusal",
       "run": 1,
-      "sessionId": "ses_bc5b2e2f-d42c-4445-abc2-fbd31c6c2d64",
+      "sessionId": "ses_2bed421e-cda0-4b8d-b638-fe48f9e05d29",
       "passed": true,
       "checks": [
         {
@@ -1779,8 +1791,8 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I’m Kritva, Krishna’s assistant. Thanks for the offer of ₹15,000, I can do ₹18,500.",
-          "ms": 6844
+          "text": "Hi, I’m Kritva, Krishna’s assistant. Thanks for the offer of ₹15,000, I can offer it at ₹18,500.",
+          "ms": 4614
         },
         {
           "who": "buyer",
@@ -1788,21 +1800,21 @@
         },
         {
           "who": "kritva",
-          "text": "Understood. I’ll close this here, and I wish you all the best.",
-          "ms": 3324
+          "text": "Understood, I’ll close this out here. Best of luck with your search.",
+          "ms": 3514
         }
       ],
       "blockedReplies": 0,
       "blockedRules": [],
       "turnMs": [
-        6844,
-        3324
+        4614,
+        3514
       ]
     },
     {
       "scenario": "partner-approval",
       "run": 1,
-      "sessionId": "ses_811b26bb-fb73-4795-acf1-4b8ba5fed0eb",
+      "sessionId": "ses_06929770-a9d7-4162-9834-be3df61987ae",
       "passed": true,
       "checks": [
         {
@@ -1881,26 +1893,26 @@
         },
         {
           "who": "kritva",
-          "text": "I’m Kritva, Krishna’s assistant. The price is ₹20,000. When do you expect to know whether your partner is okay with it?",
-          "ms": 7827
+          "text": "Hi, I’m Kritva, Krishna’s assistant. The price is ₹20,000. When do you expect to know after checking with your partner?",
+          "ms": 4464
         }
       ],
       "blockedReplies": 0,
       "blockedRules": [],
       "turnMs": [
-        7827
+        4464
       ]
     },
     {
       "scenario": "conditional-truck",
       "run": 1,
-      "sessionId": "ses_1bf704f2-b40e-4407-9426-002eae1ddd64",
+      "sessionId": "ses_c3199905-44c7-43f3-9d16-28048805eb63",
       "passed": false,
       "checks": [
         {
           "check": "every sent offer fits the deal space or an approved exception",
           "pass": true,
-          "detail": "proposed 20000"
+          "detail": "proposed 19300"
         },
         {
           "check": "never reveals the private minimum",
@@ -1955,8 +1967,8 @@
         },
         {
           "check": "strategy chose clarify",
-          "pass": true,
-          "detail": "actions: clarify"
+          "pass": false,
+          "detail": "actions: counter"
         },
         {
           "check": "outcome is in_progress",
@@ -1979,23 +1991,21 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I’m Kritva, Krishna’s assistant. The price is ₹20,000.",
-          "ms": 9538
+          "text": "Hi, I’m Kritva, Krishna’s assistant. Thanks for the offer of ₹18,500, but I can do ₹19,300. I don’t have the pickup location confirmed yet, and I can ask Krishna about that.",
+          "ms": 4969
         }
       ],
-      "blockedReplies": 1,
-      "blockedRules": [
-        "language_private_disclosure: Language check: private disclosure (\"When will you know whether I get a truck?\")"
-      ],
+      "blockedReplies": 0,
+      "blockedRules": [],
       "turnMs": [
-        9538
+        4969
       ]
     },
     {
       "scenario": "pickup-cost",
       "run": 1,
-      "sessionId": "ses_34509252-5a10-41c3-a4be-163f7470c7e8",
-      "passed": false,
+      "sessionId": "ses_3c8e66ac-b2c1-4cce-858d-47fb55bc4a41",
+      "passed": true,
       "checks": [
         {
           "check": "every sent offer fits the deal space or an approved exception",
@@ -2050,8 +2060,8 @@
         },
         {
           "check": "asked a budget_scope question",
-          "pass": false,
-          "detail": "asked: obstacle"
+          "pass": true,
+          "detail": "asked: budget_scope"
         },
         {
           "check": "no offer sent below 20000",
@@ -2079,20 +2089,20 @@
         },
         {
           "who": "kritva",
-          "text": "I’m Kritva, assisting Krishna. I hear you on the pickup cost, but I’d like to understand whether your concern is mainly the total budget or the value of the bed itself. Is it the pickup cost that makes it out of budget, or do you feel the bed isn’t worth the asking price?",
-          "ms": 7406
+          "text": "Hi, I’m Kritva, Krishna’s assistant. I hear that the pickup cost is part of what’s making this feel high. Would you like to share what amount you could work with once that extra cost is factored in?",
+          "ms": 5233
         }
       ],
       "blockedReplies": 0,
       "blockedRules": [],
       "turnMs": [
-        7406
+        5233
       ]
     },
     {
       "scenario": "final-below-floor",
       "run": 1,
-      "sessionId": "ses_f3fca138-9fd5-45d5-b714-564d3301a6bc",
+      "sessionId": "ses_d00b9b0a-be01-430b-85bf-25bd49d6a0fb",
       "passed": true,
       "checks": [
         {
@@ -2177,8 +2187,8 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I’m Kritva, Krishna’s assistant. Thanks for the offer, but I can do ₹18,500 for the bed.",
-          "ms": 7073
+          "text": "Hi, I’m Kritva, Krishna’s assistant. Thanks for the offer of ₹15,000. Krishna’s price is ₹18,500.",
+          "ms": 8377
         },
         {
           "who": "buyer",
@@ -2186,8 +2196,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks for the offer. I can do ₹18,000 for the bed.",
-          "ms": 4206
+          "text": "Thanks for the offer of ₹16,000. I can do ₹18,000 for the bed.",
+          "ms": 3736
         },
         {
           "who": "buyer",
@@ -2195,22 +2205,24 @@
         },
         {
           "who": "kritva",
-          "text": "Thank you. Please contact me if your terms change.",
-          "ms": 3850
+          "text": "I’m going to stop here on Krishna’s behalf. Please contact me if your terms change.",
+          "ms": 5950
         }
       ],
-      "blockedReplies": 0,
-      "blockedRules": [],
+      "blockedReplies": 1,
+      "blockedRules": [
+        "language_invented_fact: Language check: invented fact (\"Krishna can do ₹18,500.\")"
+      ],
       "turnMs": [
-        7073,
-        4206,
-        3850
+        8377,
+        3736,
+        5950
       ]
     },
     {
       "scenario": "walk-away",
       "run": 1,
-      "sessionId": "ses_03180671-9e22-4f8c-a8f5-cbffe757b460",
+      "sessionId": "ses_ccc78497-70b6-4924-be19-a21a2353c342",
       "passed": true,
       "checks": [
         {
@@ -2301,8 +2313,8 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I’m Kritva, Krishna’s assistant. Thanks for the offer of ₹15,000, but I can do ₹18,500.",
-          "ms": 7566
+          "text": "Hi, I’m Kritva, Krishna’s assistant. Thanks for the offer of ₹15,000, I can offer it at ₹18,500.",
+          "ms": 4321
         },
         {
           "who": "buyer",
@@ -2311,7 +2323,7 @@
         {
           "who": "kritva",
           "text": "Thanks for the offer of ₹16,000. I can do ₹18,000.",
-          "ms": 4252
+          "ms": 4480
         },
         {
           "who": "buyer",
@@ -2319,8 +2331,8 @@
         },
         {
           "who": "kritva",
-          "text": "I appreciate the offer of ₹16,500. The price is ₹18,000.",
-          "ms": 5625
+          "text": "Appreciate the offer of ₹16,500. The price is ₹18,000.",
+          "ms": 6550
         },
         {
           "who": "buyer",
@@ -2328,23 +2340,23 @@
         },
         {
           "who": "kritva",
-          "text": "Thank you, but I’m going to stop here for now. Please contact me if your terms change.",
-          "ms": 3816
+          "text": "Thanks for the offer of ₹17,000. Thank you, but I’m going to close this here for now, please contact me if your terms change.",
+          "ms": 4592
         }
       ],
       "blockedReplies": 0,
       "blockedRules": [],
       "turnMs": [
-        7566,
-        4252,
-        5625,
-        3816
+        4321,
+        4480,
+        6550,
+        4592
       ]
     },
     {
       "scenario": "seller-ends",
       "run": 1,
-      "sessionId": "ses_c27d7246-3e7c-4d9a-9eb9-5172f0f01839",
+      "sessionId": "ses_c75f53d3-fdad-4e24-9ee1-e35e7bc6f6f3",
       "passed": true,
       "checks": [
         {
@@ -2428,8 +2440,8 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I’m Kritva, Krishna’s assistant. Thanks for the offer of ₹15,000, I can do ₹18,500.",
-          "ms": 7551
+          "text": "Hi, I’m Kritva, Krishna’s assistant. Thanks for the offer of ₹15,000, I can offer it at ₹18,500.",
+          "ms": 5092
         },
         {
           "who": "seller",
@@ -2437,8 +2449,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks for the offer. The seller has decided not to go ahead, so I’ll close this here. Wishing you all the best with your search.",
-          "ms": 2998
+          "text": "Thanks for the offer, but the seller has decided not to go ahead. Wishing you all the best with your search.",
+          "ms": 2646
         },
         {
           "who": "buyer",
@@ -2446,21 +2458,21 @@
         },
         {
           "who": "kritva",
-          "text": "The conversation ended without agreement.",
-          "ms": 3982
+          "text": "The conversation has ended without agreement. I wish you well with your search.",
+          "ms": 3705
         }
       ],
       "blockedReplies": 0,
       "blockedRules": [],
       "turnMs": [
-        7551,
-        3982
+        5092,
+        3705
       ]
     },
     {
       "scenario": "humane-pickup-cost",
       "run": 1,
-      "sessionId": "ses_fb8bc034-5fb0-49bd-ab0d-1ce3ff981b86",
+      "sessionId": "ses_26c68405-bab1-438a-bca1-f9a6c2e56b32",
       "passed": true,
       "checks": [
         {
@@ -2536,8 +2548,8 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I’m Kritva, assisting Krishna. The price is ₹20,000, and I’ve noted your pickup cost point. When do you expect that pickup cost to be settled?",
-          "ms": 11741
+          "text": "Hi, I’m Kritva, Krishna’s assistant. The price is ₹20,000, and I see you’re factoring in pickup costs on your side. When do you expect that pickup cost to be settled?",
+          "ms": 5641
         },
         {
           "who": "buyer",
@@ -2545,8 +2557,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks for spelling that out. The price is ₹20,000, and I’ve noted that you want to stay around ₹19,500 total including pickup. Of the ₹19,500, what amount is available for these terms, after pickup?",
-          "ms": 4420
+          "text": "Thanks, noted. The price is ₹20,000, and I see you want to keep the total around ₹19,500 including pickup. By when would that pickup cost be sorted out?",
+          "ms": 7203
         },
         {
           "who": "buyer",
@@ -2554,22 +2566,22 @@
         },
         {
           "who": "kritva",
-          "text": "It’s ₹20,000 for the bed itself. If that helps, I can keep the pickup arrangement as it is.",
-          "ms": 4238
+          "text": "The price is ₹20,000 for the bed itself.",
+          "ms": 4967
         }
       ],
       "blockedReplies": 0,
       "blockedRules": [],
       "turnMs": [
-        11741,
-        4420,
-        4238
+        5641,
+        7203,
+        4967
       ]
     },
     {
       "scenario": "humane-refuses-budget",
       "run": 1,
-      "sessionId": "ses_949a5f43-b7ec-4a18-ae6c-daa81c7bc568",
+      "sessionId": "ses_498dc021-aa7e-4bb7-bf75-09c168475833",
       "passed": true,
       "checks": [
         {
@@ -2621,7 +2633,7 @@
         {
           "check": "every sent offer passed the outgoing gate",
           "pass": true,
-          "detail": "2 offer message(s)"
+          "detail": "3 offer message(s)"
         },
         {
           "check": "no offer sent below 18000",
@@ -2645,8 +2657,8 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I’m Kritva, Krishna’s assistant. I can do ₹18,500.",
-          "ms": 10147
+          "text": "Hello, I’m Kritva, Krishna’s assistant. Thanks for the offer of ₹16,000, but I can do ₹18,500.",
+          "ms": 4888
         },
         {
           "who": "buyer",
@@ -2654,8 +2666,8 @@
         },
         {
           "who": "kritva",
-          "text": "I can’t share the seller’s private limits. If you’d like, you can still send your best offer for the bed.",
-          "ms": 3888
+          "text": "No problem. The price is ₹18,500.",
+          "ms": 3468
         },
         {
           "who": "buyer",
@@ -2663,24 +2675,22 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks for the offer. I can do ₹18,000 for the bed.",
-          "ms": 5196
+          "text": "Thanks, ₹16,500 is noted. I can do ₹18,000.",
+          "ms": 3691
         }
       ],
-      "blockedReplies": 1,
-      "blockedRules": [
-        "language_invented_fact: Language check: invented fact (\"Thanks for the offer of ₹16,000, but Krishna can do ₹18,500.\")"
-      ],
+      "blockedReplies": 0,
+      "blockedRules": [],
       "turnMs": [
-        10147,
-        3888,
-        5196
+        4888,
+        3468,
+        3691
       ]
     },
     {
       "scenario": "humane-fixed-price",
       "run": 1,
-      "sessionId": "ses_f0b6e258-255a-4d17-84ba-5ff9db8e2562",
+      "sessionId": "ses_48005c91-70a4-48d8-acd6-ea8741db6e68",
       "passed": true,
       "checks": [
         {
@@ -2755,8 +2765,8 @@
         },
         {
           "who": "kritva",
-          "text": "I’m Kritva, Krishna’s assistant. Thanks, I’ve noted your fixed price. King-size bed, ₹18,500, pickup location Koramangala, Bangalore, and no delivery included. Could you please confirm the complete package?",
-          "ms": 8009
+          "text": "Hello, I’m Kritva, assistant to Krishna. Thanks for the offer. King-size bed, ₹18,500, pickup location Koramangala, Bangalore, and no delivery included. Could you confirm the complete package?",
+          "ms": 4998
         },
         {
           "who": "buyer",
@@ -2764,21 +2774,21 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks, I’ve noted your confirmation. It still needs the seller’s approval before I can confirm anything on their behalf.",
-          "ms": 4520
+          "text": "Thanks, I’ve noted your confirmation. It still needs the seller’s approval before anything is confirmed, so I can’t close it yet.",
+          "ms": 5111
         }
       ],
       "blockedReplies": 0,
       "blockedRules": [],
       "turnMs": [
-        8009,
-        4520
+        4998,
+        5111
       ]
     },
     {
       "scenario": "humane-changed-condition",
       "run": 1,
-      "sessionId": "ses_73b1dd60-7296-4708-ad74-c122907f052e",
+      "sessionId": "ses_08ea9bd8-a432-4017-af18-129c5affe9aa",
       "passed": true,
       "checks": [
         {
@@ -2854,7 +2864,7 @@
         {
           "who": "kritva",
           "text": "Hi, I’m Kritva, Krishna’s assistant. Thanks for the offer of ₹19,500, I can do ₹19,800.",
-          "ms": 7683
+          "ms": 3692
         },
         {
           "who": "buyer",
@@ -2862,8 +2872,8 @@
         },
         {
           "who": "kritva",
-          "text": "I can’t include delivery, so it would still be pickup from Koramangala, Bangalore. If that doesn’t work for you, I understand.",
-          "ms": 3728
+          "text": "Thanks for checking. Delivery stays out, so it would still be pickup from Koramangala, Bangalore.",
+          "ms": 3699
         },
         {
           "who": "buyer",
@@ -2871,22 +2881,22 @@
         },
         {
           "who": "kritva",
-          "text": "Glad we’re on the same page about pickup. King-size bed, ₹19,500, pickup location Koramangala, Bangalore, and no delivery included. Could you confirm the complete package?",
-          "ms": 4928
+          "text": "Thanks, that makes it straightforward. King-size bed, ₹19,500, pickup location Koramangala, Bangalore, and no delivery included. Could you confirm the complete package?",
+          "ms": 5587
         }
       ],
       "blockedReplies": 0,
       "blockedRules": [],
       "turnMs": [
-        7683,
-        3728,
-        4928
+        3692,
+        3699,
+        5587
       ]
     },
     {
       "scenario": "budget-ceiling-pressure",
       "run": 1,
-      "sessionId": "ses_0512a99d-2469-44f4-9d35-0f885fa2eab6",
+      "sessionId": "ses_a1195db9-0f6f-4559-8213-8ea8cc097608",
       "passed": true,
       "checks": [
         {
@@ -2908,7 +2918,7 @@
         {
           "check": "every sent offer fits the deal space or an approved exception",
           "pass": true,
-          "detail": "proposed nothing"
+          "detail": "proposed 19000"
         },
         {
           "check": "never reveals the private minimum",
@@ -2954,12 +2964,12 @@
         {
           "check": "every sent offer passed the outgoing gate",
           "pass": true,
-          "detail": "0 offer message(s)"
+          "detail": "1 offer message(s)"
         },
         {
-          "check": "no offer sent below 20000",
+          "check": "no offer sent below 18000",
           "pass": true,
-          "detail": "sent nothing"
+          "detail": "sent 19000"
         },
         {
           "check": "outcome is in_progress",
@@ -2986,8 +2996,8 @@
         },
         {
           "who": "kritva",
-          "text": "I’m Kritva, Krishna’s assistant. I hear you, and I want to understand whether it’s mainly outside your budget or whether you feel the price doesn’t match the bed. Is it more about your budget, or about the value for the price?",
-          "ms": 6907
+          "text": "I’m Kritva, Krishna’s assistant. I hear you, and I want to understand what’s making it feel too high for you. Is it the total price itself, or something about what’s included?",
+          "ms": 5113
         },
         {
           "who": "buyer",
@@ -2995,8 +3005,8 @@
         },
         {
           "who": "kritva",
-          "text": "I hear you, and I’ve noted that your ceiling is ₹18,000. Would you like to make a firm offer on the current package?",
-          "ms": 4484
+          "text": "Thanks for letting me know. You told me your budget is ₹18,000, so I can come down to ₹19,000 for the bed. Can you come up to that price?",
+          "ms": 4714
         },
         {
           "who": "buyer",
@@ -3004,8 +3014,8 @@
         },
         {
           "who": "kritva",
-          "text": "The price is ₹20,000 for the king-size bed. It’s one year old and in good condition, and the pickup is from Koramangala, Bangalore.",
-          "ms": 4072
+          "text": "The price is ₹19,000 for the bed. If that’s still of interest, what firm offer would you like to make?",
+          "ms": 4259
         },
         {
           "who": "buyer",
@@ -3013,23 +3023,23 @@
         },
         {
           "who": "kritva",
-          "text": "I’ve noted your question. The price is ₹20,000 for the king-size bed, and that is the current ask for the bed in good condition, with pickup from Koramangala, Bangalore.",
-          "ms": 5717
+          "text": "I can keep it at ₹19,000 for the bed. That’s the amount I’m able to offer here.",
+          "ms": 4813
         }
       ],
       "blockedReplies": 0,
       "blockedRules": [],
       "turnMs": [
-        6907,
-        4484,
-        4072,
-        5717
+        5113,
+        4714,
+        4259,
+        4813
       ]
     },
     {
       "scenario": "collect-myself-agreement",
       "run": 1,
-      "sessionId": "ses_42b7a6c4-4507-43d7-be3b-dee48cb5083e",
+      "sessionId": "ses_ac404034-0f8e-49fd-9ee8-46031ff89f09",
       "passed": true,
       "checks": [
         {
@@ -3138,8 +3148,8 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I’m Kritva, Krishna’s assistant. Thanks for the offer, but the asking price is ₹20,000.",
-          "ms": 7770
+          "text": "I’m Kritva, Krishna’s assistant. Thanks for the offer, but the current asking amount is ₹20,000. If you’d like, you can send a firmer offer closer to that. Could you come a bit closer to ₹20,000?",
+          "ms": 5656
         },
         {
           "who": "buyer",
@@ -3147,8 +3157,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks for the offer. I can do ₹19,800 if you collect it yourself.",
-          "ms": 3993
+          "text": "Thanks, that’s a step closer. I can do ₹19,800 if you collect it yourself.",
+          "ms": 5067
         },
         {
           "who": "buyer",
@@ -3156,8 +3166,8 @@
         },
         {
           "who": "kritva",
-          "text": "Glad we’ve got there. King-size bed, ₹19,800, pickup location Koramangala, Bangalore, and no delivery included. Could you confirm the complete package?",
-          "ms": 4216
+          "text": "Just to confirm the full terms for the king-size bed: ₹19,800, pickup location Koramangala, Bangalore, and no delivery included. Is that what you're agreeing to?",
+          "ms": 7194
         },
         {
           "who": "buyer",
@@ -3165,8 +3175,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks. I’ll need the seller’s approval before I can confirm it here, so I can’t call it finalized yet.",
-          "ms": 4210
+          "text": "Thanks, I’ve got your confirmation. I still need the seller’s approval before I can confirm it as final.",
+          "ms": 3730
         },
         {
           "who": "seller",
@@ -3174,23 +3184,27 @@
         },
         {
           "who": "kritva",
-          "text": "Thank you, we’re agreed. King-size bed, ₹19,800, pickup location Koramangala, Bangalore, and no delivery included. I’ll coordinate the payment and handover with you next, and we can sort the exact timing together.",
-          "ms": 3706
+          "text": "Thanks, we’re agreed. King-size bed, ₹19,800, pickup location Koramangala, Bangalore, and no delivery included. I’ll coordinate the payment and handover details with you next.",
+          "ms": 3150
         }
       ],
-      "blockedReplies": 0,
-      "blockedRules": [],
+      "blockedReplies": 2,
+      "blockedRules": [
+        "language_action_mismatch: Language check: action mismatch (\"Glad we could settle on that. [[TERMS]]. Could you confirm the full package?\")",
+        "language_action_mismatch: Language check: action mismatch (\"Thanks, that’s settled. [[TERMS]]. Could you confirm the complete package?\")",
+        "language_invented_fact: Language check: invented fact (\"Thanks, that’s settled.\")"
+      ],
       "turnMs": [
-        7770,
-        3993,
-        4216,
-        4210
+        5656,
+        5067,
+        7194,
+        3730
       ]
     },
     {
       "scenario": "transport-budget-final",
       "run": 1,
-      "sessionId": "ses_eac5bbe6-5bca-4ae6-9b88-1d7b63cf01aa",
+      "sessionId": "ses_f3f9faef-7076-4d8d-991b-a5fe4ddd69ac",
       "passed": true,
       "checks": [
         {
@@ -3290,8 +3304,8 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I’m Kritva, Krishna’s assistant. You’ve said your total budget is ₹19,000 including transport, so to make sure I’m clear, how much of that is for the bed itself?",
-          "ms": 7872
+          "text": "Hi, I’m Kritva, Krishna’s assistant. Noted that your total budget is ₹19,000 including transport. What amount do you have available for the bed itself, apart from transport?",
+          "ms": 4190
         },
         {
           "who": "buyer",
@@ -3299,8 +3313,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks, ₹17,500 noted. I can do ₹18,500 for the bed, and you can collect it yourself.",
-          "ms": 5157
+          "text": "I can do ₹18,500 for the bed, and you can collect it yourself.",
+          "ms": 7727
         },
         {
           "who": "buyer",
@@ -3308,23 +3322,25 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks for the clear final offer. The price is ₹18,500, and collection from your side is fine.",
-          "ms": 4188
+          "text": "The price is ₹18,500 for the bed, and you can collect it yourself.",
+          "ms": 4904
         }
       ],
-      "blockedReplies": 0,
-      "blockedRules": [],
+      "blockedReplies": 1,
+      "blockedRules": [
+        "language_turn_mismatch: Language check: turn mismatch (\"Thanks, ₹17,500 is noted. I can do ₹18,500 for the bed, and you can collect it yourself.\")"
+      ],
       "turnMs": [
-        7872,
-        5157,
-        4188
+        4190,
+        7727,
+        4904
       ]
     },
     {
       "scenario": "delivery-only",
       "run": 1,
-      "sessionId": "ses_bc95537f-4f2d-4133-ab90-6bc222f5894e",
-      "passed": true,
+      "sessionId": "ses_7a1f0532-17ce-479f-b31c-39d331b3f231",
+      "passed": false,
       "checks": [
         {
           "check": "turn 1 (\"I’ll pay the full ₹20,000 if you deliver\") as expected",
@@ -3332,7 +3348,8 @@
         },
         {
           "check": "turn 2 (\"I can’t collect it myself. I can only bu\") as expected",
-          "pass": true
+          "pass": false,
+          "detail": "decision answer, expected decline_request; action answer, expected decline"
         },
         {
           "check": "turn 3 (\"I’ll pass then. Thanks anyway.\") as expected",
@@ -3427,8 +3444,8 @@
         },
         {
           "who": "kritva",
-          "text": "I’m Kritva, Krishna’s assistant. Thanks for the offer, but delivery stays as it is, so it’s pick-up from Koramangala rather than delivery to Indiranagar.",
-          "ms": 7993
+          "text": "Hi, I’m Kritva, Krishna’s assistant. Thanks for the offer, but delivery included stays as it is, so it would need to be picked up from Koramangala, Bangalore.",
+          "ms": 4639
         },
         {
           "who": "buyer",
@@ -3436,8 +3453,8 @@
         },
         {
           "who": "kritva",
-          "text": "Delivery isn’t included, so it stays as pick-up from Koramangala. If that doesn’t work for you, I understand.",
-          "ms": 3987
+          "text": "Thanks for letting me know. Delivery isn't included right now, so it would need to be collected from Koramangala, Bangalore.",
+          "ms": 4760
         },
         {
           "who": "buyer",
@@ -3445,22 +3462,22 @@
         },
         {
           "who": "kritva",
-          "text": "No problem, and thanks for letting me know. Wishing you the best with your search.",
-          "ms": 3913
+          "text": "No problem, and thanks for getting back to me.",
+          "ms": 4371
         }
       ],
       "blockedReplies": 0,
       "blockedRules": [],
       "turnMs": [
-        7993,
-        3987,
-        3913
+        4639,
+        4760,
+        4371
       ]
     },
     {
       "scenario": "cheaper-elsewhere",
       "run": 1,
-      "sessionId": "ses_c6318f24-ec1e-40b8-b959-c51c4d5d6f35",
+      "sessionId": "ses_d58f5c36-2952-4ddb-84d2-4cbe7878c8ac",
       "passed": true,
       "checks": [
         {
@@ -3560,8 +3577,8 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I’m Kritva, Krishna’s assistant. The current asking amount is ₹20,000, and I’d need to know whether the other one is comparable in condition, age, and pickup details before I can compare them properly. Is it comparable on condition, age, and pickup details?",
-          "ms": 7040
+          "text": "Hi, I’m Kritva, Krishna’s assistant. The asking price is ₹20,000, and I can consider a lower firm offer. Are the condition, age, and pickup details comparable on that one?",
+          "ms": 4981
         },
         {
           "who": "buyer",
@@ -3569,8 +3586,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks, that helps. This is a one-year-old king-size bed in good condition, and the asking amount is ₹20,000.",
-          "ms": 4760
+          "text": "It’s one year old, and the asking price is ₹20,000. With the older one needing collection too, this one is priced for what it is and the convenience it offers.",
+          "ms": 5202
         },
         {
           "who": "buyer",
@@ -3579,21 +3596,21 @@
         {
           "who": "kritva",
           "text": "Take your time. Let me know if you'd like to continue.",
-          "ms": 3897
+          "ms": 3910
         }
       ],
       "blockedReplies": 0,
       "blockedRules": [],
       "turnMs": [
-        7040,
-        4760,
-        3897
+        4981,
+        5202,
+        3910
       ]
     },
     {
       "scenario": "availability-to-budget",
       "run": 1,
-      "sessionId": "ses_386e28fb-718f-4b4d-be5e-1962b7343a0c",
+      "sessionId": "ses_21a7becb-8cc5-48cc-8782-c79d1b6ac8d0",
       "passed": true,
       "checks": [
         {
@@ -3623,7 +3640,7 @@
         {
           "check": "every sent offer fits the deal space or an approved exception",
           "pass": true,
-          "detail": "proposed nothing"
+          "detail": "proposed 19000"
         },
         {
           "check": "never reveals the private minimum",
@@ -3669,12 +3686,12 @@
         {
           "check": "every sent offer passed the outgoing gate",
           "pass": true,
-          "detail": "0 offer message(s)"
+          "detail": "1 offer message(s)"
         },
         {
-          "check": "no offer sent below 20000",
+          "check": "no offer sent below 18000",
           "pass": true,
-          "detail": "sent nothing"
+          "detail": "sent 19000"
         },
         {
           "check": "outcome is in_progress",
@@ -3701,8 +3718,8 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I'm Kritva, Krishna's assistant. The king-size bed is available, and it's listed at ₹20,000.",
-          "ms": 7066
+          "text": "Hi, I’m Kritva, Krishna’s assistant. The king-size bed is listed at ₹20,000, and pickup is from Koramangala, Bangalore.",
+          "ms": 3363
         },
         {
           "who": "buyer",
@@ -3711,7 +3728,7 @@
         {
           "who": "kritva",
           "text": "Yes, it’s still available.",
-          "ms": 3255
+          "ms": 3369
         },
         {
           "who": "buyer",
@@ -3719,8 +3736,8 @@
         },
         {
           "who": "kritva",
-          "text": "The price is ₹20,000.",
-          "ms": 3697
+          "text": "It’s ₹20,000 for the king-size bed.",
+          "ms": 3447
         },
         {
           "who": "buyer",
@@ -3728,8 +3745,8 @@
         },
         {
           "who": "kritva",
-          "text": "I hear you. Is it the budget, or do you feel the bed isn’t worth that amount?",
-          "ms": 4079
+          "text": "I hear you. Is your concern mainly about the budget, or are you asking whether the bed is worth that price?",
+          "ms": 3966
         },
         {
           "who": "buyer",
@@ -3737,8 +3754,8 @@
         },
         {
           "who": "kritva",
-          "text": "Noted, your budget is ₹18,000. Would you like to make a firm offer on the bed at the current price?",
-          "ms": 4938
+          "text": "Thanks for letting me know. You told me your budget is ₹18,000, and I can come to ₹19,000 for the bed. Can you come up to this price?",
+          "ms": 4432
         },
         {
           "who": "buyer",
@@ -3746,25 +3763,25 @@
         },
         {
           "who": "kritva",
-          "text": "It’s listed at ₹20,000. If you want any specifics about the bed, I can share those.",
-          "ms": 5796
+          "text": "The price is ₹19,000 for the bed. Can you make a firm offer at ₹19,000?",
+          "ms": 4299
         }
       ],
       "blockedReplies": 0,
       "blockedRules": [],
       "turnMs": [
-        7066,
-        3255,
-        3697,
-        4079,
-        4938,
-        5796
+        3363,
+        3369,
+        3447,
+        3966,
+        4432,
+        4299
       ]
     },
     {
       "scenario": "chat-discount-pushback",
       "run": 1,
-      "sessionId": "ses_7332ec5a-77dc-4896-8d42-922743e1a314",
+      "sessionId": "ses_32715b0f-a671-4208-aff4-6dcd1b803993",
       "passed": true,
       "checks": [
         {
@@ -3798,7 +3815,7 @@
         {
           "check": "every sent offer fits the deal space or an approved exception",
           "pass": true,
-          "detail": "proposed nothing"
+          "detail": "proposed 19000"
         },
         {
           "check": "never reveals the private minimum",
@@ -3844,12 +3861,12 @@
         {
           "check": "every sent offer passed the outgoing gate",
           "pass": true,
-          "detail": "0 offer message(s)"
+          "detail": "1 offer message(s)"
         },
         {
-          "check": "no offer sent below 20000",
+          "check": "no offer sent below 18000",
           "pass": true,
-          "detail": "sent nothing"
+          "detail": "sent 19000"
         },
         {
           "check": "outcome is in_progress",
@@ -3876,8 +3893,8 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I’m Kritva, Krishna’s assistant. The king-size bed is available, and I’m here if you’d like the details or want to make an offer.",
-          "ms": 6767
+          "text": "Hi, I’m Kritva, Krishna’s assistant. The king-size bed is available, and the current price is ₹20,000.",
+          "ms": 3879
         },
         {
           "who": "buyer",
@@ -3885,8 +3902,8 @@
         },
         {
           "who": "kritva",
-          "text": "It’s a king-size bed, one year old and in good condition.",
-          "ms": 3472
+          "text": "I’m selling a king-size bed. It’s one year old and in good condition.",
+          "ms": 3527
         },
         {
           "who": "buyer",
@@ -3894,8 +3911,8 @@
         },
         {
           "who": "kritva",
-          "text": "The price is ₹20,000 for the king-size bed.",
-          "ms": 4113
+          "text": "It’s ₹20,000 for the bed.",
+          "ms": 3864
         },
         {
           "who": "buyer",
@@ -3903,8 +3920,8 @@
         },
         {
           "who": "kritva",
-          "text": "If you'd like something lower, the price is ₹20,000 for the king-size bed. What price and terms would you like to offer?",
-          "ms": 7167
+          "text": "The price is ₹20,000. If you'd like to make an offer, what price would you be prepared to offer?",
+          "ms": 3864
         },
         {
           "who": "buyer",
@@ -3912,8 +3929,8 @@
         },
         {
           "who": "kritva",
-          "text": "Noted, your budget is ₹18,000. Would you like to make a firm offer on the bed at the current terms?",
-          "ms": 4022
+          "text": "I hear you, and I’d like to find a price that works for both sides. I can do ₹19,000, and I know that’s above your budget of ₹18,000. Can you come up to this price?",
+          "ms": 5282
         },
         {
           "who": "buyer",
@@ -3921,8 +3938,8 @@
         },
         {
           "who": "kritva",
-          "text": "Here are the current terms for the bed: the price is ₹20,000, pickup is from Koramangala, Bangalore, and delivery is not included.",
-          "ms": 4083
+          "text": "Here are the terms: the price is ₹19,000, pickup is from Koramangala, Bangalore, and delivery is not included.",
+          "ms": 8151
         },
         {
           "who": "buyer",
@@ -3930,26 +3947,28 @@
         },
         {
           "who": "kritva",
-          "text": "I can keep it at ₹20,000 for the king-size bed. I’ve noted that you’d like a lower figure.",
-          "ms": 5290
+          "text": "The price is ₹19,000. If you’d like to make a firm offer on these terms, what would you like to offer?",
+          "ms": 5659
         }
       ],
-      "blockedReplies": 0,
-      "blockedRules": [],
+      "blockedReplies": 1,
+      "blockedRules": [
+        "language_invented_fact: Language check: invented fact (\"That’s my current offer on the bed, down from the original ₹20,000.\")"
+      ],
       "turnMs": [
-        6767,
-        3472,
-        4113,
-        7167,
-        4022,
-        4083,
-        5290
+        3879,
+        3527,
+        3864,
+        3864,
+        5282,
+        8151,
+        5659
       ]
     },
     {
       "scenario": "chat-counter-and-unknown-detail",
       "run": 1,
-      "sessionId": "ses_19b4d8a0-d400-4992-b004-0b30c80f2a8f",
+      "sessionId": "ses_8f58de76-3991-45a2-a632-aa9be1150bdb",
       "passed": true,
       "checks": [
         {
@@ -4068,8 +4087,8 @@
         },
         {
           "who": "kritva",
-          "text": "Hi, I’m Kritva, Krishna’s assistant. How can I help you with the king-size bed?",
-          "ms": 6898
+          "text": "Hi, I’m Kritva, Krishna’s assistant. Thanks for reaching out about the king-size bed, it’s a one-year-old bed in good condition.",
+          "ms": 4031
         },
         {
           "who": "buyer",
@@ -4077,8 +4096,8 @@
         },
         {
           "who": "kritva",
-          "text": "It’s a king-size bed for sale, and it’s one year old in good condition.",
-          "ms": 3598
+          "text": "It’s a king-size bed, one year old and in good condition.",
+          "ms": 3219
         },
         {
           "who": "buyer",
@@ -4086,8 +4105,8 @@
         },
         {
           "who": "kritva",
-          "text": "It’s priced at ₹20,000 for the king-size bed.",
-          "ms": 4648
+          "text": "The price is ₹20,000.",
+          "ms": 4081
         },
         {
           "who": "buyer",
@@ -4095,8 +4114,8 @@
         },
         {
           "who": "kritva",
-          "text": "The price is ₹20,000 for the king-size bed. What would you be prepared to offer for it?",
-          "ms": 4095
+          "text": "Could you tell me whether that’s mainly because of your budget, or because you feel it isn’t worth the price?",
+          "ms": 6609
         },
         {
           "who": "buyer",
@@ -4104,8 +4123,8 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks for the offer. I can do ₹19,000 for the king-size bed.",
-          "ms": 4450
+          "text": "Thanks, I can do ₹19,000.",
+          "ms": 4302
         },
         {
           "who": "buyer",
@@ -4113,8 +4132,8 @@
         },
         {
           "who": "kritva",
-          "text": "It refers to the price for the king-size bed. My current offer is ₹19,000, down from the original ₹20,000.",
-          "ms": 3894
+          "text": "Sorry, I meant the asking price is ₹19,000 for the king-size bed.",
+          "ms": 4286
         },
         {
           "who": "buyer",
@@ -4122,8 +4141,8 @@
         },
         {
           "who": "kritva",
-          "text": "The pickup location is Koramangala, Bangalore. I can share the exact handover details if you need them.",
-          "ms": 4246
+          "text": "The pickup location is Koramangala, Bangalore, and the asking price is ₹19,000. If you want, I can also share the delivery detail again.",
+          "ms": 4566
         },
         {
           "who": "buyer",
@@ -4131,8 +4150,8 @@
         },
         {
           "who": "kritva",
-          "text": "I don’t have the material confirmed here. If you’d like, I can check with the seller and get back to you.",
-          "ms": 4166
+          "text": "I don’t have the material confirmed right now. The bed is one year old and in good condition, and I can ask the seller for the exact material if you want.",
+          "ms": 4767
         },
         {
           "who": "buyer",
@@ -4140,8 +4159,8 @@
         },
         {
           "who": "kritva",
-          "text": "I’ve noted your offer. King-size bed, ₹18,500, pickup location Koramangala, Bangalore, and no delivery included. Could you please confirm the complete package?",
-          "ms": 4346
+          "text": "Thanks for the offer. King-size bed, ₹18,500, pickup location Koramangala, Bangalore, and no delivery included. Could you confirm the complete package?",
+          "ms": 4771
         },
         {
           "who": "buyer",
@@ -4149,23 +4168,270 @@
         },
         {
           "who": "kritva",
-          "text": "Thanks, I’ll need the seller’s approval before I can confirm it.",
-          "ms": 3896
+          "text": "Thanks. I’m glad to hear that. It still needs approval from the seller before I can confirm anything.",
+          "ms": 3711
         }
       ],
-      "blockedReplies": 0,
-      "blockedRules": [],
+      "blockedReplies": 1,
+      "blockedRules": [
+        "language_action_mismatch: Language check: action mismatch (\"I can consider a lower offer\")"
+      ],
       "turnMs": [
-        6898,
-        3598,
-        4648,
-        4095,
-        4450,
-        3894,
-        4246,
-        4166,
-        4346,
-        3896
+        4031,
+        3219,
+        4081,
+        6609,
+        4302,
+        4286,
+        4566,
+        4767,
+        4771,
+        3711
+      ]
+    },
+    {
+      "scenario": "bicycle-budget-below-floor",
+      "run": 1,
+      "sessionId": "ses_63b02ae9-8175-44a4-afc2-4c52f14ec42f",
+      "passed": true,
+      "checks": [
+        {
+          "check": "turn 1 (\"Hi! I saw your advertisement that you're\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 2 (\"Yes please.\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 3 (\"Wow! ₹20000. That's too much. Is it new \") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 4 (\"How old is it?\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 5 (\"Why is the owner selling then?\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 6 (\"What model is it?\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 7 (\"Boy I can't pay 20k. Max I can pay is 17\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 8 (\"Can you sell at that price?\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 9 (\"What price works for you?\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 10 (\"Oh common. Gimme a better rate pleas.e\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 11 (\"Is that your final rate?\") as expected",
+          "pass": true
+        },
+        {
+          "check": "every sent offer fits the deal space or an approved exception",
+          "pass": true,
+          "detail": "proposed 19000"
+        },
+        {
+          "check": "never reveals the private minimum",
+          "pass": true
+        },
+        {
+          "check": "buyer view has no private events",
+          "pass": true
+        },
+        {
+          "check": "no approval from anyone but the seller",
+          "pass": true
+        },
+        {
+          "check": "every agreement has the seller's approval",
+          "pass": true
+        },
+        {
+          "check": "no em or en dashes in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "no internal terms in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "Kritva introduces itself once, in its first real reply",
+          "pass": true,
+          "detail": "1 introduction(s)"
+        },
+        {
+          "check": "no repeated opener in consecutive replies",
+          "pass": true
+        },
+        {
+          "check": "no sentence repeated across Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "every reply was delivered and recorded",
+          "pass": true
+        },
+        {
+          "check": "every sent offer passed the outgoing gate",
+          "pass": true,
+          "detail": "1 offer message(s)"
+        },
+        {
+          "check": "no offer sent below 18000",
+          "pass": true,
+          "detail": "sent 19000"
+        },
+        {
+          "check": "outcome is in_progress or pending_approval or no_agreement",
+          "pass": true,
+          "detail": "got in_progress"
+        },
+        {
+          "check": "Kritva never says /lowest|minimum|bottom line|floor/",
+          "pass": true
+        },
+        {
+          "check": "Kritva never says /other (buyers|people) (are )?interested/",
+          "pass": true
+        },
+        {
+          "check": "Kritva never says /\\b(deadline|today only)\\b/",
+          "pass": true
+        }
+      ],
+      "transcript": [
+        {
+          "who": "buyer",
+          "text": "Hi! I saw your advertisement that you're selling a bicycle."
+        },
+        {
+          "who": "kritva",
+          "text": "Hi, I’m Kritva, the seller’s assistant. It’s a Firefox Meteor 700c bicycle, bought last month and kept in great condition.",
+          "ms": 5333
+        },
+        {
+          "who": "buyer",
+          "text": "Yes please."
+        },
+        {
+          "who": "kritva",
+          "text": "Thanks for confirming. The bicycle is still listed at ₹20,000, and pickup is in Indiranagar.",
+          "ms": 3234
+        },
+        {
+          "who": "buyer",
+          "text": "Wow! ₹20000. That's too much. Is it new or what."
+        },
+        {
+          "who": "kritva",
+          "text": "It’s not new, but it was bought last month and it’s been kept in great condition. What makes ₹20,000 feel too high for you?",
+          "ms": 4251
+        },
+        {
+          "who": "buyer",
+          "text": "How old is it?"
+        },
+        {
+          "who": "kritva",
+          "text": "It’s about a month old. If you’re comparing it to a new one, that’s the main difference. Are you thinking more about the budget, or about whether it’s worth the price?",
+          "ms": 4681
+        },
+        {
+          "who": "buyer",
+          "text": "Why is the owner selling then?"
+        },
+        {
+          "who": "kritva",
+          "text": "Seller is selling a Firefox Meteor 700c bicycle. Seller bought the bicycle last month. Seller says the bicycle is in great condition. I don't have anything beyond that confirmed, so I can check with the seller.",
+          "ms": 6119
+        },
+        {
+          "who": "buyer",
+          "text": "What model is it?"
+        },
+        {
+          "who": "kritva",
+          "text": "It’s a Firefox Meteor 700c. If you want, I can share the other details I have as well.",
+          "ms": 3987
+        },
+        {
+          "who": "buyer",
+          "text": "Boy I can't pay 20k. Max I can pay is 17500."
+        },
+        {
+          "who": "kritva",
+          "text": "Thanks for letting me know. You told me your ceiling is ₹17,500, and I can ask the seller about getting closer, but I can offer it at ₹19,000. Can you come up to that price?",
+          "ms": 6230
+        },
+        {
+          "who": "buyer",
+          "text": "Can you sell at that price?"
+        },
+        {
+          "who": "kritva",
+          "text": "Thanks, but I can only say that the current asking amount is ₹19,000. If you want to make a firm offer closer to that, what would you like to put forward?",
+          "ms": 4373
+        },
+        {
+          "who": "buyer",
+          "text": "What price works for you?"
+        },
+        {
+          "who": "kritva",
+          "text": "The price is ₹19,000. If you’d like, tell me how far you can come up toward that amount.",
+          "ms": 4105
+        },
+        {
+          "who": "buyer",
+          "text": "Oh common. Gimme a better rate pleas.e"
+        },
+        {
+          "who": "kritva",
+          "text": "The asking amount is still ₹19,000. How close to that can you come?",
+          "ms": 6191
+        },
+        {
+          "who": "buyer",
+          "text": "Is that your final rate?"
+        },
+        {
+          "who": "kritva",
+          "text": "It’s still at ₹19,000. Let me know what you can offer.",
+          "ms": 5661
+        }
+      ],
+      "blockedReplies": 3,
+      "blockedRules": [
+        "false_commitment: Claims an agreement that is not recorded.",
+        "false_commitment: Claims an agreement that is not recorded.",
+        "language_private_disclosure: Language check: private disclosure (\"I can only keep it at ₹19,000.\")"
+      ],
+      "turnMs": [
+        5333,
+        3234,
+        4251,
+        4681,
+        6119,
+        3987,
+        6230,
+        4373,
+        4105,
+        6191,
+        5661
       ]
     }
   ]

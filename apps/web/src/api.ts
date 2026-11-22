@@ -334,14 +334,20 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
     const key = sessionStorage.getItem(sellerKeyStorage);
     if (key) headers.set("authorization", `Bearer ${key}`);
   }
-  try {
-    res = await fetch(path, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-  } catch {
-    throw new ApiError(0, "Unable to reach the Kritva server. Check that it is running, then try again.");
+  // The server can be briefly unreachable (a restart while a turn is running). Retry a few times:
+  // sends carry their client message ID, so a retried turn resumes instead of running twice.
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      res = await fetch(path, {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      if ((res.status !== 502 && res.status !== 504) || attempt >= 3) break;
+    } catch {
+      if (attempt >= 3) throw new ApiError(0, "Unable to reach the Kritva server. Check that it is running, then try again.");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 700 * 2 ** attempt));
   }
   const json = (await res.json().catch(() => ({}))) as { message?: string };
   if (!res.ok) throw new ApiError(res.status, json.message ?? `Request failed (${res.status}). Try again.`);
