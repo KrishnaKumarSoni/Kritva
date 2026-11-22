@@ -106,6 +106,16 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
    * caller for an inbound call, the dialled number for Kritva's own. Never written to the record.
    */
   const callers = new Map<string, string | null>();
+  /** Kritva's outbound call → the realtime call it bridged to, while both last. */
+  const bridgedTo = new Map<string, string>();
+  // OpenAI did not pass on the hang-up of a bridged outbound call on the first live test, so when
+  // Vobiz reports the phone leg over, Kritva ends its side too (it would otherwise run on in silence).
+  dialer?.onChange((view) => {
+    if (view.state !== "ended") return;
+    const realtimeCallId = bridgedTo.get(view.callId);
+    bridgedTo.delete(view.callId);
+    if (realtimeCallId) void calls.get(realtimeCallId)?.end("hung_up");
+  });
   /** Webhooks being handled, by call ID: a retry while one is in flight waits for the same result. */
   const inFlight = new Map<string, Promise<{ status: 200 | 500; body: Record<string, unknown> }>>();
   /** Calls already answered or declined (kept an hour), so a retried webhook does nothing twice. */
@@ -180,7 +190,10 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
       const call = new PhoneCall({ engine, record, sessionId, callId, link, control: deps.connector, settings, afterSeq, log, pollMs: deps.pollMs, sessionUpdate, trace: settings.trace, direction, onEnded });
       calls.set(callId, call);
       deps.liveCalls?.register(sessionId, call.realtime, callers.get(callId) ?? null);
-      if (outboundCallId) dialer?.connected(outboundCallId, callId);
+      if (outboundCallId) {
+        bridgedTo.set(outboundCallId, callId);
+        dialer?.connected(outboundCallId, callId);
+      }
       await call.start().catch(async (error) => {
         log({ kind: "phone_start_failed", callId, sessionId, error: String(error) });
         await call.end("error");
