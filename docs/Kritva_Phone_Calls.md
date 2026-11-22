@@ -18,6 +18,8 @@ Kritva server  POST /api/webhooks/openai
   → join over the sideband WebSocket → session.update (the full session) → PhoneCall greets
 ```
 
+Kritva can also place the call itself (section 15): Vobiz dials the counterparty and, once they answer, bridges the call to the same OpenAI address, where it arrives as an incoming call into the negotiation it was placed for.
+
 Audio never passes through Kritva's server. Vobiz and OpenAI exchange it directly; the server answers the webhook, controls the call over REST and handles its events over the sideband WebSocket, as it already does for a browser call.
 
 ## 2. What stays exactly as it is
@@ -110,7 +112,11 @@ Phone calls are on when `OPENAI_API_KEY` is set with realtime voice on (`KRITVA_
 | `KRITVA_PHONE_ACCEPT` | `minimal` | `minimal`: accept with model, instructions and voice, then `session.update` (section 3). `full`: everything in the accept (left silent calls with Vobiz). |
 | `KRITVA_PHONE_TRACE` | off | `1` logs every sideband event type with its time and IDs (never audio), the masked SIP headers and `sip_media_security`. For diagnosing a call. |
 | `KRITVA_PHONE_LOG_FILE` | (none) | Also append every `[phone]` log line to this file (for example `data/phone-calls.log`), to follow calls outside the server's console. |
-| `VOBIZ_AUTH_ID`, `VOBIZ_AUTH_TOKEN`, `VOBIZ_TRUNK_ID` | (none) | Only for `scripts/vobiz-trunk.ts` (section 9.2). The server never uses them. |
+| `VOBIZ_AUTH_ID`, `VOBIZ_AUTH_TOKEN` | (none) | Vobiz's API credentials: for outbound calls (section 15) and `scripts/vobiz-trunk.ts`. |
+| `VOBIZ_TRUNK_ID` | (none) | Only for `scripts/vobiz-trunk.ts` (section 9.2). |
+| `KRITVA_PHONE_CALLER_ID` | (none) | Outbound: Kritva's Vobiz number, the caller ID. |
+| `KRITVA_PUBLIC_URL` | (none) | Outbound: the public `https://` base URL Vobiz calls back (the tunnel or the deployed host). |
+| `KRITVA_PHONE_OUTBOUND_ALLOW` | (none) | Outbound: the only numbers Kritva may call, comma-separated, or `*`. Empty means nothing can be dialled. |
 
 The realtime settings (`KRITVA_REALTIME_*`, `KRITVA_VOICE_LANGUAGES`) apply to phone calls too.
 
@@ -219,6 +225,8 @@ It prints `https://<random>.trycloudflare.com`; that host changes on every run, 
 | `packages/core/src/record/events.ts` | `voice_connection` with `ended`, `transport` and `reason`. |
 | `apps/server/scripts/phone-check.ts` | The setup check of section 9.4. |
 | `apps/server/scripts/vobiz-trunk.ts` | Shows a Vobiz trunk and turns SRTP on (section 9.2, step 3). |
+| `apps/server/src/phone/outbound.ts` | `OutboundDialer`: places calls, follows their state, matches the bridged call to its session (section 15). |
+| `apps/server/src/phone/vobiz.ts` | Vobiz's Make Call and hang-up API, and the answer XML that bridges to OpenAI. |
 | `apps/server/test/phone.test.ts` | The tests of section 14. |
 
 ## 13. Open decisions and known limits
@@ -237,7 +245,7 @@ Known limits:
 - A hang-up and a dropped line look the same.
 - If the accept succeeds but OpenAI never connects the call, the session stays empty in the console.
 - Inherited from the browser call: when an interrupted reply's partial transcript lacks one of its amounts, the controller's fidelity check says the whole reply again once after the interruption. That is the controller's existing behaviour (`#checkFidelity`), unchanged here; it may deserve its own look.
-- Inbound calls only. Calling a buyer back (outbound SIP) is not built.
+- Outbound calls are built but not yet tried on a real call (section 15).
 
 ## 14. Tests
 
@@ -248,4 +256,44 @@ Known limits:
 - the delivery rule with a manual clock: delivered and interrupted by playback events, the heard part from `audio_end_ms` and from playback time, cancelled before audio, no end event, the timing fallback both ways, waiting for proof of caller audio, a call whose audio never connected, the call ending mid-reply, and the voice model's own words being ignored;
 - whole calls: unsigned webhook, ignored events, no route (404), paused listing and missing mandate (480), busy (486), a call gone while ringing, accept retries, the minimal accept and the `session.update` before the greeting (no audio format, phone noise reduction, no private amounts), the full accept mode, the recorded connection, a retried webhook, the setup route, a deal turn through the engine with delivery, an interruption with the part heard, a hang-up mid-reply with the event counts, the silence check and goodbye, a reset by speech, and the time limit.
 
+- outbound calls: settings and the empty default allowlist, placing a call with tokened callback URLs and no number in the record, refusals (allowlist, malformed number, inactive session), one call per repeated request ID, a provider failure, the answer XML, the bridged call joining its own session with direction "outbound", the Vobiz leg hung up when the realtime side ends, no answer and busy, a late answer after the end, matching without the tag, cancelling a ringing call, and the setup view.
+
 Run them with the rest of the server tests: `npx vitest run --testTimeout=30000` in `apps/server`.
+
+## 15. Outbound calls (Kritva dials the counterparty)
+
+For negotiations where the principal gives Kritva numbers to call (the multiple-counterparties work decides how those are organised). Built on 2026-11-22 and tested with fakes; **not yet tried on a real call** (section 15.4).
+
+### 15.1 How a call works
+
+OpenAI's Realtime API cannot dial out: its outbound SIP calling exists only in the separate Live API (`POST /v1/live/sessions`, model `gpt-live-1`), which would mean a different model and a rewritten call controller. So Vobiz places the call and hands it to OpenAI as an incoming one:
+
+1. `call({ sessionId, to })` checks the number (allowlist, format), that the session is active, and the call limit, then asks Vobiz's Make Call API (`POST /api/v1/Account/{auth_id}/Call/`) to dial `to` from Kritva's number. The answer, ring and hang-up URLs carry an unguessable per-call token, which is what authorises Vobiz's callbacks. State: dialling, then ringing.
+2. When they answer, Vobiz fetches the answer URL. The XML bridges the call to OpenAI: `<Dial callerId="+91…"><User sipHeaders="kritva_call=<token>">sip:proj_…@sip.api.openai.com:5061;transport=tls</User></Dial>`. State: answered.
+3. OpenAI posts `realtime.call.incoming`. The webhook finds the token in a SIP header (Vobiz adds its own `X-` prefix to `sipHeaders`), or, without it, takes the one call that is answered and waiting for its bridge. It accepts the call into **that session** (no new session, no routing), and the same `PhoneCall` runs it: greeting, turns, delivery, silence and time limit. State: connected. The record gets `voice_connection` with `direction: "outbound"`; the console shows "Kritva's call connected".
+4. The end: their hang-up, Kritva's (`hangup(callId)`, silence, time limit) or Vobiz's. Whichever side ends first, Kritva makes sure the other ends too. Outcomes: `completed`, `no_answer`, `busy`, `failed` (answered but the bridge never arrived within 45 s, or the provider refused), `cancelled`.
+
+### 15.2 The interface (proposed to the multiple-counterparties work, not yet confirmed)
+
+- In-process: `PhoneHandle.outbound` (an `OutboundDialer`) with `call({ sessionId, to, clientRequestId? })`, `get(callId)`, `listForSession(sessionId)`, `hangup(callId)` and `onChange(listener)`.
+- Operator routes: `POST /api/operator/sessions/:id/calls` `{ to, clientRequestId }` → 202 with the call; `GET /api/operator/sessions/:id/calls`; `GET /api/operator/calls/:callId`; `POST /api/operator/calls/:callId/hangup`.
+- Errors: `phone_off`, `invalid_number` (400), `not_allowed`, `session_not_active`, `busy` (409), `provider_error` (502).
+- The call view: `{ callId, sessionId, to (masked), state, outcome, startedAt, answeredAt, connectedAt, endedAt, endReason }`.
+- One call belongs to one existing, active negotiation session. A repeated `clientRequestId` returns the first call, so a double click dials once.
+- The counterparty's number stays in memory and masked in logs and views. It never enters the negotiation record, as the user decided for inbound callers.
+
+### 15.3 Indian rules (from Vobiz's compliance pages; to confirm with the user before any real call)
+
+- Only Indian businesses or KYC-verified individuals may make domestic calls; the caller ID must be a Vobiz Indian number. The account's KYC is verified.
+- Number series: 140 is for promotional calls only (10 AM to 8 PM, no Do-Not-Disturb bypass); 160 is for service and transactional calls (BFSI); **landline numbers like Kritva's 080 number are for service and transactional calls only, never promotional.** Whether a negotiation call to someone who asked to be called counts as service or transactional is not settled by those pages.
+- Consent: cold calling is prohibited. Vobiz checks the national Do-Not-Disturb registry and blocks calls to registered numbers without documented consent, which must be no older than six months. Opt-outs must be honoured at once. Repeated complaints suspend the account (5 in 10 days: 15 days) and can lead to a one-year blacklisting.
+- Cost: Vobiz quotes from ₹0.45 a minute for Indian outbound calls (its comparison page; the real rate shows on each call), plus OpenAI's realtime cost per minute.
+
+Hence the allowlist: until the user confirms these points, only numbers they list (their own, for testing) can be dialled.
+
+### 15.4 Not yet verified (the first real call will show)
+
+- Whether Vobiz's `<Dial><User>` reaches `sip:proj_…@sip.api.openai.com:5061;transport=tls` (TLS on 5061 is all OpenAI accepts; Vobiz documents TLS only for inbound trunks). OpenAI took plain RTP media on the working inbound call, so SRTP should not be required.
+- The exact name of the header `sipHeaders` becomes. The matcher accepts any header naming `kritva_call`, and falls back to the one waiting call.
+- The number format Vobiz wants (`+91…` is sent; its docs show both with and without `+`), and the hang-up cause names it sends for no answer and busy.
+- The greeting: the engine's opening line is written for a call the counterparty started ("How can I help today?"). An outbound opener (who is calling and why) belongs to the engine's wording and the multiple-counterparties work.

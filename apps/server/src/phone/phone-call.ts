@@ -39,7 +39,9 @@ export interface PhoneCallDeps {
   sessionUpdate?: Record<string, unknown> | null;
   /** Log each sideband event (type and ids, never audio) for diagnosing a call. */
   trace?: boolean;
-  onEnded?: (call: PhoneCall) => void;
+  /** Who placed the call: the counterparty ("inbound", the default) or Kritva ("outbound"). Recorded on the connection events. */
+  direction?: "inbound" | "outbound";
+  onEnded?: (call: PhoneCall, reason: EndReason) => void;
 }
 
 /** Events too frequent to trace one by one; they are only counted. */
@@ -114,7 +116,7 @@ export class PhoneCall {
 
   /** Records the connection, starts the silence and time-limit timers, and greets. */
   async start(): Promise<void> {
-    await this.#d.record.append(this.sessionId, { id: eventId("voice", this.callId), type: "voice_connection", channel: "voice", payload: { status: "connected", transport: "phone" } }, { kind: "system", partyId: null });
+    await this.#d.record.append(this.sessionId, { id: eventId("voice", this.callId), type: "voice_connection", channel: "voice", payload: { status: "connected", transport: "phone", direction: this.#d.direction ?? "inbound" } }, { kind: "system", partyId: null });
     this.#maxTimer = setTimeout(() => void this.#wrapUp("max_duration"), this.#d.settings.maxCallMs);
     this.#armIdle();
     // The full session goes first, so the greeting is said with the instructions, tools and turn-taking in place.
@@ -144,10 +146,10 @@ export class PhoneCall {
     });
     this.#call.close();
     await this.#writes;
-    const recorded = await this.#d.record.append(this.sessionId, { id: eventId("voice_end", this.callId), type: "voice_connection", channel: "voice", payload: { status: "ended", transport: "phone", reason } }, { kind: "system", partyId: null });
+    const recorded = await this.#d.record.append(this.sessionId, { id: eventId("voice_end", this.callId), type: "voice_connection", channel: "voice", payload: { status: "ended", transport: "phone", reason, direction: this.#d.direction ?? "inbound" } }, { kind: "system", partyId: null });
     if (!recorded.ok) this.#log({ kind: "phone_end_not_recorded", error: recorded.error.message });
     this.#log({ kind: "phone_ended", reason, durationMs: Date.now() - this.startedAt.getTime(), deliveryFrom: this.#playback.usesPlaybackEvents ? "playback_events" : "estimate", events: Object.fromEntries(this.#counts) });
-    this.#d.onEnded?.(this);
+    this.#d.onEnded?.(this, reason);
   }
 
   #log(entry: Record<string, unknown>) {

@@ -20,7 +20,9 @@ import {
 } from "@kritva/core";
 import { createApp } from "../src/app.ts";
 import { loadConfirmedMandates, loadExamples, loadListings } from "../src/main-helpers.ts";
-import { GLOBAL_SIP_HOST, normalizeNumber, parseRoutes, phoneSettingsFromEnv, sipUri, type PhoneSettings } from "../src/phone/config.ts";
+import { GLOBAL_SIP_HOST, normalizeNumber, outboundFromEnv, parseRoutes, phoneSettingsFromEnv, sipUri, type PhoneSettings } from "../src/phone/config.ts";
+import type { OutboundSettings } from "../src/phone/outbound.ts";
+import type { OutboundTelephony, PlaceCall } from "../src/phone/vobiz.ts";
 import { heardPart, ServerPlayback, type Clock, type PlaybackReport } from "../src/phone/playback.ts";
 import { callerNumber, dialledNumbers, maskNumber, routeFor } from "../src/phone/sip-headers.ts";
 import { signWebhook, verifyWebhook, WebhookSignatureError } from "../src/phone/webhook-signature.ts";
@@ -346,7 +348,28 @@ const until = async (check: () => boolean | Promise<boolean>, ms = 4_000) => {
   }
 };
 
-function setup(options: { library?: boolean; settings?: Partial<PhoneSettings> } = {}) {
+/** Records what Kritva asks Vobiz to do. */
+class FakeTelephony implements OutboundTelephony {
+  readonly placed: PlaceCall[] = [];
+  readonly hungUp: string[] = [];
+  failNext: Error | null = null;
+  async placeCall(call: PlaceCall) {
+    if (this.failNext) {
+      const error = this.failNext;
+      this.failNext = null;
+      throw error;
+    }
+    this.placed.push(call);
+    return { providerCallId: `vobiz_${this.placed.length}` };
+  }
+  async hangup(providerCallId: string) {
+    this.hungUp.push(providerCallId);
+  }
+}
+
+const BUYER = "+919812345678";
+
+function setup(options: { library?: boolean; settings?: Partial<PhoneSettings>; outbound?: Partial<OutboundSettings> } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "kritva-phone-"));
   const db = join(dir, "db.sqlite");
   const record = new NegotiationRecord(new SqliteRecordBackend(db));
@@ -357,6 +380,8 @@ function setup(options: { library?: boolean; settings?: Partial<PhoneSettings> }
   const listings = loadListings(CASES, mandates, examples, library);
   const engine = new NegotiationEngine({ record, llm, locale: "en-IN", subjectFacts: new Map([["bed-sale", "fact_f_item"]]), listingDetails: new Map(listings.map((l) => [l.caseId, l])) });
   const connector = new FakeConnector();
+  const telephony = new FakeTelephony();
+  const outboundSettings: OutboundSettings = { callerId: "918064264194", publicUrl: "https://kritva.example.test", bridgeUri: "sip:proj_test@sip.api.openai.com:5061;transport=tls", allow: [normalizeNumber(BUYER)], maxCalls: 5, timeLimitSeconds: 900, countryCode: "91", ...options.outbound };
   const settings: PhoneSettings = { webhookSecret: SECRET, projectId: "proj_test", sipHost: GLOBAL_SIP_HOST, routes: parseRoutes(`${NUMBER}=bed-sale`).routes, countryCode: "91", noiseReduction: "near_field", idleMs: 60_000, maxCallMs: 600_000, maxCalls: 5, acceptMode: "minimal", trace: false, ...options.settings };
   const logs: Array<Record<string, unknown>> = [];
   const app = createApp({
@@ -369,7 +394,7 @@ function setup(options: { library?: boolean; settings?: Partial<PhoneSettings> }
     examples,
     listings,
     realtime: { connector, settings: realtimeSettingsFromEnv({}) },
-    phone: { settings, connector, log: (e) => logs.push(e), pollMs: 40, acceptBackoffMs: [0, 0, 0] },
+    phone: { settings, connector, log: (e) => logs.push(e), pollMs: 40, acceptBackoffMs: [0, 0, 0], outbound: options.outbound ? { telephony, settings: outboundSettings } : null },
   });
   let n = 0;
   /** OpenAI's webhook for an incoming call, signed with the project's secret. */
@@ -407,7 +432,26 @@ function setup(options: { library?: boolean; settings?: Partial<PhoneSettings> }
   const mandate = mandates.find((m) => m.id === "bed-sale/demo")!.mandate;
   const priceTerm = mandate.terms.find((t) => t.valueType === "money")!.id;
   const offer = (amount: number) => ({ intent: "offer", offer_kind: "offer", offer_terms: [{ term_id: priceTerm, value: { type: "money", amount, currency: null, unit: null, text: null, boolean: null } }] });
-  return { app, record, engine, llm, library, connector, link, logs, ring, sessions, events, messages, deliveries, connections, play, offer };
+  /** OpenAI's webhook for the bridged leg of an outbound call, with the SIP headers Vobiz sent. */
+  const bridge = (callId: string, headers: Array<{ name: string; value: string }>) =>
+    ring(callId, NUMBER, undefined, JSON.stringify({ id: `evt_${callId}`, object: "event", type: "realtime.call.incoming", created_at: 1, data: { call_id: callId, sip_headers: [{ name: "From", value: "<sip:+918064264194@13.200.197.87>;tag=1" }, { name: "To", value: `<sip:proj_test@${GLOBAL_SIP_HOST}:5061>` }, ...headers] } }));
+  /** Vobiz calling one of Kritva's callback URLs for an outbound call. */
+  const vobiz = async (url: string, fields: Record<string, string> = {}) => {
+    const res = await app.request(url.replace("https://kritva.example.test", ""), { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(fields).toString() });
+    return { status: res.status, text: await res.text(), type: res.headers.get("content-type") };
+  };
+  const placeCall = async (sessionId: string, to = BUYER, clientRequestId?: string) => {
+    const res = await app.request(`/api/operator/sessions/${sessionId}/calls`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ to, clientRequestId }) });
+    return { status: res.status, json: (await res.json()) as any };
+  };
+  const getCall = async (callId: string) => (await (await app.request(`/api/operator/calls/${callId}`)).json()) as any;
+  /** A negotiation session for the bed listing, as the multi-party flow would create one per counterparty. */
+  const newSession = async () => {
+    const started = await record.startSession({ mandate });
+    if (!started.ok) throw new Error(started.error.message);
+    return started.session.id;
+  };
+  return { app, record, engine, llm, library, connector, telephony, link, logs, ring, bridge, vobiz, placeCall, getCall, newSession, sessions, events, messages, deliveries, connections, play, offer };
 }
 
 describe("Phone: incoming calls", () => {
@@ -466,7 +510,7 @@ describe("Phone: incoming calls", () => {
     const sessionId = res.json.sessionId;
     const greeting = (await t.messages(sessionId)).find((m) => m.direction === "outbound")!;
     expect(t.link.says()[0]).toEqual({ text: greeting.text, messageId: greeting.id });
-    expect(await t.connections(sessionId)).toEqual([{ status: "connected", transport: "phone", reason: null }]);
+    expect(await t.connections(sessionId)).toEqual([{ status: "connected", transport: "phone", reason: null, direction: "inbound" }]);
     const op = await t.app.request(`/api/operator/sessions/${sessionId}`);
     expect(((await op.json()) as any).mandateSource).toEqual({ mandateId: "man_bed-sale-listing", revision: 1 });
     // The caller's number is never logged in full.
@@ -581,7 +625,7 @@ describe("Phone: during a call", () => {
     t.link.hangUp();
     await until(async () => (await t.connections(t.sessionId)).length === 2);
     expect((await t.deliveries(t.sessionId))[0]).toMatchObject({ messageId: greeting.messageId, status: "interrupted" });
-    expect((await t.connections(t.sessionId))[1]).toEqual({ status: "ended", transport: "phone", reason: "hung_up" });
+    expect((await t.connections(t.sessionId))[1]).toEqual({ status: "ended", transport: "phone", reason: "hung_up", direction: "inbound" });
     expect(t.connector.hungUp).toEqual(["rtc_live"]);
     expect(t.link.closed).toBe(true);
     const op = (await (await t.app.request(`/api/operator/sessions/${t.sessionId}`)).json()) as any;
@@ -625,5 +669,116 @@ describe("Phone: during a call", () => {
     t.play(1);
     await until(async () => (await t.connections(t.sessionId)).length === 2, 3_000);
     expect((await t.connections(t.sessionId))[1]).toMatchObject({ status: "ended", reason: "max_duration" });
+  });
+});
+
+describe("Phone: outbound calls (Kritva dials the counterparty)", () => {
+  it("is off without Vobiz settings, and the allowlist starts empty", () => {
+    const { settings } = phoneSettingsFromEnv({ OPENAI_WEBHOOK_SECRET: SECRET, KRITVA_PHONE_ROUTES: "*=bed-sale", OPENAI_PROJECT_ID: "proj_abc" });
+    expect(outboundFromEnv({}, settings!).config).toBeNull();
+    const env = { VOBIZ_AUTH_ID: "MA_X", VOBIZ_AUTH_TOKEN: "t", KRITVA_PHONE_CALLER_ID: "08064264194", KRITVA_PUBLIC_URL: "https://x.example" };
+    const on = outboundFromEnv(env, settings!).config!;
+    expect(on).toMatchObject({ callerId: "918064264194", bridgeUri: "sip:proj_abc@sip.api.openai.com:5061;transport=tls", allow: [] });
+    expect(outboundFromEnv({ ...env, KRITVA_PHONE_OUTBOUND_ALLOW: "+91 98123 45678,*" }, settings!).config!.allow).toEqual(["919812345678", "*"]);
+    expect(outboundFromEnv({ ...env, KRITVA_PUBLIC_URL: "http://x.example" }, settings!).problems.join(" ")).toMatch(/https/);
+  });
+
+  it("places a call from Kritva's number to theirs, with callback URLs that carry an unguessable token", async () => {
+    const t = setup({ outbound: {} });
+    const sessionId = await t.newSession();
+    const res = await t.placeCall(sessionId);
+    expect(res.status).toBe(202);
+    expect(res.json).toMatchObject({ sessionId, state: "dialling", to: "91******5678", outcome: null });
+    const [placed] = t.telephony.placed;
+    expect(placed).toMatchObject({ from: "+918064264194", to: BUYER, timeLimitSeconds: 900 });
+    const token = /\/api\/phone\/vobiz\/([\w-]+)\/answer$/.exec(placed!.answerUrl)![1]!;
+    expect(token.length).toBeGreaterThanOrEqual(24);
+    expect(placed!.ringUrl).toBe(`https://kritva.example.test/api/phone/vobiz/${token}/ring`);
+    expect(placed!.hangupUrl).toBe(`https://kritva.example.test/api/phone/vobiz/${token}/hangup`);
+    // The number never enters the negotiation record.
+    expect(JSON.stringify(await t.events(sessionId))).not.toContain("9812345678");
+  });
+
+  it("refuses numbers off the allowlist, malformed numbers and inactive sessions; a repeated request ID calls once", async () => {
+    const t = setup({ outbound: {} });
+    const sessionId = await t.newSession();
+    expect((await t.placeCall(sessionId, "+919900000000")).json.error).toBe("not_allowed");
+    expect((await t.placeCall(sessionId, "12")).json.error).toBe("invalid_number");
+    expect((await t.placeCall("ses_missing")).json.error).toBe("session_not_active");
+    const [a, b] = await Promise.all([t.placeCall(sessionId, BUYER, "click-0001"), t.placeCall(sessionId, BUYER, "click-0001")]);
+    expect(a.json.callId).toBe(b.json.callId);
+    expect(t.telephony.placed).toHaveLength(1);
+    t.telephony.failNext = new Error("down");
+    expect((await t.placeCall(sessionId, BUYER, "click-0002")).status).toBe(502);
+  });
+
+  it("answered: the XML bridges to OpenAI over TLS with the token; the bridged call joins the same session, greets and is recorded as Kritva's call", async () => {
+    const t = setup({ outbound: {} });
+    const sessionId = await t.newSession();
+    const { callId } = (await t.placeCall(sessionId)).json;
+    const base = t.telephony.placed[0]!.answerUrl.replace(/\/answer$/, "");
+    const token = base.split("/").at(-1)!;
+    await t.vobiz(`${base}/ring`, { CallStatus: "ringing" });
+    expect((await t.getCall(callId)).state).toBe("ringing");
+    const answer = await t.vobiz(`${base}/answer`, { CallStatus: "in-progress" });
+    expect(answer.type).toMatch(/xml/);
+    expect(answer.text).toContain(`<User sipHeaders="kritva_call=${token}">sip:proj_test@sip.api.openai.com:5061;transport=tls</User>`);
+    expect(answer.text).toContain('callerId="+918064264194"');
+    expect((await t.getCall(callId)).state).toBe("answered");
+    const sessionsBefore = (await t.sessions()).length;
+    const res = await t.bridge("rtc_out1", [{ name: "X-VH-kritva_call", value: token }]);
+    expect(res.json).toMatchObject({ ok: true, sessionId });
+    expect((await t.sessions()).length).toBe(sessionsBefore);
+    await until(() => t.link.says().length === 1);
+    expect((await t.getCall(callId)).state).toBe("connected");
+    expect((await t.connections(sessionId))[0]).toEqual({ status: "connected", transport: "phone", reason: null, direction: "outbound" });
+    // They hang up: the realtime side ends, Kritva makes sure Vobiz's leg ends too, and the call completed.
+    t.link.hangUp();
+    await until(async () => (await t.getCall(callId)).state === "ended");
+    expect((await t.getCall(callId)).outcome).toBe("completed");
+    expect(t.telephony.hungUp).toEqual(["vobiz_1"]);
+    expect((await t.connections(sessionId))[1]).toMatchObject({ status: "ended", direction: "outbound" });
+    const op = (await (await t.app.request(`/api/operator/sessions/${sessionId}`)).json()) as any;
+    expect(op.events.map((e: any) => e.title)).toContain("Kritva's call connected");
+  });
+
+  it("not answered: a hang-up before the answer is no_answer, or busy when Vobiz says so", async () => {
+    const t = setup({ outbound: {} });
+    const sessionId = await t.newSession();
+    const first = (await t.placeCall(sessionId)).json.callId;
+    await t.vobiz(t.telephony.placed[0]!.hangupUrl, { HangupCauseName: "NO_ANSWER" });
+    expect(await t.getCall(first)).toMatchObject({ state: "ended", outcome: "no_answer" });
+    const second = (await t.placeCall(sessionId)).json.callId;
+    await t.vobiz(t.telephony.placed[1]!.hangupUrl, { HangupCauseName: "USER_BUSY" });
+    expect((await t.getCall(second)).outcome).toBe("busy");
+    // A late answer callback for an ended call hangs up rather than bridging.
+    expect((await t.vobiz(t.telephony.placed[1]!.answerUrl)).text).toContain("<Hangup/>");
+  });
+
+  it("without the tag, the one call waiting for its bridge is matched; with none waiting, a call routes as inbound", async () => {
+    const t = setup({ outbound: {}, settings: { routes: parseRoutes("*=bed-sale").routes } });
+    const sessionId = await t.newSession();
+    const { callId } = (await t.placeCall(sessionId)).json;
+    await t.vobiz(t.telephony.placed[0]!.answerUrl);
+    expect((await t.bridge("rtc_out2", [])).json.sessionId).toBe(sessionId);
+    await until(async () => (await t.getCall(callId)).state === "connected");
+    const other = await t.ring("rtc_in9");
+    expect(other.json.sessionId).not.toBe(sessionId);
+  });
+
+  it("the seller can cancel a call that is still ringing", async () => {
+    const t = setup({ outbound: {} });
+    const sessionId = await t.newSession();
+    const { callId } = (await t.placeCall(sessionId)).json;
+    const res = await t.app.request(`/api/operator/calls/${callId}/hangup`, { method: "POST" });
+    expect(((await res.json()) as any).outcome).toBe("cancelled");
+    expect(t.telephony.hungUp).toEqual(["vobiz_1"]);
+    expect(((await (await t.app.request(`/api/operator/sessions/${sessionId}/calls`)).json()) as any[])).toHaveLength(1);
+  });
+
+  it("the setup view shows Kritva's number and the masked allowlist", async () => {
+    const t = setup({ outbound: {} });
+    const status = (await (await t.app.request("/api/operator/phone")).json()) as any;
+    expect(status.outbound).toEqual({ callerId: "+918064264194", allow: ["91******5678"] });
   });
 });

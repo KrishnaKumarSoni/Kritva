@@ -21,8 +21,10 @@ import type { ConfirmedMandate, MandateLibrary, NegotiationEngine, NegotiationRe
 import type { ListingConfig } from "../main-helpers.ts";
 import { OpenAIRealtimeConnector, realtimeSession, RealtimeCallError, type RealtimeCallControl, type RealtimeConnector, type RealtimeSettings } from "../realtime-voice.ts";
 import { resolveListing } from "../voice-routes.ts";
-import { phoneSettingsFromEnv, sipUri, type PhoneSettings, type PhoneTarget } from "./config.ts";
-import { PhoneCall } from "./phone-call.ts";
+import { outboundFromEnv, phoneSettingsFromEnv, sipUri, type PhoneSettings, type PhoneTarget } from "./config.ts";
+import { OutboundDialer, type OutboundSettings } from "./outbound.ts";
+import { PhoneCall, type EndReason } from "./phone-call.ts";
+import { VobizTelephony, type OutboundTelephony } from "./vobiz.ts";
 import { callerNumber, maskNumber, routeFor, type SipHeader } from "./sip-headers.ts";
 import { verifyWebhook, WebhookSignatureError } from "./webhook-signature.ts";
 
@@ -48,6 +50,8 @@ export interface PhoneDeps {
   acceptBackoffMs?: number[];
   /** Hang up live calls when the process is stopped or restarted (the running server sets it; tests do not). */
   hangUpOnExit?: boolean;
+  /** Outbound calls through Vobiz (outbound.ts). Off when absent. */
+  outbound?: { telephony: OutboundTelephony; settings: OutboundSettings } | null;
 }
 
 /**
@@ -73,12 +77,15 @@ type Resolved = { ok: true; mandate: ConfirmedMandate; source: { mandateId: stri
 export interface PhoneHandle {
   calls: Map<string, PhoneCall>;
   endAll(): Promise<void>;
+  /** Places outbound calls, or null when outbound calling is off. */
+  outbound: OutboundDialer | null;
 }
 
 export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
   const { record, engine, settings } = deps;
   const log = (entry: Record<string, unknown>) => deps.log?.(entry);
   const calls = new Map<string, PhoneCall>();
+  const dialer = deps.outbound ? new OutboundDialer({ engine, telephony: deps.outbound.telephony, settings: deps.outbound.settings, log }) : null;
   /** Webhooks being handled, by call ID: a retry while one is in flight waits for the same result. */
   const inFlight = new Map<string, Promise<{ status: 200 | 500; body: Record<string, unknown> }>>();
   /** Calls already answered or declined (kept an hour), so a retried webhook does nothing twice. */
@@ -128,8 +135,9 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
   };
 
   /** After the accept: join the call and run it. A call that cannot be joined is hung up at once. */
-  const connect = async (callId: string, sessionId: string, sessionUpdate: Record<string, unknown> | null) => {
+  const connect = async (callId: string, sessionId: string, sessionUpdate: Record<string, unknown> | null, outboundCallId: string | null) => {
     connecting += 1;
+    const direction = outboundCallId ? "outbound" : "inbound";
     try {
       let link;
       try {
@@ -137,12 +145,18 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
       } catch (error) {
         log({ kind: "phone_attach_failed", callId, sessionId, error: String(error) });
         await deps.connector.hangup(callId).catch(() => undefined);
-        await record.append(sessionId, { id: `voice_end_${callId.replace(/[^\w-]/g, "")}`.slice(0, 128), type: "voice_connection", channel: "voice", payload: { status: "ended", transport: "phone", reason: "error" } }, { kind: "system", partyId: null });
+        await record.append(sessionId, { id: `voice_end_${callId.replace(/[^\w-]/g, "")}`.slice(0, 128), type: "voice_connection", channel: "voice", payload: { status: "ended", transport: "phone", reason: "error", direction } }, { kind: "system", partyId: null });
+        if (outboundCallId) dialer?.realtimeEnded(outboundCallId, "error");
         return;
       }
       const afterSeq = (await record.context(sessionId)).events.at(-1)?.seq ?? 0;
-      const call = new PhoneCall({ engine, record, sessionId, callId, link, control: deps.connector, settings, afterSeq, log, pollMs: deps.pollMs, sessionUpdate, trace: settings.trace, onEnded: () => calls.delete(callId) });
+      const onEnded = (_: PhoneCall, reason: EndReason) => {
+        calls.delete(callId);
+        if (outboundCallId) dialer?.realtimeEnded(outboundCallId, reason);
+      };
+      const call = new PhoneCall({ engine, record, sessionId, callId, link, control: deps.connector, settings, afterSeq, log, pollMs: deps.pollMs, sessionUpdate, trace: settings.trace, direction, onEnded });
       calls.set(callId, call);
+      if (outboundCallId) dialer?.connected(outboundCallId, callId);
       await call.start().catch(async (error) => {
         log({ kind: "phone_start_failed", callId, sessionId, error: String(error) });
         await call.end("error");
@@ -152,11 +166,36 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
     }
   };
 
+  /** Answers a call into a session that already exists, then joins it. */
+  const answerInto = async (callId: string, sessionId: string, outboundCallId: string | null, target: unknown): Promise<{ status: 200 | 500; body: Record<string, unknown> }> => {
+    const briefing = await engine.voiceBriefing(sessionId);
+    if (!briefing || briefing.status !== "active") return reject(callId, 480, "not_active");
+    const plan = acceptPlan(realtimeSession(deps.realtime, briefing, { noiseReduction: settings.noiseReduction }), settings.acceptMode);
+    const accepted = await acceptWithRetry(callId, plan.accept);
+    if (!accepted.ok) {
+      log({ kind: accepted.gone ? "phone_gone" : "phone_accept_failed", callId, sessionId, error: accepted.error });
+      // If an accept went through unseen (a timeout), hanging up keeps the caller from an unsupervised voice.
+      await deps.connector.hangup(callId).catch(() => undefined);
+      if (outboundCallId) dialer?.realtimeEnded(outboundCallId, "error");
+      // Acknowledged either way: a retried webhook would come after the caller stopped waiting.
+      return { status: 200, body: { ok: false, error: accepted.gone ? "call_gone" : "accept_failed" } };
+    }
+    log({ kind: "phone_accepted", callId, sessionId, target, outboundCallId, attempts: accepted.attempts, acceptMode: settings.acceptMode });
+    void connect(callId, sessionId, plan.update, outboundCallId);
+    return { status: 200, body: { ok: true, sessionId } };
+  };
+
   const incoming = async (callId: string, headers: SipHeader[], mediaSecurity: unknown): Promise<{ status: 200 | 500; body: Record<string, unknown> }> => {
+    if (settings.trace) log({ kind: "phone_trace_headers", callId, headers: maskedHeaders(headers) });
+    // Kritva's own outbound call, bridged to OpenAI by Vobiz once they answered: join its session.
+    const outbound = dialer?.match(headers) ?? null;
+    if (outbound) {
+      log({ kind: "phone_outbound_bridged", callId, outboundCallId: outbound.callId, sessionId: outbound.sessionId, matchedBy: outbound.how, mediaSecurity: mediaSecurity ?? null, headerNames: headers.map((h) => h.name) });
+      return answerInto(callId, outbound.sessionId, outbound.callId, { kind: "outbound" });
+    }
     const { route, dialled } = routeFor(headers, settings.routes, settings.countryCode);
     // Header names (not values) show which headers the provider sends; the caller's number is masked.
     log({ kind: "phone_incoming", callId, dialled, caller: maskNumber(callerNumber(headers, settings.countryCode)), mediaSecurity: mediaSecurity ?? null, headerNames: headers.map((h) => h.name), route: route ? { number: route.number, target: route.target } : null });
-    if (settings.trace) log({ kind: "phone_trace_headers", callId, headers: maskedHeaders(headers) });
     if (!route) return reject(callId, 404, "no_route");
     if (calls.size + connecting >= settings.maxCalls) return reject(callId, 486, "busy");
     const target = resolve(route.target);
@@ -169,21 +208,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
       sessionId = started.session.id;
       sessions.set(callId, sessionId);
     }
-    const briefing = await engine.voiceBriefing(sessionId);
-    if (!briefing || briefing.status !== "active") return reject(callId, 480, "not_active");
-
-    const plan = acceptPlan(realtimeSession(deps.realtime, briefing, { noiseReduction: settings.noiseReduction }), settings.acceptMode);
-    const accepted = await acceptWithRetry(callId, plan.accept);
-    if (!accepted.ok) {
-      log({ kind: accepted.gone ? "phone_gone" : "phone_accept_failed", callId, sessionId, error: accepted.error });
-      // If an accept went through unseen (a timeout), hanging up keeps the caller from an unsupervised voice.
-      await deps.connector.hangup(callId).catch(() => undefined);
-      // Acknowledged either way: a retried webhook would come after the caller stopped waiting.
-      return { status: 200, body: { ok: false, error: accepted.gone ? "call_gone" : "accept_failed" } };
-    }
-    log({ kind: "phone_accepted", callId, sessionId, target: route.target, attempts: accepted.attempts, acceptMode: settings.acceptMode });
-    void connect(callId, sessionId, plan.update);
-    return { status: 200, body: { ok: true, sessionId } };
+    return answerInto(callId, sessionId, null, route.target);
   };
 
   app.post(WEBHOOK_PATH, async (c) => {
@@ -223,6 +248,48 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
     return c.json(result.body, result.status);
   });
 
+  if (dialer) {
+    // ---------- Vobiz callbacks for outbound calls ----------
+    // Public routes: the per-call token in the path is unguessable (18 random bytes) and is the
+    // authorisation. Vobiz posts form fields or JSON; both are read.
+    const fields = async (c: { req: { header(name: string): string | undefined; parseBody(): Promise<Record<string, unknown>>; json(): Promise<unknown> } }) => {
+      try {
+        return (c.req.header("content-type") ?? "").includes("json") ? ((await c.req.json()) as Record<string, unknown>) : await c.req.parseBody();
+      } catch {
+        return {} as Record<string, unknown>;
+      }
+    };
+    const hangupXml = `<?xml version="1.0" encoding="UTF-8"?>\n<Response><Hangup/></Response>`;
+    app.post("/api/phone/vobiz/:token/answer", (c) => {
+      const xml = dialer.answered(c.req.param("token"));
+      return c.body(xml ?? hangupXml, 200, { "Content-Type": "application/xml" });
+    });
+    app.post("/api/phone/vobiz/:token/ring", (c) => c.json({ ok: dialer.ringing(c.req.param("token")) }));
+    app.post("/api/phone/vobiz/:token/hangup", async (c) => {
+      const f = await fields(c);
+      const cause = [f.HangupCauseName, f.HangupCause, f.hangup_cause_name, f.DialHangupCause, f.CallStatus].find((v): v is string => typeof v === "string" && v.length > 0) ?? null;
+      return c.json({ ok: dialer.hungUp(c.req.param("token"), cause) });
+    });
+
+    // ---------- Operator: place and follow outbound calls ----------
+    app.post("/api/operator/sessions/:id/calls", async (c) => {
+      const body = await c.req.json<{ to?: string; clientRequestId?: string }>().catch(() => ({}) as { to?: string; clientRequestId?: string });
+      const clientRequestId = typeof body.clientRequestId === "string" && /^[\w-]{8,100}$/.test(body.clientRequestId) ? body.clientRequestId : null;
+      const result = await dialer.call({ sessionId: c.req.param("id"), to: String(body.to ?? ""), clientRequestId });
+      if (!result.ok) return c.json({ error: result.code, message: result.message }, result.code === "invalid_number" ? 400 : result.code === "provider_error" ? 502 : 409);
+      return c.json(result.call, 202);
+    });
+    app.get("/api/operator/sessions/:id/calls", (c) => c.json(dialer.listForSession(c.req.param("id"))));
+    app.get("/api/operator/calls/:callId", (c) => {
+      const call = dialer.get(c.req.param("callId"));
+      return call ? c.json(call) : c.json({ error: "not_found" }, 404);
+    });
+    app.post("/api/operator/calls/:callId/hangup", async (c) => {
+      const ended = await dialer.hangup(c.req.param("callId"));
+      return ended ? c.json(dialer.get(c.req.param("callId"))) : c.json({ error: "not_active", message: "That call isn't in progress." }, 409);
+    });
+  }
+
   /** For the console and for checking the setup: what the provider and OpenAI need, and calls in progress. No secrets. */
   app.get("/api/operator/phone", (c) =>
     c.json({
@@ -231,6 +298,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
       webhookPath: WEBHOOK_PATH,
       routes: settings.routes.map((r) => ({ number: r.number === "*" ? "*" : `+${r.number}`, target: r.target })),
       limits: { idleSeconds: settings.idleMs / 1000, maxMinutes: settings.maxCallMs / 60_000, maxCalls: settings.maxCalls },
+      outbound: dialer ? { callerId: `+${dialer.settings.callerId}`, allow: dialer.settings.allow.map((n) => (n === "*" ? "*" : maskNumber(n))) } : null,
       calls: [...calls.values()].map((call) => ({ callId: call.callId, sessionId: call.sessionId, startedAt: call.startedAt.toISOString() })),
     }),
   );
@@ -251,14 +319,14 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
     process.once("SIGINT", stop);
   }
 
-  return { calls, endAll };
+  return { calls, endAll, outbound: dialer };
 }
 
 /**
  * Phone settings for the running server, or null (with the reason logged) when phone calls are off.
  * Needs OPENAI_API_KEY with realtime voice on, OPENAI_WEBHOOK_SECRET and KRITVA_PHONE_ROUTES.
  */
-export function phoneFromEnv(env: NodeJS.ProcessEnv = process.env, print: (line: string) => void = console.log): { settings: PhoneSettings; connector: RealtimeConnector & RealtimeCallControl; log: (entry: Record<string, unknown>) => void; hangUpOnExit: boolean } | null {
+export function phoneFromEnv(env: NodeJS.ProcessEnv = process.env, print: (line: string) => void = console.log): { settings: PhoneSettings; connector: RealtimeConnector & RealtimeCallControl; log: (entry: Record<string, unknown>) => void; hangUpOnExit: boolean; outbound: { telephony: OutboundTelephony; settings: OutboundSettings } | null } | null {
   const apiKey = env.OPENAI_API_KEY;
   const { settings, problems } = phoneSettingsFromEnv(env);
   if (!apiKey || (env.KRITVA_VOICE_MODE ?? "realtime") !== "realtime") {
@@ -284,5 +352,11 @@ export function phoneFromEnv(env: NodeJS.ProcessEnv = process.env, print: (line:
       console.error("[phone] could not write the log file", error);
     }
   };
-  return { settings, connector: new OpenAIRealtimeConnector(apiKey), log, hangUpOnExit: true };
+  // Outbound calls (Kritva dials counterparties) need Vobiz credentials, Kritva's number and a public URL.
+  const out = outboundFromEnv(env, settings);
+  const allowed = out.config ? (out.config.allow.includes("*") ? "any number" : `${out.config.allow.length} number(s)`) : "";
+  if (out.config) print(`Outbound calls: on, from +${out.config.callerId}. ${out.config.allow.length ? `Allowed: ${allowed}.` : "No number is allowed yet (KRITVA_PHONE_OUTBOUND_ALLOW)."}`);
+  else if (env.KRITVA_PHONE_CALLER_ID || env.KRITVA_PUBLIC_URL) print(`Outbound calls: off. ${out.problems.join(" ")}`);
+  const outbound = out.config ? { telephony: new VobizTelephony(out.config.authId, out.config.authToken), settings: out.config } : null;
+  return { settings, connector: new OpenAIRealtimeConnector(apiKey), log, hangUpOnExit: true, outbound };
 }

@@ -124,3 +124,57 @@ export function phoneSettingsFromEnv(env: NodeJS.ProcessEnv = process.env): { se
 export function sipUri(settings: Pick<PhoneSettings, "projectId" | "sipHost">): string {
   return `sip:${settings.projectId ?? "proj_YOUR_PROJECT_ID"}@${settings.sipHost}:5061`;
 }
+
+/** Outbound calling settings (Kritva dials counterparties through Vobiz). See outbound.ts. */
+export interface OutboundConfig {
+  authId: string;
+  authToken: string;
+  /** Kritva's Vobiz number, digits with country code. */
+  callerId: string;
+  publicUrl: string;
+  bridgeUri: string;
+  /** Numbers Kritva may call (digits with country code), or ["*"]. Empty until calling is approved. */
+  allow: string[];
+  maxCalls: number;
+  timeLimitSeconds: number;
+  countryCode: string;
+}
+
+/**
+ * Outbound calls are on when phone calls are on and VOBIZ_AUTH_ID, VOBIZ_AUTH_TOKEN,
+ * KRITVA_PHONE_CALLER_ID (Kritva's Vobiz number), KRITVA_PUBLIC_URL (https, reachable by Vobiz)
+ * and OPENAI_PROJECT_ID are set. KRITVA_PHONE_OUTBOUND_ALLOW lists the numbers that may be called
+ * ("*" for any); without it nothing can be dialled, which is the safe default.
+ */
+export function outboundFromEnv(env: NodeJS.ProcessEnv, phone: PhoneSettings): { config: OutboundConfig | null; problems: string[] } {
+  const problems: string[] = [];
+  const need = (name: string) => {
+    const value = env[name]?.trim();
+    if (!value) problems.push(`${name} is not set.`);
+    return value ?? "";
+  };
+  const authId = need("VOBIZ_AUTH_ID");
+  const authToken = need("VOBIZ_AUTH_TOKEN");
+  const callerRaw = need("KRITVA_PHONE_CALLER_ID");
+  const publicUrl = need("KRITVA_PUBLIC_URL");
+  if (!phone.projectId) problems.push("OPENAI_PROJECT_ID is not set.");
+  if (publicUrl && !/^https:\/\//.test(publicUrl)) problems.push("KRITVA_PUBLIC_URL must start with https://.");
+  const callerId = callerRaw ? normalizeNumber(callerRaw, phone.countryCode) : "";
+  if (callerRaw && !/^\d{10,15}$/.test(callerId)) problems.push("KRITVA_PHONE_CALLER_ID is not a phone number.");
+  const allow = (env.KRITVA_PHONE_OUTBOUND_ALLOW ?? "").split(",").map((n) => n.trim()).filter(Boolean).map((n) => (n === "*" ? "*" : normalizeNumber(n, phone.countryCode)));
+  if (problems.length) return { config: null, problems };
+  return {
+    config: {
+      authId,
+      authToken,
+      callerId,
+      publicUrl,
+      bridgeUri: `${sipUri(phone)};transport=tls`,
+      allow,
+      maxCalls: phone.maxCalls,
+      timeLimitSeconds: Math.round(phone.maxCallMs / 1000),
+      countryCode: phone.countryCode,
+    },
+    problems,
+  };
+}
