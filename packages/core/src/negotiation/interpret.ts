@@ -193,9 +193,27 @@ export function readInterpretation(input: InterpretInput, json: unknown): Interp
   if (input.fulfillment) bindFulfillment(input.view, result, input.message, input.fulfillment);
   bindEarlierAmount(input, result);
   bindConfirmedAmount(input, result);
+  keepOwnCommitments(result);
   // "Yes please" before any amount was put to them answers an offer of details, not the terms.
   if (result.acceptsStatedTerms && !input.conversation.some((m) => m.speaker === "agent" && findAmounts(m.text).length > 0)) result.acceptsStatedTerms = false;
   return result;
+}
+
+/** Words that make a first-person clause uncertain, someone else's decision, or their own judgement still to come. */
+const NOT_THEIRS_TO_GIVE = /\b(?:can|could|can't|cannot|manage|able|arrange|get|find|afford|try|hopefully|possible|need|have to|has to|if only|wife|husband|partner|boss|family|parents|friend|approv\w*|agree\w*|allow\w*|like|see|check|inspect|test|decide|think|sure|confirm\w*|ok(?:ay)?)\b/;
+
+/**
+ * "I can do <amount> if I come for it today": an offer that depends only on something the counterparty will
+ * do themselves is a commitment, not a condition to settle. A dependency on uncertainty ("if I can
+ * arrange transport"), on someone else ("if my wife agrees") or on their own judgement ("if I see it
+ * first") stays a condition.
+ */
+function keepOwnCommitments(interpretation: Interpretation): void {
+  interpretation.offerConditions = interpretation.offerConditions?.filter((condition) => {
+    const clause = normalizeForQuoteMatch(condition).replace(/^(?:only )?(?:if|as long as|provided(?: that)?|when)\s+/, "");
+    const own = /^(?:i|we)(?:'ll| will| would)?\s+\w+/.test(clause);
+    return !(own && !NOT_THEIRS_TO_GIVE.test(clause) && !/\b(?:not|don't|do not|won't|never|unless)\b/.test(clause));
+  });
 }
 
 /**

@@ -996,5 +996,20 @@ describe("A budget below the price keeps the negotiation moving (reported chat, 
     expect((await events()).filter((e) => e.type === "counterparty_noted" && (e.payload as { sourceMessageId: string }).sourceMessageId === "msg_cut1")).toHaveLength(1);
     expect((await events()).filter((e) => e.type === "message" && (e.payload as { direction: string }).direction === "inbound")).toHaveLength(1);
   });
+
+  it.each([
+    ["I can do 18000 if I pick it up today.", "if I pick it up today", false],
+    ["₹18,500 if we collect it this weekend.", "if we collect it this weekend", false],
+    ["₹18,500 if I pay cash.", "if I pay cash", false],
+    ["₹18,500 if I can arrange a truck.", "if I can arrange a truck", true],
+    ["₹18,500 if my wife agrees.", "if my wife agrees", true],
+    ["₹18,500 if I see it first.", "if I see it first", true],
+  ])('"%s": a condition only when it is not simply their own commitment', async (text, condition, stays) => {
+    const { say } = await setup(listingOnlyDeliveryMandate(18_000));
+    const turn = await say(text, offer(18_500, { offer_conditions: [condition] }));
+    const decision = turn.events.findLast((e) => e.type === "decision")?.payload as { interpretation?: unknown; action?: string };
+    const extracted = turn.events.find((e) => e.type === "offer_extracted")?.payload as { conditions: string[] };
+    expect(extracted.conditions.length > 0, String(decision?.action)).toBe(stays);
+  });
 });
 
