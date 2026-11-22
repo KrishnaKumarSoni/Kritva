@@ -538,3 +538,42 @@ describe("Realtime voice: one greeting", () => {
     for (const sentence of ["Hello, what's the price?", "Okay, tell me in English", "हेलो, कितने का है?"]) expect(isGreetingOnly(sentence), sentence).toBe(false);
   });
 });
+
+describe("Realtime voice: wait fillers stay fillers", () => {
+  const cancels = (link: FakeLink) => link.sent.filter((e) => e.type === "response.cancel").map((e) => e.response_id);
+
+  it("a filler stops after its first sentence, so it can never run on into an offer", async () => {
+    const t = await setup();
+    const call = new RealtimeCall({ engine: t.engine, record: t.record, sessionId: t.sessionId, link: t.link, afterSeq: 0, waitSensor: { quietMs: 80, sampleMs: 20 } });
+    t.link.emit({ type: "response.created", response: { id: "resp_fill", metadata: { kritva: "wait", situation: "working" } } });
+    for (const delta of ["Still ", "with ", "you."]) t.link.emit({ type: "response.output_audio_transcript.delta", response_id: "resp_fill", delta });
+    await until(() => cancels(t.link).length === 1);
+    // What follows the first sentence is never asked for again, and the audio already said is not cleared.
+    t.link.emit({ type: "response.output_audio_transcript.delta", response_id: "resp_fill", delta: " I can do a bit better." });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(cancels(t.link)).toEqual(["resp_fill"]);
+    expect(t.link.sent.some((e) => e.type === "output_audio_buffer.clear")).toBe(false);
+    call.close();
+  });
+
+  it("a filler with no sentence end stops after eight words", async () => {
+    const t = await setup();
+    const call = new RealtimeCall({ engine: t.engine, record: t.record, sessionId: t.sessionId, link: t.link, afterSeq: 0, waitSensor: { quietMs: 80, sampleMs: 20 } });
+    t.link.emit({ type: "response.created", response: { id: "resp_long", metadata: { kritva: "wait", situation: "working" } } });
+    for (const word of "still with you and if that figure does not work".split(" ")) t.link.emit({ type: "response.output_audio_transcript.delta", response_id: "resp_long", delta: `${word} ` });
+    await until(() => cancels(t.link).length === 1);
+    expect(cancels(t.link)).toEqual(["resp_long"]);
+    call.close();
+  });
+
+  it("the goodbye after the deal and the engine's own replies are never trimmed", async () => {
+    const t = await setup();
+    const call = new RealtimeCall({ engine: t.engine, record: t.record, sessionId: t.sessionId, link: t.link, afterSeq: 0, waitSensor: { quietMs: 80, sampleMs: 20 } });
+    t.link.emit({ type: "response.created", response: { id: "resp_bye", metadata: { kritva: "wait", situation: "over" } } });
+    t.link.emit({ type: "response.created", response: { id: "resp_say", metadata: { kritva: "say", message_id: "m1" } } });
+    for (const id of ["resp_bye", "resp_say"]) for (const delta of ["Thanks. ", "Bye for now, ", "take care."]) t.link.emit({ type: "response.output_audio_transcript.delta", response_id: id, delta });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(cancels(t.link)).toEqual([]);
+    call.close();
+  });
+});

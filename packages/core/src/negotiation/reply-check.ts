@@ -20,7 +20,7 @@ import type { Plan } from "./policy.ts";
 
 export interface ReplyViolation {
   /** "style" is a conversation-quality note from the draft review, never a limit. */
-  rule: "private_amount" | "unplanned_amount" | "crosses_limit" | "missing_offer" | "missing_condition" | "false_commitment" | "private_text" | "internal_term" | "action_mismatch" | "invented_competition" | "style";
+  rule: "private_amount" | "unplanned_amount" | "crosses_limit" | "missing_offer" | "missing_condition" | "false_commitment" | "private_text" | "internal_term" | "action_mismatch" | "invented_competition" | "wrong_script" | "style";
   detail: string;
 }
 

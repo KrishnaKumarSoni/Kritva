@@ -430,6 +430,8 @@ export class RealtimeCall {
   #minSeq = 0;
   #theySpeaking = false;
   #cutPending = false;
+  /** The wait filler being spoken and its words so far: stopped after one short sentence. */
+  #filler: { id: string; words: string } | null = null;
   #suppressAuto = false;
   /** The opening line is being written: the model's own answer to their "Hello" would be a second greeting. */
   #greetingPending = false;
@@ -621,6 +623,21 @@ export class RealtimeCall {
     }
   }
 
+  /**
+   * A wait filler is a few words ("Hmm, okay, so..."), never a turn: once its first sentence ends, or it
+   * passes eight words, the rest is not generated. What is already said plays to its end; nothing more
+   * can follow it, so a filler can never run on into an offer or a promise.
+   */
+  #trimFiller(delta: string) {
+    const filler = this.#filler!;
+    filler.words += delta;
+    const sentenceEnded = /[.?!।…]/.test(filler.words);
+    if (!sentenceEnded && filler.words.trim().split(/\s+/).length <= 8) return;
+    this.#filler = null;
+    this.#d.link.send({ type: "response.cancel", response_id: filler.id });
+    this.#log({ kind: "filler_trimmed", text: filler.words.slice(0, 120) });
+  }
+
   #cut() {
     if (!this.#cutPending) return;
     this.#cutPending = false;
@@ -657,6 +674,7 @@ export class RealtimeCall {
       }
       case "response.created":
         this.#active = true;
+        if (e.response?.metadata?.kritva === "wait" && e.response?.metadata?.situation === "working" && typeof e.response?.id === "string") this.#filler = { id: e.response.id, words: "" };
         // Breaking in after they stopped talking: the model's own answer to them is cancelled.
         if (this.#suppressAuto && !e.response?.metadata?.kritva) {
           this.#suppressAuto = false;
@@ -670,6 +688,7 @@ export class RealtimeCall {
       case "response.output_audio_transcript.delta":
       case "response.audio_transcript.delta":
         if (this.#cutPending && /[.?!।](["')\]]*)\s*$/.test(String(e.delta ?? ""))) this.#cut();
+        if (this.#filler && e.response_id === this.#filler.id) this.#trimFiller(String(e.delta ?? ""));
         return;
       case "input_audio_buffer.speech_started":
         this.#theySpeaking = true;
@@ -705,6 +724,7 @@ export class RealtimeCall {
         this.#active = false;
         this.#pendingSay = null;
         this.#cutPending = false;
+        if (this.#filler?.id === e.response?.id) this.#filler = null;
         // Only a response that said something counts as sound; staying quiet leaves the silence running.
         const output: Array<Record<string, any>> = Array.isArray(e.response?.output) ? e.response.output : [];
         if (output.some((o) => Array.isArray(o.content) && o.content.length > 0)) this.#lastSoundAt = Date.now();

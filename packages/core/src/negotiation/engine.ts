@@ -30,6 +30,17 @@ import { MINIMAL_GUIDANCE, type StrategyGuidance } from "../strategy/guidance.ts
 import { projectAllowance } from "../strategy/allowance.ts";
 
 /** Words that ask them to wait or say Kritva is checking right now, in the languages calls use. */
+/** The Indian scripts a reply can be written in, and the one each language uses (English and others use none). */
+const INDIC_SCRIPTS: Record<string, RegExp> = { Devanagari: /\p{Script=Devanagari}/u, Tamil: /\p{Script=Tamil}/u, Kannada: /\p{Script=Kannada}/u, Telugu: /\p{Script=Telugu}/u, Malayalam: /\p{Script=Malayalam}/u, Bengali: /\p{Script=Bengali}/u, Gujarati: /\p{Script=Gujarati}/u, Gurmukhi: /\p{Script=Gurmukhi}/u, Odia: /\p{Script=Oriya}/u };
+const LANGUAGE_SCRIPT: Record<string, string> = { Hindi: "Devanagari", Marathi: "Devanagari", Nepali: "Devanagari", Tamil: "Tamil", Kannada: "Kannada", Telugu: "Telugu", Malayalam: "Malayalam", Bengali: "Bengali", Gujarati: "Gujarati", Punjabi: "Gurmukhi", Odia: "Odia" };
+
+/** An Indian script in the reply that its language does not use ("அரே" in an English or Hindi reply), or null. */
+export function strayScript(text: string, language: string | null): string | null {
+  if (!language) return null;
+  const own = LANGUAGE_SCRIPT[language] ?? null;
+  return Object.entries(INDIC_SCRIPTS).find(([name, pattern]) => name !== own && pattern.test(text))?.[0] ?? null;
+}
+
 const ASKS_TO_WAIT = /\b(?:one|a|just a) (?:sec|second|moment|minute)\b|\bhold on\b|\bgive me a (?:sec|second|moment)\b|\bI(?:'m| am) (?:still )?checking\b|एक\s*(?:पल|सेकंड|सेकेंड|second|sec|मिनट)|रुकिए|(?:check|चेक|confirm|कन्फर्म) कर रही हूँ|ஒரு (?:நிமிஷம்|நொடி)/iu;
 import { clean, introduction, principalLabel, speakTerms, templateReply } from "./templates.ts";
 
@@ -827,6 +838,10 @@ export class NegotiationEngine {
     // A reply is the answer, said after Kritva has worked it out: it never asks them to wait or says it
     // is checking right now (the person represented decides after the conversation).
     if (ASKS_TO_WAIT.test(draft)) styleRule("Never ask them to wait or say you are checking right now. Say what happens next instead (for example that you'll check and come back to them).");
+    // One language and its own script per reply: a word in another script (Tamil in an English reply) is wrong.
+    const replyLanguage = typeof d.brief.reply_language === "string" ? d.brief.reply_language : null;
+    const stray = strayScript(draft, replyLanguage);
+    if (stray) return fail(draft, [{ rule: "wrong_script", detail: `The reply must be in ${replyLanguage} only, in its own script, but it has ${stray} script in it. Write every word in ${replyLanguage}.` }], false);
     // While paused or ended, nothing that negotiates reaches them.
     if ((plan.notice === "paused" || plan.notice === "ended") && (findAmounts(draft).length > 0 || draft.includes("?"))) {
       return fail(draft, [{ rule: "action_mismatch", detail: `The conversation is ${plan.notice}: mention no amount, offer or question.` }]);
