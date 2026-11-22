@@ -396,8 +396,8 @@ function setup(options: { library?: boolean; settings?: Partial<PhoneSettings>; 
   const telephony = new FakeTelephony();
   const liveCalls = new FakeLiveCalls();
   let injected: OutboundDialer | null = null;
-  const outboundSettings: OutboundSettings = { callerId: "918064264194", publicUrl: "https://kritva.example.test", bridgeUri: "sip:proj_test@sip.api.openai.com:5061;transport=tls", allow: [normalizeNumber(COUNTERPARTY)], maxCalls: 5, timeLimitSeconds: 900, countryCode: "91", ...options.outbound };
-  const settings: PhoneSettings = { webhookSecret: SECRET, projectId: "proj_test", sipHost: GLOBAL_SIP_HOST, routes: parseRoutes(`${NUMBER}=bed-sale`).routes, countryCode: "91", noiseReduction: "near_field", idleMs: 60_000, maxCallMs: 600_000, maxCalls: 5, acceptMode: "minimal", trace: false, ...options.settings };
+  const outboundSettings: OutboundSettings = { callerId: "918064264194", publicUrl: "https://kritva.example.test", bridgeUri: "sip:proj_test@sip.api.openai.com:5061;transport=tls", bridge: "sip", allow: [normalizeNumber(COUNTERPARTY)], maxCalls: 5, timeLimitSeconds: 900, countryCode: "91", ...options.outbound };
+  const settings: PhoneSettings = { webhookSecret: SECRET, projectId: "proj_test", sipHost: GLOBAL_SIP_HOST, routes: parseRoutes(`${NUMBER}=bed-sale`).routes, countryCode: "91", noiseReduction: "near_field", idleMs: 60_000, maxCallMs: 600_000, maxCalls: 5, acceptMode: "minimal", trace: false, outboundCodec: "pcmu", ...options.settings };
   const logs: Array<Record<string, unknown>> = [];
   /** A fake Vobiz: each Make Call request is kept; retries run at once. */
   const followUpVobiz = { calls: [] as Array<{ url: string; body: Record<string, any> }>, fail: false };
@@ -778,6 +778,44 @@ describe("Phone: outbound calls (Kritva dials the counterparty)", () => {
     expect((await t.connections(sessionId))[1]).toMatchObject({ status: "ended", direction: "outbound" });
     const op = (await (await t.app.request(`/api/operator/sessions/${sessionId}`)).json()) as any;
     expect(op.events.map((e: any) => e.title)).toContain("Kritva's call connected");
+  });
+
+  it("own-number route (the default): the answer XML forwards the call to Kritva's number, so it arrives through the inbound trunk", async () => {
+    const t = setup({ outbound: { bridge: "number" } });
+    const sessionId = await t.newSession();
+    const { callId } = (await t.placeCall(sessionId)).json;
+    const answer = await t.vobiz(t.telephony.placed[0]!.answerUrl);
+    expect(answer.text).toContain("<Number>+918064264194</Number>");
+    expect(answer.text).not.toContain("sip:");
+    // The forwarded call arrives with Kritva's number as the caller and no tag: it is the one answered call waiting.
+    const res = await t.bridge("rtc_loop1", []);
+    expect(res.json.sessionId).toBe(sessionId);
+    await until(async () => (await t.getCall(callId)).state === "connected");
+    expect(t.logs.find((l) => l.kind === "phone_outbound_bridged")).toMatchObject({ matchedBy: "only_waiting", from: "91******4194" });
+    // Kritva's own calls declare G.711 mu-law to OpenAI; inbound calls declare nothing.
+    const update = t.link.sent.find((e) => e.type === "session.update")!.session;
+    expect(update.audio.input.format).toEqual({ type: "audio/pcmu" });
+    expect(update.audio.output.format).toEqual({ type: "audio/pcmu" });
+    expect(update.audio.output.voice).toBe("marin");
+  });
+
+  it("two counterparties answering together: the second hand-off waits for the first, and each reaches its own negotiation", async () => {
+    const t = setup({ outbound: { bridge: "number", allow: ["*"] } });
+    const [s1, s2] = [await t.newSession(), await t.newSession()];
+    const a = (await t.placeCall(s1, "+919800000001")).json.callId;
+    const b = (await t.placeCall(s2, "+919800000002")).json.callId;
+    const first = t.vobiz(t.telephony.placed[0]!.answerUrl);
+    const second = t.vobiz(t.telephony.placed[1]!.answerUrl);
+    await first;
+    await new Promise((r) => setTimeout(r, 300));
+    // The second answer is still waiting: only the first call is handing off.
+    expect((await t.getCall(a)).state).toBe("answered");
+    expect((await t.getCall(b)).state).not.toBe("answered");
+    expect((await t.bridge("rtc_par1", [])).json.sessionId).toBe(s1);
+    await second;
+    expect((await t.getCall(b)).state).toBe("answered");
+    expect((await t.bridge("rtc_par2", [])).json.sessionId).toBe(s2);
+    await until(async () => (await t.getCall(a)).state === "connected" && (await t.getCall(b)).state === "connected");
   });
 
   it("when Vobiz reports the phone leg hung up, Kritva ends its side of the bridged call too", async () => {

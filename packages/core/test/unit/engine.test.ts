@@ -95,6 +95,51 @@ describe("outgoing reply check (code, not prompt)", () => {
     expect(checkClaims("Sorry, I can’t go any lower.", checked).map((x) => x.rule)).toContain("limit_identified");
   });
 
+  it("reads Hindi and Tamil declines like English ones, and still blocks putting their low figure forward", () => {
+    const counter = ctx(planFor("counter", 19_000), [15_000]);
+    expect(checkReply("₹15,000 के लिए धन्यवाद, लेकिन मैं यह नहीं कर सकता। मैं ₹19,000 कर सकता हूँ।", counter)).toEqual([]);
+    expect(checkReply("₹15,000 க்கு நன்றி, ஆனால் அது முடியாது. நான் ₹19,000 தர முடியும்.", counter)).toEqual([]);
+    expect(checkReply("मैं ₹15,000 कर सकता हूँ।", counter).map((x) => x.rule)).toContain("crosses_limit");
+    // One "no" in another sentence never covers a figure put forward in this one.
+    expect(checkReply("ठीक है, ₹15,000 कर सकता हूँ। डिलीवरी नहीं होगी।", counter).map((x) => x.rule)).toContain("crosses_limit");
+  });
+
+  it("blocks Hindi and Tamil claims of agreement or approval, but not a counter asked as a question", () => {
+    for (const claim of ["बढ़िया, डील पक्की!", "₹19,000 चलेगा, बात पक्की।", "சரி, ஒப்பந்தம் உறுதி.", "कृष्णा ने मंज़ूरी दे दी है।"]) {
+      expect(checkReply(claim, ctx(planFor("counter", 19_000))).map((x) => x.rule), claim).toContain("false_commitment");
+    }
+    expect(checkReply("मैं ₹19,000 कर सकता हूँ। ₹19,000 चलेगा?", ctx(planFor("counter", 19_000))).map((x) => x.rule)).not.toContain("false_commitment");
+  });
+
+  it("splits Hindi sentences at the danda but never splits a decimal", () => {
+    expect(findAmounts("1.5 lakh")).toEqual([150_000]);
+    expect(checkReply("₹15,000 चलेगा। ₹19,000 नहीं।", ctx(planFor("answer", null), [15_000])).map((x) => x.rule)).toContain("false_commitment");
+  });
+
+  it("blocks hints that the price has room, except while putting a new amount to them", () => {
+    const checked = { offerTerms: null, termNames: new Map<string, string>() };
+    for (const hint of ["I can move a little from where it is, but not a lot.", "Krishna could come down a bit.", "There's some room on the price.", "I'm a little flexible on the price.", "मैं थोड़ा कम कर सकता हूँ।", "लेकिन उसी के आसपास बात आगे बढ़ा सकता हूँ।", "கொஞ்சம் குறைக்க முடியும்."]) {
+      expect(checkClaims(hint, checked).map((x) => x.rule), hint).toContain("limit_identified");
+    }
+    expect(checkClaims("I can come down a bit, to ₹19,000.", { ...checked, concession: true }).map((x) => x.rule)).not.toContain("limit_identified");
+    for (const fine of ["Is there any room in your budget?", "If you can move a little, tell me.", "Tell me what works for you, and I'll see what I can do.", "Is that your final price?", "It's the price right now."]) {
+      expect(checkClaims(fine, checked).map((x) => x.rule), fine).not.toContain("limit_identified");
+    }
+    for (const limit of ["इससे कम नहीं हो सकता।", "இதற்கு கீழே முடியாது.", "अभी यही सबसे सही रेट है।", "अभी इसका लास्ट प्राइस ₹20,000 है।", "இதுதான் கடைசி விலை.", "That's my best price.", "₹19,000 is the final price."]) {
+      expect(checkClaims(limit, checked).map((x) => x.rule), limit).toContain("limit_identified");
+    }
+  });
+
+  it("blocks offering to put them through to the person represented, in English, Hindi and Tamil, but not saying it can't", () => {
+    const checked = { offerTerms: null, termNames: new Map<string, string>() };
+    for (const promise of ["I'll put you through to Krishna.", "I can connect you with the owner.", "मालिक से बात कराऊँ कब?", "मैं आपकी बात करवा देता हूँ।", "உங்களை உரிமையாளரிடம் இணைக்கிறேன்."]) {
+      expect(checkClaims(promise, checked).map((x) => x.rule), promise).toContain("promise_outside_terms");
+    }
+    for (const honest of ["I can't put you through, but tell me your offer.", "मैं मालिक से बात नहीं करवा सकता, पर आपका ऑफ़र सुन सकता हूँ।"]) {
+      expect(checkClaims(honest, checked).map((x) => x.rule), honest).not.toContain("promise_outside_terms");
+    }
+  });
+
   it("blocks amounts that are not part of the plan", () => {
     expect(checkReply("How about ₹19,200?", ctx(planFor("counter", 19_500))).map((x) => x.rule)).toEqual(
       expect.arrayContaining(["unplanned_amount", "missing_offer"]),

@@ -70,6 +70,41 @@ describe("A follow-up after the seller decides is not a mismatch", () => {
   });
 });
 
+describe("The planned offer in Hindi or Tamil is not a mismatch", () => {
+  const counter = { move: "counter", notice: null, opening: false, approvalGranted: false, outcome: "in_progress" };
+  it.each(["मैं \u20b918,500 कर सकता हूँ।", "मैं \u20b918,500 पर दे सकता हूँ।", "நான் \u20b918,500 தர முடியும்."])("%s", async (reply) => {
+    const quote = reply.replace(/[।.]$/u, "");
+    const result = await languageCheck(reviewer([{ type: "action_mismatch", quote }]), { ...base, reply, checkedTerms: ["price: \u20b918,500"], action: counter });
+    expect(result.ok && result.concerns).toEqual([]);
+  });
+  it("another amount in Hindi is still a concern", async () => {
+    const reply = "मैं \u20b917,000 कर सकता हूँ।";
+    const result = await languageCheck(reviewer([{ type: "action_mismatch", quote: reply }]), { ...base, reply, checkedTerms: ["price: \u20b918,500"], action: counter });
+    expect(result.ok && result.concerns).toHaveLength(1);
+  });
+});
+
+describe("Prescribed refusals and declines are not disclosures", () => {
+  const flag = (quote: string) => reviewer([{ type: "private_disclosure", quote }]);
+  it("drops a concern about the refusal sentence the brief asks for", async () => {
+    for (const reply of ["I can\u2019t share Asha\u2019s private limit. What would you like to offer?", "Sorry, I can\u2019t share the private limits."]) {
+      const quote = reply.split(/(?<=[.?])\s+/)[0]!;
+      const result = await languageCheck(flag(quote), { ...base, reply });
+      expect(result.ok && result.concerns, reply).toEqual([]);
+    }
+  });
+  it("drops a concern about declining their own figure, and keeps one about any other amount or a hint", async () => {
+    const reply = "I can\u2019t do \u20b917,500. I can do \u20b918,000. Could that work for you?";
+    const theirs = await languageCheck(flag("I can\u2019t do \u20b917,500"), { ...base, reply, counterpartyWords: ["\u20b917,500 is really the most I can do."] });
+    expect(theirs.ok && theirs.concerns).toEqual([]);
+    const notTheirs = await languageCheck(flag("I can\u2019t do \u20b917,500"), { ...base, reply, counterpartyWords: ["Would you take less?"] });
+    expect(notTheirs.ok && notTheirs.concerns).toHaveLength(1);
+    const hint = "I can\u2019t do that, it\u2019s my limit.";
+    const kept = await languageCheck(flag(hint), { ...base, reply: hint, counterpartyWords: ["\u20b917,500?"] });
+    expect(kept.ok && kept.concerns).toHaveLength(1);
+  });
+});
+
 describe("The planned offer is not a mismatch", () => {
   const counter = { move: "counter", notice: null, opening: false, approvalGranted: false, outcome: "in_progress" };
   it("drops a mismatch on a sentence that only puts the checked amount to them", async () => {

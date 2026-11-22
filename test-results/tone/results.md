@@ -75,3 +75,28 @@ After:
 - When two drafts fail a hard limit, the fallback templates (`templates.ts`) are still the old robotic English lines ("I could do ₹18,500.").
 - The writer model (gpt-5.4-mini) still sometimes: says why the price is what it is ("because the bed is one year old"), attributes the offer to Krishna ("Krishna can do"), or holds with "where it sits".
 - No engine support yet for real competing offers or "sold during another call"; the guide uses them only when the brief gives them.
+
+## P0 round: loopholes found after the first commit (2026-11-22)
+
+Fixed in code checks (hard limits only, no wording rules):
+- Hindi and Tamil: decline, thanks, quoting and offering cues, so a Hindi counter ("₹15,000 के लिए धन्यवाद, लेकिन मैं यह नहीं कर सकता।") is no longer blocked and replaced by English fixed wording.
+- The sentence splitter now splits at the Hindi danda (।). Before, a whole Hindi reply was one sentence, so one "नहीं" anywhere excused a figure put forward elsewhere ("₹15,000 चलेगा। ₹19,000 नहीं।").
+- Hindi and Tamil agreement and approval claims ("डील पक्की", "₹X चलेगा", "मंज़ूरी दे दी").
+- Hints of room ("I can move a little", "there's some room", "थोड़ा कम कर सकता", "उसी के आसपास") and "best / last / final price" in English, Hindi and Tamil; a counter may still talk about moving.
+- Offering to put them through to the person represented ("I'll connect you", "मालिक से बात कराऊँ"), which Kritva cannot do.
+- False alarms that forced fallbacks: the prescribed refusal ("I can't share Krishna's private limit"), declining their own figure ("I can't do ₹17,500"), and the planned offer in Hindi or Tamil.
+- The selected question is no longer pasted in English onto a Hindi reply.
+
+Fixed in instructions:
+- The price and offers are Kritva's own; never "Krishna can do", "Krishna is keeping it" (about 40% of blocked drafts).
+- The reply language is decided in code from the script of their message and named in the brief, the same in chat and on a call. An unguided instruction made English chats turn Hindi in one run; with the language named, 8 of 8 English chats stayed English.
+- Before fixed wording is sent, the model says the same checked content once in Kritva's voice and the caller's language, with one open way forward; it must carry the same amounts and pass every check again, otherwise the fixed wording is sent.
+- Eval: a check on every scenario for "noted", limit-sounding holds, room hints, words put in the principal's mouth and reasons for the price; new scenarios `are-you-a-bot` and `hindi-counter`.
+
+| Run | Passed | Without the new slip check | Fixed wording | Safety failures |
+|---|---|---|---|---|
+| Committed design (`agentic-turn`) | 28/35 | 28/35 | 11% | 0 |
+| First tone commit (`tone-final`) | 32/35 | 32/35 | 12% | 0 |
+| P0 (`tone-p0-a`, `tone-p0-b`, `tone-p0-final`) | 33, 31, 31 of 37 | 34, 32, 32 of 37 | 7%, 8%, 5% | 0 |
+
+Still open: the writer model still sometimes misses the way forward after a counter, says "noted", or gives a reason for the price (the slip check now reports these); the engine sometimes reads "Yes please" or "Are you a bot?" as a deal move (policy, not wording); Hindi fixed wording when the reword step also fails.

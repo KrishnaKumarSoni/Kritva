@@ -19,7 +19,7 @@
 import { randomBytes } from "node:crypto";
 import type { NegotiationEngine } from "@kritva/core";
 import { normalizeNumber } from "./config.ts";
-import { maskNumber, type SipHeader } from "./sip-headers.ts";
+import { callerNumber, maskNumber, type SipHeader } from "./sip-headers.ts";
 import { bridgeXml, type OutboundTelephony } from "./vobiz.ts";
 
 export interface OutboundSettings {
@@ -29,6 +29,11 @@ export interface OutboundSettings {
   publicUrl: string;
   /** OpenAI's SIP URI the answered call is bridged to ("sip:proj_...@sip.api.openai.com:5061;transport=tls"). */
   bridgeUri: string;
+  /**
+   * How an answered call reaches OpenAI: "number" through Kritva's own Vobiz number and the inbound
+   * trunk (works), or "sip" straight to the SIP URI (silent with Vobiz today). KRITVA_PHONE_BRIDGE.
+   */
+  bridge: "number" | "sip";
   /** Numbers Kritva may call (digits with country code), or ["*"] for any. Empty: none. */
   allow: string[];
   /** Calls at once (dialling, ringing or connected). */
@@ -86,6 +91,11 @@ const UNANSWERED: Array<[RegExp, OutboundOutcome]> = [
 
 /** A bridged call answered with no OpenAI webhook within this time is treated as failed. */
 const BRIDGE_WAIT_MS = 45_000;
+/**
+ * Hand-offs go one at a time, so the incoming call OpenAI reports is always the one answered call
+ * waiting for its bridge (the "number" route carries no tag). A second answer waits up to this long.
+ */
+const HANDOFF_WAIT_MS = 12_000;
 
 export interface OutboundDeps {
   engine: NegotiationEngine;
@@ -226,9 +236,13 @@ export class OutboundDialer {
   }
 
   /** They answered: the XML that bridges the call to OpenAI, or null for an unknown or finished call. */
-  answered(token: string): string | null {
+  async answered(token: string): Promise<string | null> {
     const call = this.#byToken.get(token);
     if (!call || call.state === "ended") return null;
+    // One hand-off at a time: while another answered call waits for its bridge, this one waits too
+    // (a couple of seconds at most, normally), so the next incoming call is unambiguous.
+    for (let waited = 0; this.#handingOff(call) && waited < HANDOFF_WAIT_MS; waited += 200) await new Promise((r) => setTimeout(r, 200));
+    if ((call.state as OutboundState) === "ended") return null;
     call.state = "answered";
     call.answeredAt = new Date();
     this.#log({ kind: "outbound_answered", callId: call.callId, sessionId: call.sessionId });
@@ -241,7 +255,14 @@ export class OutboundDialer {
         this.#end(call, "failed", "The call was answered but never reached Kritva's voice.");
       }
     }, BRIDGE_WAIT_MS).unref?.();
-    return bridgeXml({ callerId: `+${this.#d.settings.callerId}`, sipUri: this.#d.settings.bridgeUri, token: call.token, timeLimitSeconds: this.#d.settings.timeLimitSeconds });
+    const s = this.#d.settings;
+    const target = s.bridge === "sip" ? { kind: "sip" as const, uri: s.bridgeUri } : { kind: "number" as const, number: `+${s.callerId}` };
+    return bridgeXml({ callerId: `+${s.callerId}`, target, token: call.token, timeLimitSeconds: s.timeLimitSeconds });
+  }
+
+  /** Another call is answered and still waiting for its bridge to reach OpenAI. */
+  #handingOff(self: OutboundCall): boolean {
+    return [...this.#calls.values()].some((c) => c !== self && c.state === "answered");
   }
 
   /** Vobiz reports the call over, with its hang-up cause when it gives one. */
@@ -264,15 +285,17 @@ export class OutboundDialer {
    * `kritva_call=<token>`). Without the tag, the one call that is answered and waiting for its
    * bridge, if there is exactly one.
    */
-  match(headers: SipHeader[]): { callId: string; sessionId: string; how: "header" | "only_waiting" } | null {
+  match(headers: SipHeader[]): { callId: string; sessionId: string; how: "header" | "only_waiting"; from: string | null } | null {
+    const from = maskNumber(callerNumber(headers, this.#d.settings.countryCode));
     for (const h of headers) {
       const fromName = /kritva[_-]?call/i.test(h.name) ? h.value.trim() : null;
       const fromValue = /kritva[_-]?call[=:]\s*([\w-]{16,})/i.exec(h.value)?.[1] ?? null;
       const call = this.#byToken.get(fromName ?? fromValue ?? "");
-      if (call && call.state !== "ended") return { callId: call.callId, sessionId: call.sessionId, how: "header" };
+      if (call && call.state !== "ended") return { callId: call.callId, sessionId: call.sessionId, how: "header", from };
     }
+    // Hand-offs are serialised (answered()), so at most one call waits; the caller number is logged to check it.
     const waiting = [...this.#calls.values()].filter((c) => c.state === "answered");
-    return waiting.length === 1 ? { callId: waiting[0]!.callId, sessionId: waiting[0]!.sessionId, how: "only_waiting" } : null;
+    return waiting.length === 1 ? { callId: waiting[0]!.callId, sessionId: waiting[0]!.sessionId, how: "only_waiting", from } : null;
   }
 
   /** The bridged call was accepted and joined. */

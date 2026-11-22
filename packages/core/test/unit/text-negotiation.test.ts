@@ -724,6 +724,34 @@ describe("One rewrite before the checked fallback", () => {
     expect((await events()).filter((e) => e.type === "reply_blocked")).toHaveLength(2);
   });
 
+  it("the checked fallback is said in Kritva's voice when that passes every check, and fixed wording is the last resort", async () => {
+    const warm = "Ah, it's a king-size bed, a year old and in good condition. Anything else you'd like to know?";
+    const reviewed = async (reword: string) => {
+      const { say, llm, events } = await setup(listingOnlyDeliveryMandate());
+      await say("Hi", { intent: "greeting" });
+      llm.reviews.push([{ type: "invented_competition", quote: "other buyers are interested" }], [{ type: "invented_competition", quote: "other buyers are interested" }], []);
+      const turn = await say("What are you selling?", { intent: "question", questions: ["What are you selling?"] }, { composed: [bad, bad, reword] });
+      const rewordCall = llm.seen.findLast((c) => c.purpose === "reword_checked_reply");
+      return { text: turn.reply!.text, rewordCall, blocked: (await events()).filter((e) => e.type === "reply_blocked").length };
+    };
+    const used = await reviewed(warm);
+    expect(used.text).toBe(warm);
+    expect(JSON.parse(used.rewordCall!.messages[0]!.content).checked_reply).toMatch(/king-size/i);
+    // A reword that adds an amount the checked wording did not carry is never used.
+    const added = await reviewed("Ah, it's a king-size bed for ₹12,000. Anything else?");
+    expect(added.text).not.toContain("12,000");
+    expect(added.text).toMatch(/king-size/i);
+  });
+
+  it("the brief names the reply language from the script they wrote in, so an English chat never turns Hindi", async () => {
+    const { say, llm } = await setup(listingOnlyDeliveryMandate());
+    await say("Hi", { intent: "greeting" });
+    expect(frames(llm).at(-1).reply_language).toBe("English");
+    await say("बेड का दाम क्या है?", { intent: "question", questions: ["बेड का दाम क्या है?"] });
+    expect(frames(llm).at(-1).reply_language).toBe("Hindi");
+    expect(frames(llm).at(-1).must.join(" ")).toMatch(/Reply in Hindi/);
+  });
+
   it("a draft that exposed a private amount is never sent back to the model, only the reason", async () => {
     const { say, llm } = await setup(listingOnlyDeliveryMandate());
     await say("Hi", { intent: "greeting" });
