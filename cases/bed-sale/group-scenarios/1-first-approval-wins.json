@@ -1,0 +1,40 @@
+{
+  "name": "first-approval-wins",
+  "description": "Two buyers accept the asking price. The seller approves the first; the second approval is refused and that buyer is told politely and asked to keep their number.",
+  "steps": [
+    {
+      "as": "A",
+      "say": "Hi, I'll pay 20,000 for the bed and collect it myself."
+    },
+    {
+      "as": "A",
+      "say": "Yes, I confirm those terms."
+    },
+    {
+      "as": "A",
+      "say": "Yes, I confirm the complete package."
+    },
+    {
+      "as": "B",
+      "say": "Hello, I can pay the full 20,000 for the bed."
+    },
+    {
+      "as": "B",
+      "say": "Yes, confirmed."
+    },
+    {
+      "as": "B",
+      "say": "Yes, I confirm the complete package."
+    },
+    {
+      "approve": "A"
+    },
+    {
+      "approve": "B",
+      "expectRefused": true
+    }
+  ],
+  "checks": [
+    "lock"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "better-offer-holds-the-price",
+  "description": "B makes a live offer of 19,500 within the limits. A keeps offering 18,500. Kritva never counters A below 19,500, and if it mentions the other offer it cites no more than 19,500 and nothing about B.",
+  "steps": [
+    { "as": "B", "say": "Hi, I can offer 19,500 for the bed and pick it up myself." },
+    { "as": "A", "say": "Hi, would you take 18,500 for the bed?" },
+    { "as": "A", "say": "18,500 is really what I can do." },
+    { "as": "A", "say": "Come on, 18,500, I can collect today." }
+  ],
+  "rival": { "as": "B", "amount": 19500 },
+  "checks": ["limit_holds", "cites_real_only"]
+}
