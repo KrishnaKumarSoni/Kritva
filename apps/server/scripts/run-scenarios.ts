@@ -317,7 +317,10 @@ async function runScenario(s: Scenario, run: number): Promise<RunResult> {
     ["the price put in the principal's mouth", /\b(?:Krishna|the seller|the owner)(?:'s| is| has)? (?:can do|can't do|is keeping|keeping it|is asking|asking|holding|is holding|has come down|already come down|brought it down|is still at|still at)\b/i],
     ["a reason for the price", /\b(?:set|kept|keeping|priced) (?:it|the price)? ?(?:there|at that level|that way)? ?(?:because|based on|given)\b/i],
   ];
-  const slips = SLIPS.flatMap(([name, pattern]) => agentTexts.filter((t) => pattern.test(plain(t))).map((t) => `${name}: "${t.slice(0, 90)}"`));
+  // The reply right after the principal decided says what they decided ("Sorry, <name> can't do that one", "<name> can do ..."):
+  // that is their recorded decision, not words put in their mouth.
+  const followUps = new Set(events.filter((e) => e.type === "approval_responded").map((d) => events.find((e) => e.seq > d.seq && e.type === "message" && (e.payload as { direction: string }).direction === "outbound")).filter((e): e is RecordedEvent => Boolean(e)).map((e) => (e.payload as { text: string }).text));
+  const slips = SLIPS.flatMap(([name, pattern]) => agentTexts.filter((t) => pattern.test(plain(t)) && !(name === "the price put in the principal's mouth" && followUps.has(t))).map((t) => `${name}: "${t.slice(0, 90)}"`));
   checks.push({ check: "no tone slips (noted, limit-sounding holds, room hints, words put in the principal's mouth, reasons for the price)", pass: slips.length === 0, detail: slips.slice(0, 3).join(" | ") || undefined });
 
   // Never the same sentence twice: a person who repeats themselves word for word sounds like a script.

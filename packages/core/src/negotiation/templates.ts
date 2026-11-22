@@ -174,7 +174,8 @@ export function templateReply(view: MandateView, plan: Plan, locale: string, sub
       break;
     case "await_approval":
       if (plan.followUp?.step === "close") parts.push(closing(principal, plan.followUp.contact ?? null));
-      else if (plan.followUp) parts.push("Thanks, noted.");
+      // Asking about the follow-up: a plain thanks for what they said, or (an exception just asked about) nothing more.
+      else if (plan.followUp && plan.notice !== "check_with_principal") parts.push("Thanks for letting me know.");
       else if (plan.notice !== "check_with_principal") parts.push(`I'm still waiting to hear from ${principal}.`);
       break;
     case "confirm_agreement":

@@ -230,7 +230,8 @@ function followUpRequirements(input: ComposeInput, payload: Record<string, unkno
     case "validity":
     case "contact":
     case "phone":
-      must.push(`Nothing is agreed yet: never say or imply it is agreed, accepted, done or theirs.`);
+      // Code asks each detail only while it is unknown, so the question is never answered already.
+      must.push(`They haven't told you ${f.step === "validity" ? "how long their offer stands" : f.step === "contact" ? "how and when they'd like to hear back" : "the number to call"} yet: ask it. Nothing is agreed yet: never say or imply it is agreed, accepted, done or theirs.`);
       break;
     case "close":
       must.push(`Say clearly that it is not final until ${who} confirms, that you will get back to them${f.contact === "call" || f.contact === "whatsapp" ? " with a call" : f.contact === "chat" ? " here" : ""}, and thank them warmly for their time. Never say or imply agreement. Ask no question.`);
