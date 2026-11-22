@@ -185,3 +185,16 @@ export const BeakerIcon = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+export const ArrowRightIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M5 12h14" />
+    <path d="m13 6 6 6-6 6" />
+  </svg>
+);
+export const SignOutIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" />
+    <path d="M10 16l-4-4 4-4" />
+    <path d="M6 12h10" />
+  </svg>
+);

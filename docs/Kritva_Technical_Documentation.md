@@ -236,7 +236,7 @@ The server uses port 8787.
 | `/api/public/listings/:caseId` | The demo listing and **Call seller**. |
 | `/api/webhooks/openai` | Phone call webhooks. |
 
-Operator routes need `Authorization: Bearer <key>`. The server prints the key at startup. Set `KRITVA_OPERATOR_KEY` to keep it after a restart.
+Operator routes need a signed-in session (the `kritva_session` cookie from an emailed sign-in link, see `docs/Kritva_Sign_In.md`) or, for scripts, `Authorization: Bearer <key>`. The server prints the key at startup. Set `KRITVA_OPERATOR_KEY` to keep it after a restart.
 
 ## 13. Models
 

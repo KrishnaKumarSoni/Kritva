@@ -18,7 +18,7 @@ export interface MenuItem {
   onSelect: () => void;
 }
 
-export function Menu({ label, items, disabled = false }: { label: string; items: MenuItem[]; disabled?: boolean }) {
+export function Menu({ label, items, disabled = false, trigger, header }: { label: string; items: MenuItem[]; disabled?: boolean; /** What the button shows (default: the "more" icon). */ trigger?: ReactNode; /** A line above the items, such as who is signed in. */ header?: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -98,7 +98,7 @@ export function Menu({ label, items, disabled = false }: { label: string; items:
         }}
         onKeyDown={onTriggerKey}
       >
-        <MoreIcon />
+        {trigger ?? <MoreIcon />}
       </button>
       <AnimatePresence>
         {open && (
@@ -113,6 +113,11 @@ export function Menu({ label, items, disabled = false }: { label: string; items:
             exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.98, y: -2 }}
             transition={{ type: "spring", duration: 0.25, bounce: 0 }}
           >
+            {header && (
+              <div className="menu-header" role="presentation">
+                {header}
+              </div>
+            )}
             {items.map((item, i) => (
               <button
                 key={item.id}
