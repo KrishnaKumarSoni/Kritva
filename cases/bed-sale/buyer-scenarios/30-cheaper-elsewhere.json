@@ -10,7 +10,6 @@
         "action": "ask",
         "offer": null,
         "says": [
-          "20,000",
           "\\?"
         ],
         "neverSays": [
@@ -23,10 +22,7 @@
       "expect": {
         "decision": "answer|explain_price",
         "action": "answer",
-        "offer": null,
-        "says": [
-          "20,000"
-        ]
+        "offer": null
       }
     },
     {

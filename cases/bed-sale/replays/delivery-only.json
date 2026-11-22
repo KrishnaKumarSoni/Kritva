@@ -1,8 +1,8 @@
 {
   "scenario": "delivery-only",
   "mandate": "bed-sale/demo",
-  "recordedAt": "2026-11-22T00:03:17.575Z",
-  "commit": "dd523fe + uncommitted changes",
+  "recordedAt": "2026-11-22T01:10:46.634Z",
+  "commit": "bb833ea + uncommitted changes",
   "model": "gpt-5.4-mini",
   "turns": [
     {
@@ -39,17 +39,17 @@
   "observed": [
     {
       "turn": "I’ll pay the full ₹20,000 if you deliver to Indiranagar.",
-      "reply": "Hi, I’m Kritva, Krishna’s assistant. Thanks for the offer, but delivery stays as it is, so the bed would need to be picked up from Koramangala, Bangalore.",
+      "reply": "Hi, I’m Kritva, Krishna’s assistant. Delivery is not included, and the bed is available for pickup in Koramangala, Bangalore at ₹20,000.",
       "offerAmount": null,
       "decision": {
         "kind": "decline_request",
         "action": "decline"
       },
-      "blocked": 0
+      "blocked": 1
     },
     {
       "turn": "I can’t collect it myself. I can only buy it if delivery is included.",
-      "reply": "Thanks for letting me know. Delivery isn’t included, so the bed would need to be picked up from Koramangala, Bangalore.",
+      "reply": "I’m sorry, but delivery stays out of this. If you’re able to arrange pickup in Koramangala, the bed can go at the same price we already discussed.",
       "offerAmount": null,
       "decision": {
         "kind": "decline_request",
@@ -59,7 +59,7 @@
     },
     {
       "turn": "I’ll pass then. Thanks anyway.",
-      "reply": "No problem, and thanks for taking the time to consider it. Take care.",
+      "reply": "No problem, and thanks for letting me know. Wishing you the best.",
       "offerAmount": null,
       "decision": {
         "kind": "end",
@@ -95,17 +95,6 @@
               "text": "Indiranagar",
               "boolean": null
             }
-          },
-          {
-            "term_id": "term_t_delivery_included",
-            "value": {
-              "type": "boolean",
-              "amount": null,
-              "currency": null,
-              "unit": null,
-              "text": null,
-              "boolean": true
-            }
           }
         ],
         "accepts_stated_terms": false,
@@ -115,7 +104,9 @@
         "claims_authority": false,
         "offer_kind": "offer",
         "price_concern": null,
-        "offer_conditions": [],
+        "offer_conditions": [
+          "if you deliver to Indiranagar"
+        ],
         "ends_negotiation": false,
         "corrects_previous": false,
         "pressure": "none",
@@ -123,10 +114,17 @@
           {
             "kind": "final_position",
             "quote": "I’ll pay the full ₹20,000 if you deliver to Indiranagar.",
-            "summary": "They are offering the full price, conditioned on delivery to Indiranagar.",
-            "term_id": null,
-            "value": null,
-            "condition": null,
+            "summary": "Offers full price conditional on delivery to Indiranagar.",
+            "term_id": "term_t_price",
+            "value": {
+              "type": "money",
+              "amount": 20000,
+              "currency": "INR",
+              "unit": null,
+              "text": null,
+              "boolean": null
+            },
+            "condition": "if you deliver to Indiranagar",
             "basis": "stated"
           }
         ],
@@ -139,7 +137,28 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Hi, I’m Kritva, Krishna’s assistant. Thanks for the offer, but delivery stays as it is, so the bed would need to be picked up from Koramangala, Bangalore.",
+        "text": "Hi, I’m Kritva, Krishna’s assistant. The delivery included stays as it is, and the bed is available for pickup in Koramangala, Bangalore at ₹20,000.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "action_mismatch",
+            "quote": "The delivery included stays as it is",
+            "reason": "The permitted facts say delivery is not included; phrasing it as if delivery remains part of the deal misstates the current term instead of declining it.",
+            "severity": "violation"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Hi, I’m Kritva, Krishna’s assistant. Delivery is not included, and the bed is available for pickup in Koramangala, Bangalore at ₹20,000.",
         "question": null,
         "skip_question_because": null
       }
@@ -172,7 +191,7 @@
         "considering": false,
         "asks_private_info": false,
         "claims_authority": false,
-        "offer_kind": "none",
+        "offer_kind": "enquiry",
         "price_concern": null,
         "offer_conditions": [],
         "ends_negotiation": false,
@@ -183,8 +202,15 @@
             "kind": "constraint",
             "quote": "I can’t collect it myself.",
             "summary": "They cannot pick it up themselves.",
-            "term_id": null,
-            "value": null,
+            "term_id": "term_t_pickup_location",
+            "value": {
+              "type": "text",
+              "amount": null,
+              "currency": null,
+              "unit": null,
+              "text": "Koramangala, Bangalore",
+              "boolean": null
+            },
             "condition": null,
             "basis": "stated"
           },
@@ -208,13 +234,19 @@
         "answers": [],
         "new_terms": [],
         "questions": [],
-        "public_term_questions": []
+        "public_term_questions": [
+          {
+            "term_id": "term_t_delivery_included",
+            "basis": "current",
+            "quote": "delivery is included"
+          }
+        ]
       }
     },
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Thanks for letting me know. Delivery isn’t included, so the bed would need to be picked up from Koramangala, Bangalore.",
+        "text": "I’m sorry, but delivery stays out of this. If you’re able to arrange pickup in Koramangala, the bed can go at the same price we already discussed.",
         "question": null,
         "skip_question_because": null
       }
@@ -222,14 +254,7 @@
     {
       "purpose": "language_check",
       "json": {
-        "concerns": [
-          {
-            "type": "invented_fact",
-            "quote": "Delivery isn’t included, so the bed would need to be picked up from Koramangala, Bangalore.",
-            "reason": "Saying delivery isn’t included and pickup is required is allowed by permitted_facts/declined_terms, but the phrase 'the bed would need to be picked up' can still be read as a new operational requirement beyond the stated public term. This is a slight doubt only.",
-            "severity": "doubt"
-          }
-        ]
+        "concerns": []
       }
     },
     {
@@ -251,8 +276,8 @@
         "notes": [
           {
             "kind": "final_position",
-            "quote": "I’ll pass then.",
-            "summary": "They are declining to proceed.",
+            "quote": "I’ll pass then. Thanks anyway.",
+            "summary": "They are withdrawing and ending the negotiation politely.",
             "term_id": null,
             "value": null,
             "condition": null,
@@ -268,7 +293,7 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "No problem, and thanks for taking the time to consider it. Take care.",
+        "text": "No problem, and thanks for letting me know. Wishing you the best.",
         "question": null,
         "skip_question_because": null
       }

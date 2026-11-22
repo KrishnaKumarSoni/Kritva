@@ -19,7 +19,7 @@ import type { ConfirmedMandate } from "../schema/records.ts";
 import { projectCounterparty, type CounterpartyModel } from "../counterparty/model.ts";
 import { prepareQuestions } from "../counterparty/questions.ts";
 import { gateTerms, gateWording, type GateResult } from "../governance/gate.ts";
-import { quoteAppearsIn } from "../schema/quotes.ts";
+import { normalizeForQuoteMatch, quoteAppearsIn } from "../schema/quotes.ts";
 import { languageCheck } from "../governance/language-check.ts";
 import { decide, type DealInput, type Interpretation, type Plan } from "./policy.ts";
 import { checkReply, findAmounts, type ReplyViolation } from "./reply-check.ts";
@@ -648,13 +648,22 @@ export class NegotiationEngine {
     };
   }
 
-  /** The code checks and the reviewer on one draft. Every block is recorded. */
+  /**
+   * The code checks and the reviewer on one draft. Two kinds of problem:
+   * - hard limits (amounts, commitments, private content, the exact read-back, invented facts or claims):
+   *   the draft is blocked and recorded, and the checked fallback is used if a rewrite still breaks one;
+   * - style (an unasked question, a repeated sentence or opener, a fragment, a turn not answered): the
+   *   writer is asked once for a better reply, and the rewrite is sent even if it still has them. Style
+   *   never forces the template fallback; the conversation guide is what shapes it.
+   */
   async #checkDraft(writes: Writer, d: Drafting, composed: { text: string; question: string | null; skipQuestionBecause?: string | null }, agent: Actor): Promise<{ ok: true; text: string; question: string | null } | { ok: false; violations: Array<{ rule: string; detail: string }>; draft: string }> {
-    const { state, plan, conversation, currentMessage, subject, publicPrincipalName, publicTerms, offerInvitedRecently, previousReply } = d;
+    const { state, plan, conversation, currentMessage, subject, publicPrincipalName, publicTerms, previousReply } = d;
     const fail = async (text: string, violations: Array<{ rule: ReplyViolation["rule"]; detail: string }>, record = true) => {
       if (record) await this.#block(writes, text, violations, agent);
       return { ok: false as const, violations, draft: text };
     };
+    const style: Array<{ rule: ReplyViolation["rule"]; detail: string }> = [];
+    const styleRule = (detail: string) => style.push({ rule: "style", detail });
     let draft = clean(composed.text);
     if (!draft) return fail(composed.text, [{ rule: "action_mismatch", detail: "The reply was empty." }], false);
     let insertedTerms: string | null = null;
@@ -668,10 +677,13 @@ export class NegotiationEngine {
       if (phrased && /^[^?]+\?$/.test(phrased) && phrased.length <= 500 && (embedded || !draft.includes("?"))) question = phrased;
       // The writer may leave out a selected question the conversation already answers, saying why; it stays unasked.
       else if (!phrased && !draft.includes("?") && composed.skipQuestionBecause) question = null;
-      else if (plan.ask.purpose || phrased || draft.includes("?")) return fail(draft, [{ rule: "action_mismatch", detail: "The reply did not ask exactly one question for the selected objective." }]);
+      else if (plan.ask.purpose || phrased || draft.includes("?")) {
+        styleRule("The reply did not ask exactly one question for the selected objective.");
+        question = null;
+      }
     }
     if (question) draft = dropDuplicateInvitation(draft, question);
-    if (previousReply && opener(draft) === opener(previousReply)) return fail(draft, [{ rule: "action_mismatch", detail: "The reply opened the same way as your previous reply. Open differently." }], false);
+    if (previousReply && opener(draft) === opener(previousReply)) styleRule("The reply opened the same way as your previous reply. Open differently.");
     // While paused or ended, nothing that negotiates reaches them.
     if ((plan.notice === "paused" || plan.notice === "ended") && (findAmounts(draft).length > 0 || draft.includes("?"))) {
       return fail(draft, [{ rule: "action_mismatch", detail: `The conversation is ${plan.notice}: mention no amount, offer or question.` }]);
@@ -694,29 +706,48 @@ export class NegotiationEngine {
       return fail(draft, [{ rule: "missing_condition", detail: "The reply did not leave one slot for the complete checked terms." }]);
     }
     if (question && !draft.includes(question)) {
-      if (draft.includes("?")) return fail(draft, [{ rule: "action_mismatch", detail: "The reply asked a different question from the selected move." }]);
-      draft = `${draft} ${question}`;
+      if (draft.includes("?")) {
+        styleRule("The reply asked a different question from the selected move.");
+        question = null;
+      } else draft = `${draft} ${question}`;
     }
     // Checked on the words the other party will read, after the terms are in place.
     const repeated = repeatedSentence(insertedTerms ? draft.replace(insertedTerms, "") : draft, conversation);
-    if (repeated) return fail(draft, [{ rule: "action_mismatch", detail: `You already said "${repeated}". Say it in new words or leave it out.` }], false);
+    if (repeated) styleRule(`You already said "${repeated}". Say it in new words or leave it out.`);
     // A clarifying question the plan itself needs (a missing detail an offer depends on) is never a new question.
     if (!question && plan.clarify.length === 0 && (plan.action === "decline" || ["answer_public_terms", "explore_objection", "explain_price", "acknowledge_budget", "answer_enquiry", "price_pressure", "compare_terms"].includes(plan.move)) && draft.includes("?")) {
-      return fail(draft, [{ rule: "action_mismatch", detail: "This move did not call for a new question." }]);
+      styleRule("This move did not call for a new question.");
     }
     const ownWords = draft;
     if (plan.introduce) {
       const opening = draft.split(/(?<=[.!?])\s+/, 2).join(" ");
       if (!/\bkritva\b/i.test(opening)) draft = `${introduction(state.view, publicPrincipalName)} ${draft}`;
-      else if (!quoteAppearsIn(opening, publicPrincipalName || principalLabel(state.view))) {
-        return fail(draft, [{ rule: "action_mismatch", detail: "The introduction must say whose assistant Kritva is, using who_you_represent." }], false);
-      }
+      else if (!quoteAppearsIn(opening, publicPrincipalName || principalLabel(state.view))) styleRule("The introduction must say whose assistant Kritva is, using who_you_represent.");
     }
     const wording = gateWording(state, plan, draft);
     if (wording.decision !== "allow") return fail(draft, wording.reasons.map((r) => ({ rule: r.rule as ReplyViolation["rule"], detail: r.detail })));
-    // Quality, after governance: the writer's own words make a complete, friendly sentence, never a bare amount.
     if (ownWords.replace(/\p{Sc}?\s?[\d,]+(?:\.\d+)?/gu, " ").split(/\s+/).filter((w) => /\p{L}/u.test(w)).length < 4) {
-      return fail(draft, [{ rule: "action_mismatch", detail: "Reply in a complete, friendly sentence that responds to what they said, not a bare amount or fragment." }], false);
+      styleRule("Reply in a complete, friendly sentence that responds to what they said, not a bare amount or fragment.");
+    }
+    // The value they asked about belongs in the answer; a general terms question right after the price was said skips the price.
+    const lastReply = [...conversation].reverse().find((m) => m.speaker === "agent")?.text ?? "";
+    const priceJustSaid = state.currentAsk !== null && findAmounts(lastReply).includes(state.currentAsk);
+    // The first time the price matters to the answer, they hear it.
+    const priceNeverSaid = state.currentAsk !== null && !conversation.some((m) => m.speaker === "agent" && findAmounts(m.text).includes(state.currentAsk!));
+    if (priceNeverSaid && ["answer_enquiry", "price_pressure", "explain_price", "compare_terms", "hold"].includes(plan.move) && !findAmounts(draft).includes(state.currentAsk!)) {
+      styleRule("They have not heard the current price from you yet: tell them what it is.");
+    }
+    const answers = plan.publicTermAnswers ?? [];
+    for (const answer of answers) {
+      if (priceJustSaid && answers.length > 1 && answer.termId === state.view.negotiable?.termId) continue;
+      const value = answer.value;
+      const given = value.type === "money" ? findAmounts(draft).includes(value.amount as number) : (value.type === "text" || value.type === "date_text") ? normalizeForQuoteMatch(draft).includes(normalizeForQuoteMatch(value.value)) : true;
+      if (!given) styleRule("Give the value they asked about.");
+    }
+    // A figure they gave (an offer, a budget, an amount they asked about) is acknowledged as theirs before ours.
+    const theirFigure = plan.move === "counter" ? (plan.respondingTo ?? plan.statedBudget ?? plan.enquiredAmount) : undefined;
+    if (theirFigure !== undefined && theirFigure !== null && !findAmounts(draft).includes(theirFigure)) {
+      styleRule(`Acknowledge the figure they gave (${state.view.negotiable ? formatValue(numericValue(state.view.negotiable, theirFigure), this.#locale) : theirFigure}) as theirs before your offer.`);
     }
     const checkedTerms = (plan.offer?.terms ?? []).map((t) => `${state.space.terms.find((x) => x.termId === t.termId)?.name ?? t.termId}: ${formatValue(t.value, this.#locale)}`);
     const permittedFacts = [...state.view.publicFacts];
@@ -731,6 +762,10 @@ export class NegotiationEngine {
     for (const answer of plan.publicTermAnswers ?? []) {
       const name = state.view.terms.get(answer.termId)!.name;
       permittedFacts.push(`${answer.basis === "opening" ? "Originally listed" : "Current public"} ${name}: ${formatValue(answer.value, this.#locale)}`);
+    }
+    const n = state.view.negotiable;
+    if (n && state.currentAsk !== null && state.currentAsk !== n.opening) {
+      permittedFacts.push(`The original public price was ${formatValue(numericValue(n, n.opening), this.#locale)}; ${formatValue(numericValue(n, state.currentAsk), this.#locale)} is the current offer to them, lowered from it.`);
     }
     if (plan.openForDiscussion) permittedFacts.push("The current terms are still open for discussion.");
     if (plan.move === "confirm_agreement") permittedFacts.push("With the agreement recorded, payment and handover are the remaining steps, to be arranged between the parties.");
@@ -753,19 +788,24 @@ export class NegotiationEngine {
       selectedQuestion: question,
       action: { move: plan.move, notice: plan.notice, opening: plan.opening === true, approvalGranted: plan.approvalGranted === true, outcome: state.outcome.kind },
     });
-    if (language.ok && language.concerns.length === 0) return { ok: true, text: draft, question };
-    const violations = language.ok
-      ? language.concerns.map((c) => ({ rule: `language_${c.type}` as ReplyViolation["rule"], detail: `Language check: ${c.type.replace(/_/g, " ")} ("${c.quote.slice(0, 120)}")` }))
-      : [{ rule: "language_unavailable" as ReplyViolation["rule"], detail: "The language check could not run, so the composed reply was not used." }];
-    return fail(draft, violations);
+    if (!language.ok) return fail(draft, [{ rule: "language_unavailable" as ReplyViolation["rule"], detail: "The language check could not run, so the composed reply was not used." }]);
+    const hard = language.concerns.filter((c) => !STYLE_CONCERNS.has(c.type));
+    for (const c of language.concerns.filter((x) => STYLE_CONCERNS.has(x.type))) styleRule(`Language check: ${c.type.replace(/_/g, " ")} ("${c.quote.slice(0, 120)}")`);
+    if (hard.length > 0) {
+      return fail(draft, hard.map((c) => ({ rule: `language_${c.type}` as ReplyViolation["rule"], detail: `Language check: ${c.type.replace(/_/g, " ")} ("${c.quote.slice(0, 120)}")` })));
+    }
+    // Style is asked about once; a rewrite is sent as written.
+    if (style.length > 0 && d.attempts < 2) return fail(draft, style, false);
+    return { ok: true, text: draft, question };
   }
 
   /** Checked template wording for the planned move, built only from the plan and public content. */
   async #fallback(writes: Writer, d: Drafting, agent: Actor): Promise<{ text: string; question: string | null } | null> {
     const { state, plan, subject, publicPrincipalName, offerInvitedRecently, previousReply } = d;
-    let fallback = templateReply(state.view, plan, this.#locale, subject, publicPrincipalName, { offerInvitedRecently });
+    const priceJustSaid = state.currentAsk !== null && previousReply !== null && previousReply !== undefined && findAmounts(previousReply).includes(state.currentAsk);
+    let fallback = templateReply(state.view, plan, this.#locale, subject, publicPrincipalName, { offerInvitedRecently, priceJustSaid });
     for (let shift = 1; previousReply && shift < 3 && (opener(fallback) === opener(previousReply) || repeatedSentence(fallback, d.conversation)); shift += 1) {
-      fallback = templateReply(state.view, { ...plan, turnIndex: (plan.turnIndex ?? 0) + shift }, this.#locale, subject, publicPrincipalName, { offerInvitedRecently });
+      fallback = templateReply(state.view, { ...plan, turnIndex: (plan.turnIndex ?? 0) + shift }, this.#locale, subject, publicPrincipalName, { offerInvitedRecently, priceJustSaid });
     }
     if (plan.ask && !fallback.includes(plan.ask.text)) fallback = `${fallback} ${plan.ask.text}`;
     const fallbackGate = gateWording(state, plan, fallback);
@@ -1238,6 +1278,9 @@ function selectQuestion(fresh: Array<NonNullable<Plan["ask"]>>, plan: Plan): Pla
   if (plan.notice || plan.clarify.length > 0 || plan.unresolved.length > 0 || plan.questions.length > 0 || plan.refuseDisclosure || plan.openForDiscussion || plan.listingAvailable !== undefined) return null;
   return fresh[0] ?? null;
 }
+
+/** Reviewer findings about conversation quality, not limits: asked about once, never a reason for the fallback. */
+const STYLE_CONCERNS = new Set(["turn_mismatch", "redundant_question"]);
 
 /** Block reasons whose draft carried private content. */
 const PRIVATE_RULES = new Set<string>(["private_amount", "private_text", "crosses_limit", "language_private_disclosure"]);

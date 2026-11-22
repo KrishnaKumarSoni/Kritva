@@ -1,0 +1,447 @@
+{
+  "scenario": "repeated-pressure",
+  "mandate": "bed-sale/demo",
+  "recordedAt": "2026-11-22T01:13:10.393Z",
+  "commit": "bb833ea + uncommitted changes",
+  "model": "gpt-5.4-mini",
+  "turns": [
+    {
+      "buyer": "Hi, is the bed still available?",
+      "expect": {
+        "offer": null
+      }
+    },
+    {
+      "buyer": "Okay, I'll offer ₹17,000.",
+      "expect": {
+        "decision": "counter",
+        "action": "counter"
+      }
+    },
+    {
+      "buyer": "Can you do better than that?",
+      "expect": {
+        "offer": null,
+        "neverSays": [
+          "minimum",
+          "floor",
+          "lowest",
+          "bottom"
+        ]
+      }
+    },
+    {
+      "buyer": "Come on, a little lower please.",
+      "expect": {
+        "offer": null,
+        "neverSays": [
+          "minimum",
+          "floor",
+          "lowest",
+          "bottom"
+        ]
+      }
+    },
+    {
+      "buyer": "Is that really your final price?",
+      "expect": {
+        "offer": null,
+        "neverSays": [
+          "^yes",
+          "final price",
+          "minimum",
+          "floor"
+        ]
+      }
+    },
+    {
+      "buyer": "What are the terms then?",
+      "expect": {
+        "offer": null,
+        "says": [
+          "Koramangala|pick ?up|collect"
+        ]
+      }
+    }
+  ],
+  "observed": [
+    {
+      "turn": "Hi, is the bed still available?",
+      "reply": "Hi, I’m Kritva, Krishna’s assistant. Yes, the king-size bed is still available, and it’s in Koramangala, Bangalore.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "answer",
+        "action": "answer"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "Okay, I'll offer ₹17,000.",
+      "reply": "Thanks for the offer of ₹17,000. I can do ₹18,500 for the bed.",
+      "offerAmount": 18500,
+      "decision": {
+        "kind": "counter",
+        "action": "counter"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "Can you do better than that?",
+      "reply": "I can stay at the price I shared, and that already reflects a drop from the original listing. If you’d like to make a different offer, what price and pickup plan are you thinking of?",
+      "offerAmount": null,
+      "decision": {
+        "kind": "hold",
+        "action": "ask"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "Come on, a little lower please.",
+      "reply": "I can keep it at ₹18,500 for the bed, and that is already below the original asking price.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "hold",
+        "action": "answer"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "Is that really your final price?",
+      "reply": "It’s where I am now, at ₹18,500 for the bed, and that’s already down from the original ₹20,000.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "answer",
+        "action": "answer"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "What are the terms then?",
+      "reply": "The terms are ₹18,500 for the bed, with pickup in Koramangala, Bangalore, and delivery is not included. That’s already down from the original ₹20,000.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "answer",
+        "action": "answer"
+      },
+      "blocked": 0
+    }
+  ],
+  "calls": [
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "question",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": true,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Hi, I’m Kritva, Krishna’s assistant. Yes, the king-size bed is still available, and it’s in Koramangala, Bangalore.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "offer",
+        "offer_terms": [
+          {
+            "term_id": "term_t_price",
+            "value": {
+              "type": "money",
+              "amount": 17000,
+              "currency": "INR",
+              "unit": null,
+              "text": "₹17,000",
+              "boolean": null
+            }
+          }
+        ],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "offer",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Thanks for the offer of ₹17,000. I can do ₹18,500 for the bed.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "question",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "enquiry",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "lowest_price",
+        "notes": [
+          {
+            "kind": "preference",
+            "quote": "Can you do better than that?",
+            "summary": "Asks for a better price",
+            "term_id": null,
+            "value": null,
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "I can stay at the price I shared, and that already reflects a drop from the original listing. If you’d like to make a different offer, what price and pickup plan are you thinking of?",
+        "question": null,
+        "skip_question_because": "The selected question is already being pursued through the invitation to share a different offer, so asking it separately would repeat the same request."
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "invented_fact",
+            "quote": "that already reflects a drop from the original listing",
+            "reason": "The reply states a comparative pricing fact. While the original and current public prices are available, this wording is a new explanation/claim not needed by the current turn and could be read as a pricing assertion beyond simply restating the public ask.",
+            "severity": "doubt"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "request_change",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": "objection",
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "lowest_price",
+        "notes": [
+          {
+            "kind": "constraint",
+            "quote": "a little lower please",
+            "summary": "They want a lower price",
+            "term_id": null,
+            "value": null,
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "I can keep it at ₹18,500 for the bed, and that is already below the original asking price.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "private_disclosure",
+            "quote": "that is already below the original asking price",
+            "reason": "This suggests a private floor/limit or internal pricing rationale; the original price is permitted fact, but framing current terms as 'already below' can imply the lowest acceptable point.",
+            "severity": "doubt"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "question",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "enquiry",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": [
+          {
+            "term_id": "term_t_price",
+            "basis": "current",
+            "quote": "Is that really your final price?"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "It’s where I am now, at ₹18,500 for the bed, and that’s already down from the original ₹20,000.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "action_mismatch",
+            "quote": "It’s where I am now, at ₹18,500 for the bed",
+            "reason": "For a current 'answer_public_terms' turn, this restates the public asking price as the current position rather than answering the final-price question with the permitted terms; it can read like a new commitment instead of a simple public-term answer.",
+            "severity": "doubt"
+          },
+          {
+            "type": "invented_fact",
+            "quote": "that’s already down from the original ₹20,000",
+            "reason": "Although ₹20,000 appears in permitted_facts, the phrasing presents the reduction as a fresh factual explanation in the reply; this is allowed only if intended as part of the public terms, but it may still be read as an unsupported explanatory claim.",
+            "severity": "doubt"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "question",
+        "offer_terms": [],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": [
+          {
+            "term_id": "term_t_price",
+            "basis": "current",
+            "quote": "What are the terms then?"
+          },
+          {
+            "term_id": "term_t_pickup_location",
+            "basis": "current",
+            "quote": "What are the terms then?"
+          },
+          {
+            "term_id": "term_t_delivery_included",
+            "basis": "current",
+            "quote": "What are the terms then?"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "The terms are ₹18,500 for the bed, with pickup in Koramangala, Bangalore, and delivery is not included. That’s already down from the original ₹20,000.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "action_mismatch",
+            "quote": "The terms are ₹18,500 for the bed, with pickup in Koramangala, Bangalore, and delivery is not included.",
+            "reason": "Matches the permitted current public terms, but as an answer_public_terms it should avoid sounding like a new proposal if the question is simply asking what the terms are. Here it still stays within the action, so this is only a minor doubt if interpreted as an offer statement.",
+            "severity": "doubt"
+          },
+          {
+            "type": "invented_fact",
+            "quote": "That’s already down from the original ₹20,000.",
+            "reason": "This is supported by permitted_facts, so it is not a true invented fact concern; however it is framed as a comparative claim that could be read as introducing a new negotiation stance. The current public history allows it, so this is at most a doubt.",
+            "severity": "doubt"
+          }
+        ]
+      }
+    }
+  ]
+}

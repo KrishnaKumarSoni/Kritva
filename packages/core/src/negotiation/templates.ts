@@ -51,7 +51,7 @@ function pick(variants: string[], turn: number): string {
  * Checked fallback wording, written to the humane conversation guide: warm, short, specific, one
  * question at a time. Used when composition fails or is blocked.
  */
-export function templateReply(view: MandateView, plan: Plan, locale: string, subject: string | null = null, publicPrincipalName?: string, options: { offerInvitedRecently?: boolean } = {}): string {
+export function templateReply(view: MandateView, plan: Plan, locale: string, subject: string | null = null, publicPrincipalName?: string, options: { offerInvitedRecently?: boolean; priceJustSaid?: boolean } = {}): string {
   const n = view.negotiable;
   const turn = plan.turnIndex ?? 0;
   const principal = principalLabel(view);
@@ -120,7 +120,9 @@ export function templateReply(view: MandateView, plan: Plan, locale: string, sub
       break;
     }
     case "price_pressure":
-      if (reference && options.offerInvitedRecently && !plan.ask) parts.push(pick([`For now the price stays at ${reference}.`, `${reference} is still where it stands for now.`], turn));
+      // The last reply already said the price: keep the position without the number.
+      if (reference && options.priceJustSaid) parts.push(pick(["I'd like to stay where I am for now.", "That's where I am on it for now."], turn));
+      else if (reference && options.offerInvitedRecently && !plan.ask) parts.push(pick([`For now the price stays at ${reference}.`, `${reference} is still where it stands for now.`], turn));
       else if (reference) parts.push(pick([`The current asking amount is ${reference}.`, `The asking amount is still ${reference}.`], turn));
       if (!plan.ask && !options.offerInvitedRecently) parts.push(pick(["I can consider a firm offer on the current terms.", "I can take a look if you have a firm offer."], turn));
       break;
