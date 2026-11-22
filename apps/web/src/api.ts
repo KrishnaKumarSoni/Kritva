@@ -276,6 +276,16 @@ export interface LibrarySummary {
   state: MandateState;
   updatedAt: string;
   principalSide: PrincipalSide | null;
+  /** The four digits callers give on the shared phone line to reach this mandate; null until it is first live. */
+  listingCode: string | null;
+}
+
+/** The shared phone line, as the seller sees it next to a listing code. */
+export interface PhoneLine {
+  /** The line's number as +digits, or null when only a "*" route is set. */
+  number: string | null;
+  /** Whether calls reach the front desk that asks for listing codes. */
+  listingCodes: boolean;
 }
 
 export type LifecycleStep = "pause" | "resume" | "close" | "reopen";
@@ -360,6 +370,7 @@ export interface LibraryDetailView {
   title: string;
   caseId: string;
   state: MandateState;
+  listingCode: string | null;
   input: LibraryInput;
   versions: Array<{ versionId: string; seq: number; origin: "text" | "correction"; status: "draft" | "confirmed" | "superseded" | "discarded"; revision: number | null; createdAt: string; draftHash: string }>;
   active: { revision: number; versionId: string; confirmedAt: string; review: MandateReview } | null;
@@ -554,6 +565,8 @@ export const api = {
   },
   voiceRealtimeEnd: (id: string) => fetch(`/api/buyer/sessions/${id}/voice/realtime/end`, { method: "POST", keepalive: true }),
   speechUrl: (id: string, messageId: string) => `/api/buyer/sessions/${id}/voice/speech/${encodeURIComponent(messageId)}`,
+  /** The phone setup (404 when phone calls are off). */
+  phone: () => call<{ line?: PhoneLine }>("GET", "/api/operator/phone"),
   endNegotiation: (id: string, reason: string) => call<unknown>("POST", `/api/operator/sessions/${id}/end`, { reason }),
   library: {
     list: () => call<LibrarySummary[]>("GET", "/api/operator/library"),

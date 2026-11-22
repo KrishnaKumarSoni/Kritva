@@ -11,18 +11,23 @@
  * Audio never passes through this server: OpenAI and Vobiz exchange it directly. The server only
  * answers the webhook, controls the call and handles its events, exactly as for a browser call.
  *
+ * A "code" route answers with the shared line's front desk instead (front-desk.ts): the agent asks for
+ * the listing code, find_listing reaches that mandate, and the call goes on there as one conversation.
+ *
  * SIP replies when a call cannot be taken (the caller hears the network's tone or message):
  *   404 the number has no route · 480 the listing is paused or closed, or its mandate is missing or
- *   not live · 486 busy (KRITVA_PHONE_MAX_CALLS calls already) · 500 a session could not start.
+ *   not live (on a "code" route: no listing is live) · 486 busy (KRITVA_PHONE_MAX_CALLS calls
+ *   already) · 500 a session could not start.
  */
 import { appendFileSync } from "node:fs";
 import type { Hono } from "hono";
-import type { ConfirmedMandate, DealGroups, MandateLibrary, NegotiationEngine, NegotiationRecord } from "@kritva/core";
+import { isListingCode, type ConfirmedMandate, type DealGroups, type MandateLibrary, type NegotiationEngine, type NegotiationRecord } from "@kritva/core";
 import { openSessionFor, startNegotiation } from "../group-routes.ts";
 import type { ListingConfig } from "../main-helpers.ts";
-import { OpenAIRealtimeConnector, realtimeSession, RealtimeCallError, type RealtimeCall, type RealtimeCallControl, type RealtimeConnector, type RealtimeSettings } from "../realtime-voice.ts";
+import { OpenAIRealtimeConnector, realtimeSession, RealtimeCallError, type RealtimeCall, type RealtimeCallControl, type RealtimeConnector, type RealtimeLink, type RealtimeSettings } from "../realtime-voice.ts";
 import { resolveListing } from "../voice-routes.ts";
-import { normalizeNumber, outboundFromEnv, phoneSettingsFromEnv, sipUri, type PhoneSettings, type PhoneTarget } from "./config.ts";
+import { lineNumber, normalizeNumber, outboundFromEnv, phoneSettingsFromEnv, sipUri, usesListingCodes, type PhoneSettings, type PhoneTarget } from "./config.ts";
+import { AFTER_FRONT_DESK, FrontDesk, frontDeskInstructions, frontDeskSession, type FrontDeskTurn, type HandOver, type Lookup } from "./front-desk.ts";
 import { OutboundDialer, type OutboundSettings } from "./outbound.ts";
 import { PhoneCall, type EndReason } from "./phone-call.ts";
 import { VobizTelephony, type OutboundTelephony } from "./vobiz.ts";
@@ -101,6 +106,8 @@ type Resolved = { ok: true; mandate: ConfirmedMandate; source: { mandateId: stri
 /** Live phone calls by OpenAI call ID; the returned handle lets the server end them on shutdown. */
 export interface PhoneHandle {
   calls: Map<string, PhoneCall>;
+  /** Calls still at the front desk (no listing yet), by OpenAI call ID. */
+  desks: Map<string, FrontDesk>;
   endAll(): Promise<void>;
   /** Places outbound calls, or null when outbound calling is off. */
   outbound: OutboundDialer | null;
@@ -110,6 +117,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
   const { record, engine, settings } = deps;
   const log = (entry: Record<string, unknown>) => deps.log?.(entry);
   const calls = new Map<string, PhoneCall>();
+  const desks = new Map<string, FrontDesk>();
   const dialer = deps.dialer ?? (deps.outbound ? new OutboundDialer({ engine, telephony: deps.outbound.telephony, settings: deps.outbound.settings, log }) : null);
   /**
    * The counterparty's number per call, in memory only while the call is set up and connected: the
@@ -134,7 +142,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
   const sessions = new Map<string, string>();
   let connecting = 0;
 
-  const resolve = (target: PhoneTarget): Resolved => {
+  const resolve = (target: Exclude<PhoneTarget, { kind: "code" }>): Resolved => {
     if (target.kind === "listing") {
       const r = resolveListing(deps.listings, deps.library, target.caseId);
       if ("error" in r) return { ok: false, sip: r.error.body.error === "not_found" ? 404 : 480, reason: r.error.body.error };
@@ -175,8 +183,10 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
     return { status: 200 as const, body: { ok: true, rejected: sip, reason } };
   };
 
+  type Opening = { opening: "greet" | "follow_up" | "continue"; contactNumber: string | null; seed?: HandOver["seed"] | null };
+
   /** After the accept: join the call and run it. A call that cannot be joined is hung up at once. */
-  const connect = async (callId: string, sessionId: string, sessionUpdate: Record<string, unknown> | null, outboundCallId: string | null, how: { opening: "greet" | "follow_up"; contactNumber: string | null } = { opening: "greet", contactNumber: null }) => {
+  const connect = async (callId: string, sessionId: string, sessionUpdate: Record<string, unknown> | null, outboundCallId: string | null, how: Opening = { opening: "greet", contactNumber: null }) => {
     connecting += 1;
     const direction = outboundCallId ? "outbound" : "inbound";
     try {
@@ -190,27 +200,34 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
         if (outboundCallId) dialer?.realtimeEnded(outboundCallId, "error");
         return;
       }
-      const afterSeq = (await record.context(sessionId)).events.at(-1)?.seq ?? 0;
-      const onEnded = (ended: PhoneCall, reason: EndReason) => {
-        calls.delete(callId);
-        callers.delete(callId);
-        deps.liveCalls?.unregister(sessionId, ended.realtime);
-        if (outboundCallId) dialer?.realtimeEnded(outboundCallId, reason);
-      };
-      const call = new PhoneCall({ engine, record, sessionId, callId, link, control: deps.connector, settings, afterSeq, log, pollMs: deps.pollMs, sessionUpdate, trace: settings.trace, direction, onEnded, opening: how.opening, contactNumber: how.contactNumber });
-      calls.set(callId, call);
-      deps.liveCalls?.register(sessionId, call.realtime, callers.get(callId) ?? null);
-      if (outboundCallId) {
-        bridgedTo.set(outboundCallId, callId);
-        dialer?.connected(outboundCallId, callId);
-      }
-      await call.start().catch(async (error) => {
-        log({ kind: "phone_start_failed", callId, sessionId, error: String(error) });
-        await call.end("error");
-      });
+      await run(callId, sessionId, link, sessionUpdate, outboundCallId, how);
     } finally {
       connecting -= 1;
     }
+  };
+
+  /** Runs a joined call as a negotiation call (PhoneCall), from a greeting, a follow-up or the front desk's hand-over. */
+  const run = async (callId: string, sessionId: string, link: RealtimeLink, sessionUpdate: Record<string, unknown> | null, outboundCallId: string | null, how: Opening): Promise<PhoneCall> => {
+    const direction = outboundCallId ? "outbound" : "inbound";
+    const afterSeq = (await record.context(sessionId)).events.at(-1)?.seq ?? 0;
+    const onEnded = (ended: PhoneCall, reason: EndReason) => {
+      calls.delete(callId);
+      callers.delete(callId);
+      deps.liveCalls?.unregister(sessionId, ended.realtime);
+      if (outboundCallId) dialer?.realtimeEnded(outboundCallId, reason);
+    };
+    const call = new PhoneCall({ engine, record, sessionId, callId, link, control: deps.connector, settings, afterSeq, log, pollMs: deps.pollMs, sessionUpdate, trace: settings.trace, direction, onEnded, opening: how.opening, seed: how.seed ?? null, contactNumber: how.contactNumber });
+    calls.set(callId, call);
+    deps.liveCalls?.register(sessionId, call.realtime, callers.get(callId) ?? null);
+    if (outboundCallId) {
+      bridgedTo.set(outboundCallId, callId);
+      dialer?.connected(outboundCallId, callId);
+    }
+    await call.start().catch(async (error) => {
+      log({ kind: "phone_start_failed", callId, sessionId, error: String(error) });
+      await call.end("error");
+    });
+    return call;
   };
 
   /** Answers a call into a session that already exists, then joins it. */
@@ -271,31 +288,152 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
     // Header names (not values) show which headers the provider sends; the caller's number is masked.
     log({ kind: "phone_incoming", callId, dialled, caller: maskNumber(callerNumber(headers, settings.countryCode)), mediaSecurity: mediaSecurity ?? null, headerNames: headers.map((h) => h.name), route: route ? { number: route.number, target: route.target } : null });
     if (!route) return reject(callId, 404, "no_route");
-    if (calls.size + connecting >= settings.maxCalls) return reject(callId, 486, "busy");
+    if (calls.size + desks.size + connecting >= settings.maxCalls) return reject(callId, 486, "busy");
+    if (route.target.kind === "code") return frontDesk(callId, headers);
     const target = resolve(route.target);
     if (!target.ok) return reject(callId, target.sip, target.reason);
+    const opened = await sessionFor(callId, headers, target);
+    if (!opened.ok) return reject(callId, opened.sip, opened.reason);
+    return answerInto(callId, opened.sessionId, null, route.target, opened.continuing);
+  };
 
-    let sessionId = sessions.get(callId);
-    let continuing = false;
-    if (!sessionId) {
-      // Several counterparties: a listed counterparty's number continues their open negotiation;
-      // anyone else joins the mandate's group as a walk-in, within the cap.
-      const caller = callerNumber(headers, settings.countryCode);
-      callers.set(callId, caller);
-      const entry = caller && deps.groups ? (deps.library?.counterparties(target.source.mandateId) ?? []).find((e) => e.phone && normalizeNumber(e.phone, settings.countryCode) === caller) ?? null : null;
-      const existing = entry && deps.groups ? await openSessionFor(deps.groups, target.source.mandateId, entry.id) : null;
-      if (existing) {
-        sessionId = existing;
-        continuing = true;
-        log({ kind: "phone_continues", callId, sessionId });
-      } else {
-        const started = await startNegotiation(deps.groups ?? null, record, { mandate: target.mandate, source: target.source, entryId: entry?.id ?? null, via: "phone" });
-        if (!started.ok) return reject(callId, started.error === "busy" ? 486 : started.error === "deal_concluded" ? 480 : 500, `session_failed: ${started.error}`);
-        sessionId = started.sessionId;
-      }
-      sessions.set(callId, sessionId);
+  /**
+   * The negotiation a call joins (started once per call, reused if OpenAI retries the webhook).
+   * Several counterparties: a listed counterparty's number continues their open negotiation; anyone
+   * else joins the mandate's group as a walk-in, within the cap.
+   */
+  const sessionFor = async (callId: string, headers: SipHeader[], target: Extract<Resolved, { ok: true }>): Promise<{ ok: true; sessionId: string; continuing: boolean } | { ok: false; sip: number; reason: string; error: string }> => {
+    const known = sessions.get(callId);
+    if (known) return { ok: true, sessionId: known, continuing: false };
+    const caller = callerNumber(headers, settings.countryCode);
+    callers.set(callId, caller);
+    const entry = caller && deps.groups ? (deps.library?.counterparties(target.source.mandateId) ?? []).find((e) => e.phone && normalizeNumber(e.phone, settings.countryCode) === caller) ?? null : null;
+    const existing = entry && deps.groups ? await openSessionFor(deps.groups, target.source.mandateId, entry.id) : null;
+    if (existing) {
+      sessions.set(callId, existing);
+      log({ kind: "phone_continues", callId, sessionId: existing });
+      return { ok: true, sessionId: existing, continuing: true };
     }
-    return answerInto(callId, sessionId, null, route.target, continuing);
+    const started = await startNegotiation(deps.groups ?? null, record, { mandate: target.mandate, source: target.source, entryId: entry?.id ?? null, via: "phone" });
+    if (!started.ok) return { ok: false, sip: started.error === "busy" ? 486 : started.error === "deal_concluded" ? 480 : 500, reason: `session_failed: ${started.error}`, error: started.error };
+    sessions.set(callId, started.sessionId);
+    return { ok: true, sessionId: started.sessionId, continuing: false };
+  };
+
+  // ---------- The shared line's front desk (listing codes) ----------
+
+  /** Public names the line may say it answers for: the configured ones and the demo listings' own. */
+  const answersFor = () => [...new Set([...(settings.answersFor ?? []), ...deps.listings.flatMap((l) => (l.publicPrincipalName?.trim() ? [l.publicPrincipalName.trim()] : []))])];
+
+  /** Answers a call on a "code" route: no negotiation yet, the agent asks for the listing code. */
+  const frontDesk = async (callId: string, headers: SipHeader[]): Promise<{ status: 200 | 500; body: Record<string, unknown> }> => {
+    const live = deps.library?.list().filter((m) => m.state === "live" && m.listingCode) ?? [];
+    if (live.length === 0) return reject(callId, 480, "no_live_listings");
+    const line = { answersFor: answersFor() };
+    const plan = acceptPlan(frontDeskSession(deps.realtime, line, { noiseReduction: settings.noiseReduction }), settings.acceptMode);
+    const accepted = await acceptWithRetry(callId, plan.accept);
+    if (!accepted.ok) {
+      log({ kind: accepted.gone ? "phone_gone" : "phone_accept_failed", callId, frontDesk: true, error: accepted.error });
+      await deps.connector.hangup(callId).catch(() => undefined);
+      callers.delete(callId);
+      return { status: 200, body: { ok: false, error: accepted.gone ? "call_gone" : "accept_failed" } };
+    }
+    log({ kind: "phone_accepted", callId, frontDesk: true, attempts: accepted.attempts, acceptMode: settings.acceptMode, liveListings: live.length });
+    void openFrontDesk(callId, headers, plan.update, frontDeskInstructions(line));
+    return { status: 200, body: { ok: true, frontDesk: true } };
+  };
+
+  const openFrontDesk = async (callId: string, headers: SipHeader[], sessionUpdate: Record<string, unknown> | null, instructions: string) => {
+    connecting += 1;
+    try {
+      let link: RealtimeLink;
+      try {
+        link = await deps.connector.attach(callId);
+      } catch (error) {
+        log({ kind: "phone_attach_failed", callId, frontDesk: true, error: String(error) });
+        await deps.connector.hangup(callId).catch(() => undefined);
+        callers.delete(callId);
+        return;
+      }
+      const desk: FrontDesk = new FrontDesk({
+        callId,
+        link,
+        control: deps.connector,
+        instructions,
+        sessionUpdate,
+        settings,
+        log,
+        trace: settings.trace,
+        lookup: (digits) => lookupListing(callId, headers, digits),
+        handOver: (h) => handOver(callId, link, desk, h),
+        onEnded: () => {
+          desks.delete(callId);
+          callers.delete(callId);
+          sessions.delete(callId);
+        },
+      });
+      desks.set(callId, desk);
+      desk.start();
+    } finally {
+      connecting -= 1;
+    }
+  };
+
+  /** find_listing: the code's check digit, its mandate, and a negotiation to join. Only exact matches count. */
+  const lookupListing = async (callId: string, headers: SipHeader[], digits: string): Promise<Lookup> => {
+    if (digits.length !== 4) return { found: false, reason: "wrong_length" };
+    if (!isListingCode(digits)) return { found: false, reason: "check_failed" };
+    const mandateId = deps.library?.findByListingCode(digits) ?? null;
+    if (!mandateId) return { found: false, reason: "not_found" };
+    const target = resolve({ kind: "mandate", mandateId });
+    if (!target.ok) return { found: false, reason: target.reason === "mandate_paused" ? "paused" : target.reason === "mandate_closed" ? "closed" : target.reason === "mandate_not_found" ? "not_found" : "unavailable" };
+    // Each code is looked up afresh: a session kept for webhook retries never carries over to another code.
+    sessions.delete(callId);
+    const opened = await sessionFor(callId, headers, target);
+    sessions.delete(callId);
+    if (!opened.ok) return { found: false, reason: opened.error === "busy" ? "busy" : opened.error === "deal_concluded" ? "closed" : "unavailable" };
+    const briefing = await engine.voiceBriefing(opened.sessionId);
+    const waiting = opened.continuing && (briefing?.status === "awaiting_approval" || briefing?.status === "paused");
+    if (!briefing || (briefing.status !== "active" && !waiting)) return { found: false, reason: "unavailable" };
+    log({ kind: "phone_listing_found", callId, sessionId: opened.sessionId, mandateId, continuing: opened.continuing });
+    return { found: true, sessionId: opened.sessionId, listing: { what: briefing.subject, for: briefing.principalName ?? `the ${briefing.principalRole}`, you_speak_for: briefing.principalRole, they_are: briefing.counterpartyRole } };
+  };
+
+  /**
+   * The listing was found: the same realtime session switches to the negotiation's instructions at
+   * once, what was said so far goes into the negotiation's record, and PhoneCall takes the call,
+   * answering the caller's last words without a new greeting.
+   */
+  const handOver = async (callId: string, link: RealtimeLink, desk: FrontDesk, h: HandOver) => {
+    const briefing = await engine.voiceBriefing(h.sessionId);
+    if (!briefing) throw new Error("The negotiation for this call is missing.");
+    const { model, ...update } = realtimeSession(deps.realtime, briefing, { noiseReduction: settings.noiseReduction, callStart: AFTER_FRONT_DESK });
+    link.send({ type: "session.update", session: update });
+    await recordFrontDesk(h.sessionId, h.history);
+    desks.delete(callId);
+    log({ kind: "phone_handed_over", callId, sessionId: h.sessionId, turns: h.history.length });
+    const call = await run(callId, h.sessionId, link, null, null, { opening: "continue", seed: h.seed, contactNumber: callers.get(callId) ?? null });
+    // The caller hung up while the call was being handed over.
+    if (desk.lineClosed) await call.end("hung_up");
+  };
+
+  /** The front desk's conversation, recorded as voice turns of the negotiation so the engine sees the whole call. */
+  const recordFrontDesk = async (sessionId: string, history: FrontDeskTurn[]) => {
+    const heard: string[] = [];
+    let heardItem: string | null = null;
+    for (const turn of history) {
+      if (turn.role === "caller") {
+        heard.push(turn.text);
+        heardItem ??= turn.itemId;
+        continue;
+      }
+      const recorded = heard.length
+        ? await engine.recordVoiceAnswer({ sessionId, buyerText: heard.join(" "), replyText: turn.text, messageId: `msg_fd_${(heardItem ?? crypto.randomUUID()).replace(/[^\w-]/g, "").slice(0, 90)}`, utteranceId: heardItem })
+        : await engine.recordVoiceLine({ sessionId, text: turn.text, reason: "Answered the shared phone line before the listing was known." });
+      if (!recorded.ok) log({ kind: "front_desk_not_recorded", sessionId, code: recorded.code });
+      heard.length = 0;
+      heardItem = null;
+    }
   };
 
   app.post(WEBHOOK_PATH, async (c) => {
@@ -384,29 +522,32 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
       sipUri: sipUri(settings),
       webhookPath: WEBHOOK_PATH,
       routes: settings.routes.map((r) => ({ number: r.number === "*" ? "*" : `+${r.number}`, target: r.target })),
+      // The shared line, for showing next to a listing code.
+      line: { number: lineNumber(settings), listingCodes: usesListingCodes(settings) },
       limits: { idleSeconds: settings.idleMs / 1000, maxMinutes: settings.maxCallMs / 60_000, maxCalls: settings.maxCalls },
       outbound: dialer ? { callerId: `+${dialer.settings.callerId}`, allow: dialer.settings.allow.map((n) => (n === "*" ? "*" : maskNumber(n))) } : null,
       calls: [...calls.values()].map((call) => ({ callId: call.callId, sessionId: call.sessionId, startedAt: call.startedAt.toISOString() })),
+      frontDesk: [...desks.values()].map((desk) => ({ callId: desk.callId, startedAt: desk.startedAt.toISOString() })),
     }),
   );
 
   const endAll = async () => {
-    await Promise.all([...calls.values()].map((call) => call.end("server")));
+    await Promise.all([...calls.values()].map((call) => call.end("server")).concat([...desks.values()].map((desk) => desk.end("server"))));
   };
 
   if (deps.hangUpOnExit) {
     // A stopped or restarted server (node --watch restarts on every saved file) would otherwise
     // leave its calls connected to a voice nobody supervises. Hang them up first, for at most 3 s.
     const stop = (signal: NodeJS.Signals) => {
-      if (calls.size === 0) process.exit(0);
-      log({ kind: "phone_shutdown", signal, calls: calls.size });
+      if (calls.size + desks.size === 0) process.exit(0);
+      log({ kind: "phone_shutdown", signal, calls: calls.size + desks.size });
       void Promise.race([endAll(), new Promise((r) => setTimeout(r, 3_000))]).finally(() => process.exit(0));
     };
     process.once("SIGTERM", stop);
     process.once("SIGINT", stop);
   }
 
-  return { calls, endAll, outbound: dialer };
+  return { calls, desks, endAll, outbound: dialer };
 }
 
 /**

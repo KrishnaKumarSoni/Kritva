@@ -2243,6 +2243,61 @@ input {
   white-space: nowrap;
 }
 
+/* The listing code: what callers give on the shared phone line. The digits are the one thing to read at a glance. */
+.listing-code {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
+  padding: var(--space-2) var(--space-5);
+  border-block-end: 1px solid var(--color-border);
+  background: var(--color-accent-surface);
+  min-width: 0;
+}
+.listing-code-icon {
+  flex: none;
+  color: var(--color-accent-brand);
+}
+.listing-code-text {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: var(--space-2);
+  row-gap: 2px;
+  min-width: 0;
+  /* On a narrow screen the copy button moves to its own line rather than squeezing the text. */
+  flex: 1 1 16rem;
+}
+.listing-code-label {
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--color-accent-text);
+}
+.listing-code-digits {
+  font-family: var(--font-mono);
+  font-size: var(--text-body);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--color-text-primary);
+}
+.listing-code-hint {
+  font-size: var(--text-caption);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+.listing-code-copy {
+  flex: none;
+  margin-inline-start: auto;
+}
+.listing-code.is-resting {
+  background: var(--color-bg-subtle);
+}
+.listing-code.is-resting .listing-code-icon,
+.listing-code.is-resting .listing-code-label {
+  color: var(--color-text-secondary);
+}
+
 .intake-progress {
   padding: 10px var(--space-5);
   display: grid;

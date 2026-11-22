@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  isListingCode,
   MandateLibrary,
   MandateRevisions,
   NegotiationEngine,
@@ -1064,5 +1065,133 @@ describe("inbound calls with several counterparties", () => {
     const second = await t.ring("rtc_second");
     expect(second.json).toMatchObject({ ok: true });
     expect(second.json.sessionId).not.toBe(first.json.sessionId);
+  });
+});
+
+// ---------- The shared line's front desk (listing codes) ----------
+
+describe("Phone: the front desk asks for the listing code", () => {
+  const codeLine = () => setup({ settings: { routes: parseRoutes(`${NUMBER}=code,*=code`).routes, answersFor: ["Krishna Furniture"] } });
+  /** What the agent said in a response, as OpenAI reports it when the response is done. */
+  const said = (t: ReturnType<typeof setup>, id: string, text: string, call?: { name: string; args: Record<string, unknown> }) => {
+    t.link.emit({ type: "response.created", response: { id } });
+    const output: Array<Record<string, unknown>> = [];
+    if (text) output.push({ id: `item_${id}`, type: "message", role: "assistant", content: [{ type: "output_audio", transcript: text }] });
+    if (call) output.push({ id: `fc_${id}`, type: "function_call", name: call.name, call_id: `call_${id}`, arguments: JSON.stringify(call.args) });
+    t.link.emit({ type: "response.done", response: { id, status: "completed", output } });
+  };
+  /** The caller's words: a committed audio item and its transcript. */
+  const heard = (t: ReturnType<typeof setup>, itemId: string, text: string) => {
+    t.link.emit({ type: "input_audio_buffer.speech_started", item_id: itemId });
+    t.link.emit({ type: "input_audio_buffer.committed", item_id: itemId });
+    t.link.emit({ type: "conversation.item.input_audio_transcription.completed", item_id: itemId, transcript: text });
+  };
+  const outputs = (t: ReturnType<typeof setup>) => t.link.sent.filter((e) => e.type === "conversation.item.create" && e.item?.type === "function_call_output").map((e) => ({ callId: e.item.call_id, ...JSON.parse(e.item.output) }));
+
+  it("answers with the front desk, finds the listing from its code, and goes on there as one conversation", async () => {
+    const t = codeLine();
+    const code = t.library!.get("man_bed-sale-listing")!.listingCode!;
+    expect(isListingCode(code)).toBe(true);
+    const res = await t.ring("rtc_fd1");
+    expect(res.json).toMatchObject({ ok: true, frontDesk: true });
+    // No negotiation exists until the listing is found.
+    expect(await t.sessions()).toHaveLength(0);
+    const accept = t.connector.accepted[0]!.session;
+    expect(accept.instructions).toContain("Answering the line");
+    expect(accept.instructions).toContain("- Krishna Furniture");
+    await until(() => t.link.sent.some((e) => e.type === "response.create"));
+    const [update, pickUp] = t.link.sent;
+    expect(update!.type).toBe("session.update");
+    expect(update!.session.tools.map((tool: { name: string }) => tool.name)).toEqual(["find_listing", "end_call"]);
+    // The agent picks up in its own words: the server only asks it to respond.
+    expect(pickUp).toEqual({ type: "response.create", response: {} });
+
+    said(t, "r1", "Hello! Kritva here, an AI assistant. How can I help?");
+    heard(t, "item_c1", "Hi, is this Krishna Furniture? I'm Ravi, I saw the bed listing.");
+    said(t, "r2", "Yes, it is! Could you share the 4-digit code on the listing?");
+    // A misheard digit fails the check digit, so no listing is read back.
+    const misheard = `${code.slice(0, 3)}${(Number(code[3]) + 1) % 10}`;
+    heard(t, "item_c2", misheard);
+    said(t, "r3", "One sec.", { name: "find_listing", args: { code: misheard } });
+    await until(() => outputs(t).length === 1);
+    expect(outputs(t)[0]).toMatchObject({ callId: "call_r3", found: false, reason: "check_failed", digits_heard: misheard });
+    expect(await t.sessions()).toHaveLength(0);
+
+    said(t, "r4", "Sorry, could you say it again, one digit at a time?");
+    heard(t, "item_c3", [...code].join(" "));
+    said(t, "r5", "", { name: "find_listing", args: { code: [...code].join(" ") } });
+    await until(async () => (await t.sessions()).length === 1);
+    await until(() => outputs(t).length === 2);
+    expect(outputs(t)[1]).toMatchObject({ callId: "call_r5", found: true });
+    const sessionId = (await t.sessions())[0]!.id;
+    // The same realtime session switches to the negotiation's instructions, then the agent goes on from the code.
+    await until(() => t.link.sent.filter((e) => e.type === "session.update").length === 2);
+    const handed = t.link.sent.filter((e) => e.type === "session.update")[1]!.session;
+    expect(handed.tools.map((tool: { name: string }) => tool.name)).toEqual(["negotiate", "end_call"]);
+    expect(handed.instructions).toContain("Once the listing is found");
+    expect(handed.instructions).not.toMatch(/18,000|18000/);
+    await until(() => t.link.sent.at(-1)?.type === "response.create");
+    expect(t.link.sent.at(-1)).toEqual({ type: "response.create" });
+
+    said(t, "r6", "Got it, the queen bed. What would you like to know?");
+    await until(async () => (await t.messages(sessionId)).some((m) => m.text.startsWith("Got it")));
+    const messages = (await t.messages(sessionId)).map((m) => [m.direction, m.text]);
+    // The whole call is in the record, without a second greeting from the engine.
+    expect(messages).toEqual([
+      ["outbound", "Hello! Kritva here, an AI assistant. How can I help?"],
+      ["inbound", "Hi, is this Krishna Furniture? I'm Ravi, I saw the bed listing."],
+      ["outbound", "Yes, it is! Could you share the 4-digit code on the listing?"],
+      ["inbound", misheard],
+      ["outbound", "One sec."],
+      ["outbound", "Sorry, could you say it again, one digit at a time?"],
+      ["inbound", [...code].join(" ")],
+      ["outbound", "Got it, the queen bed. What would you like to know?"],
+    ]);
+    expect(await t.connections(sessionId)).toEqual([{ status: "connected", transport: "phone", reason: null, direction: "inbound" }]);
+    t.link.hangUp();
+    await until(async () => (await t.connections(sessionId)).length === 2);
+    expect((await t.connections(sessionId))[1]).toMatchObject({ status: "ended", reason: "hung_up" });
+    expect(JSON.stringify(t.logs)).not.toContain("9876543210");
+  });
+
+  it("tells the agent when the listing is paused, and passes keypad digits on as what was pressed", async () => {
+    const t = codeLine();
+    const code = t.library!.get("man_bed-sale-listing")!.listingCode!;
+    // A second live mandate keeps the line open while the demo listing is paused.
+    const other = t.library!.importConfirmed({ mandateId: "m_other", title: "Other", mandate: t.library!.active("man_bed-sale-listing")!.mandate, input: { title: "Other", principalRole: "seller", counterpartyRole: "buyer", publicText: "x", privateText: "" } });
+    expect(other.listingCode).not.toBe(code);
+    t.library!.setLifecycle("man_bed-sale-listing", "paused");
+    await t.ring("rtc_fd2");
+    await until(() => t.link.sent.some((e) => e.type === "response.create"));
+    said(t, "r1", "Hello, Kritva here.");
+    for (const key of code) t.link.emit({ type: "input_audio_buffer.dtmf_event_received", event: key, received_at: 1 });
+    t.link.emit({ type: "input_audio_buffer.dtmf_event_received", event: "#", received_at: 1 });
+    await until(() => t.link.sent.some((e) => e.type === "conversation.item.create" && e.item?.role === "user"));
+    const keypad = t.link.sent.find((e) => e.type === "conversation.item.create" && e.item?.role === "user")!;
+    expect(keypad.item.content[0].text).toContain([...code].join(" "));
+    said(t, "r2", "", { name: "find_listing", args: { code } });
+    await until(() => outputs(t).length === 1);
+    expect(outputs(t)[0]).toMatchObject({ found: false, reason: "paused" });
+    expect(await t.sessions()).toHaveLength(0);
+    // The agent says goodbye and ends the call; it hangs up once the goodbye has played.
+    said(t, "r3", "It's paused right now, do try again later. Bye!", { name: "end_call", args: { reason: "listing paused" } });
+    t.link.emit({ type: "output_audio_buffer.stopped", response_id: "r3" });
+    await until(() => t.connector.hungUp.includes("rtc_fd2"));
+    expect(await t.sessions()).toHaveLength(0);
+  });
+
+  it("declines the call (480) when no listing on the line is live", async () => {
+    const t = codeLine();
+    t.library!.setLifecycle("man_bed-sale-listing", "closed");
+    await t.ring("rtc_fd3");
+    expect(t.connector.rejected).toEqual([{ callId: "rtc_fd3", statusCode: 480 }]);
+  });
+
+  it("shows the line's number for the listing code", async () => {
+    const t = codeLine();
+    const phone = (await (await t.app.request("/api/operator/phone")).json()) as any;
+    expect(phone.line).toEqual({ number: NUMBER, listingCodes: true });
+    const listed = (await (await t.app.request("/api/operator/library")).json()) as any[];
+    expect(isListingCode(listed.find((m) => m.mandateId === "man_bed-sale-listing").listingCode)).toBe(true);
   });
 });

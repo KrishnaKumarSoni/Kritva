@@ -24,6 +24,7 @@ import { validateDraft, type ValidationIssue } from "../schema/validate.ts";
 import { confirmMandate } from "./confirm.ts";
 import { canonicalJson } from "../record/events.ts";
 import { readiness, type Readiness } from "./revisions.ts";
+import { pickListingCode } from "./listing-code.ts";
 
 export interface LibraryInput {
   title: string;
@@ -118,7 +119,22 @@ interface CounterpartyEventRow {
   entry: Omit<CounterpartyEntry, "id" | "addedAt"> | null;
 }
 
+/**
+ * A mandate's listing code (listing-code.ts): assigned once it is first live, kept while it is paused
+ * or closed (a caller then hears that it is paused or closed), released when it is deleted.
+ */
+interface ListingCodeRow {
+  id: string;
+  mandateId: string;
+  code: string;
+  kind: "assigned" | "released";
+  createdAt: string;
+}
+
 export interface LibraryBackend {
+  insertListingCode(row: ListingCodeRow): void;
+  /** One mandate's code events, or every mandate's when no ID is given, oldest first. */
+  listListingCodes(mandateId?: string): ListingCodeRow[];
   insertCounterpartyEvent(row: CounterpartyEventRow): void;
   listCounterpartyEvents(mandateId: string): CounterpartyEventRow[];
   insertLifecycle(row: LifecycleRow): void;
@@ -155,6 +171,8 @@ export interface LibraryDetail {
   /** live, paused, closed, or draft while nothing is confirmed. */
   state: MandateState;
   deleted: boolean;
+  /** The four digits a caller gives on the shared phone line to reach this mandate; null until it is first live. */
+  listingCode: string | null;
   /** The latest version, whatever its status. */
   latest: { versionId: string; status: VersionStatus; draft: MandateDraft; draftHash: string; readiness: Readiness; blockers: string[] } | null;
   active: { revision: number; versionId: string; confirmedAt: string; mandate: ConfirmedMandate } | null;
@@ -174,14 +192,14 @@ export class MandateLibrary {
   }
 
   /** Saved mandates, newest activity last. Deleted mandates are left out. */
-  list(): Array<{ mandateId: string; title: string; caseId: string; activeRevision: number | null; hasOpenDraft: boolean; state: MandateState; updatedAt: string; principalSide: PrincipalSide | null }> {
+  list(): Array<{ mandateId: string; title: string; caseId: string; activeRevision: number | null; hasOpenDraft: boolean; state: MandateState; updatedAt: string; principalSide: PrincipalSide | null; listingCode: string | null }> {
     return this.#backend.listMandates().flatMap((m) => {
       const d = this.get(m.id)!;
       if (d.deleted) return [];
       const lifecycle = this.#backend.listLifecycle(m.id);
       const updatedAt = [m.createdAt, ...d.versions.map((v) => v.createdAt), ...lifecycle.map((e) => e.createdAt)].sort().at(-1)!;
       const principalSide = principalSideOf(d.active?.mandate ?? d.latest?.draft ?? null) ?? d.input.principalSide ?? null;
-      return [{ mandateId: m.id, title: d.title, caseId: m.caseId, activeRevision: d.active?.revision ?? null, hasOpenDraft: d.latest?.status === "draft", state: d.state, updatedAt, principalSide }];
+      return [{ mandateId: m.id, title: d.title, caseId: m.caseId, activeRevision: d.active?.revision ?? null, hasOpenDraft: d.latest?.status === "draft", state: d.state, updatedAt, principalSide, listingCode: d.listingCode }];
     });
   }
 
@@ -201,8 +219,58 @@ export class MandateLibrary {
       deleted: ["draft", "live", "paused", "closed"],
     };
     if (!allowed[action].includes(d.state)) return { ok: false, code: "invalid_state", message: d.state === "draft" ? "Make this mandate live first." : `This mandate is already ${d.state}.` };
-    this.#backend.insertLifecycle({ id: `llc_${randomUUID()}`, mandateId, kind: action, createdAt: this.#now().toISOString() });
+    this.#backend.transaction(() => {
+      this.#backend.insertLifecycle({ id: `llc_${randomUUID()}`, mandateId, kind: action, createdAt: this.#now().toISOString() });
+      // A deleted mandate gives its listing code back; it is reused only after all others.
+      if (action === "deleted" && d.listingCode) this.#backend.insertListingCode({ id: `lcd_${randomUUID()}`, mandateId, code: d.listingCode, kind: "released", createdAt: this.#now().toISOString() });
+    });
     return { ok: true, value: this.get(mandateId)! };
+  }
+
+  /** The mandate that holds a listing code now (paused and closed ones included), or null. */
+  findByListingCode(code: string): string | null {
+    let holder: string | null = null;
+    for (const row of this.#backend.listListingCodes()) {
+      if (row.code !== code) continue;
+      holder = row.kind === "assigned" ? row.mandateId : holder === row.mandateId ? null : holder;
+    }
+    return holder;
+  }
+
+  /**
+   * Gives a confirmed mandate its listing code if it has none yet, and returns the code. Codes are
+   * assigned when a mandate first goes live; this also covers mandates saved before codes existed.
+   * Null for a draft or deleted mandate, or when all 900 codes are held.
+   */
+  ensureListingCode(mandateId: string): string | null {
+    return this.#backend.transaction(() => {
+      const d = this.get(mandateId);
+      if (!d || d.deleted || !d.active) return null;
+      if (d.listingCode) return d.listingCode;
+      const holders = new Map<string, string>();
+      const released: string[] = [];
+      for (const row of this.#backend.listListingCodes()) {
+        if (row.kind === "assigned") holders.set(row.code, row.mandateId);
+        else if (holders.get(row.code) === row.mandateId) {
+          holders.delete(row.code);
+          released.push(row.code);
+        }
+      }
+      const code = pickListingCode(new Set(holders.keys()), released.filter((c, i) => released.lastIndexOf(c) === i));
+      if (!code) return null;
+      this.#backend.insertListingCode({ id: `lcd_${randomUUID()}`, mandateId, code, kind: "assigned", createdAt: this.#now().toISOString() });
+      return code;
+    });
+  }
+
+  /** Gives every confirmed mandate without one a listing code (for example after an upgrade). Returns how many were assigned. */
+  ensureListingCodes(): number {
+    let assigned = 0;
+    for (const m of this.#backend.listMandates()) {
+      const before = this.get(m.id)?.listingCode ?? null;
+      if (!before && this.ensureListingCode(m.id)) assigned += 1;
+    }
+    return assigned;
   }
 
   get(mandateId: string): LibraryDetail | null {
@@ -224,8 +292,10 @@ export class MandateLibrary {
     const deleted = lifecycle.some((e) => e.kind === "deleted");
     const last = lifecycle.filter((e) => e.kind !== "deleted").at(-1)?.kind;
     const state: MandateState = !lastConfirmed ? "draft" : last === "paused" ? "paused" : last === "closed" ? "closed" : "live";
+    const codeRow = this.#backend.listListingCodes(mandateId).at(-1);
     return {
       mandateId: m.id,
+      listingCode: codeRow?.kind === "assigned" ? codeRow.code : null,
       caseId: m.caseId,
       // The title follows the latest wording, so a renamed mandate shows its new name.
       title: latest?.input.title || m.title,
@@ -369,6 +439,8 @@ export class MandateLibrary {
     } catch {
       return { ok: false, code: "write_failed", message: "The confirmation could not be saved. The mandate is still unconfirmed." };
     }
+    // Live for the first time: it gets the code callers give on the shared phone line.
+    this.ensureListingCode(mandateId);
     return { ok: true, value: { detail: this.get(mandateId)!, revision, mandate: confirmed.mandate } };
   }
 
@@ -379,7 +451,12 @@ export class MandateLibrary {
    */
   importConfirmed(input: { mandateId: string; title: string; input: LibraryInput; mandate: ConfirmedMandate }): LibraryDetail {
     const existing = this.get(input.mandateId);
-    if (existing) return this.#refreshImport(existing, input);
+    if (existing) {
+      const refreshed = this.#refreshImport(existing, input);
+      // Saved before listing codes existed: it gets one now.
+      if (!refreshed.listingCode && this.ensureListingCode(input.mandateId)) return this.get(input.mandateId)!;
+      return refreshed;
+    }
     const at = this.#now().toISOString();
     const draft = { ...structuredClone(input.mandate), approval: { status: "unapproved" as const } } as unknown as MandateDraft;
     const row: VersionRow = { ...version(input.mandateId, 1, at, "text", input.input, [], null, draft), imported: true };
@@ -388,6 +465,7 @@ export class MandateLibrary {
       this.#backend.insertVersion(row);
       this.#backend.insertEvent({ id: `lev_${randomUUID()}`, mandateId: input.mandateId, versionId: row.id, kind: "confirmed", revision: 1, createdAt: at, confirmed: input.mandate });
     });
+    this.ensureListingCode(input.mandateId);
     return this.get(input.mandateId)!;
   }
 
@@ -607,6 +685,12 @@ CREATE TABLE IF NOT EXISTS library_counterparties (
   id TEXT PRIMARY KEY, mandate_id TEXT NOT NULL REFERENCES library_mandates(id), entry_id TEXT NOT NULL,
   kind TEXT NOT NULL CHECK (kind IN ('added', 'updated', 'removed')), created_at TEXT NOT NULL, body TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS library_listing_codes (
+  id TEXT PRIMARY KEY, mandate_id TEXT NOT NULL REFERENCES library_mandates(id), code TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('assigned', 'released')), created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS library_listing_codes_mandate ON library_listing_codes (mandate_id);
+CREATE TRIGGER IF NOT EXISTS library_listing_codes_no_update BEFORE UPDATE ON library_listing_codes BEGIN SELECT RAISE(ABORT, 'listing code events are append-only'); END;
 CREATE TRIGGER IF NOT EXISTS library_counterparties_no_update BEFORE UPDATE ON library_counterparties BEGIN SELECT RAISE(ABORT, 'counterparty events are append-only'); END;
 CREATE TRIGGER IF NOT EXISTS library_lifecycle_no_update BEFORE UPDATE ON library_lifecycle BEGIN SELECT RAISE(ABORT, 'lifecycle events are append-only'); END;
 CREATE TRIGGER IF NOT EXISTS library_versions_no_update BEFORE UPDATE ON library_versions BEGIN SELECT RAISE(ABORT, 'versions are append-only'); END;
@@ -657,6 +741,13 @@ export class SqliteLibraryBackend implements LibraryBackend {
   }
   insertEvent(row: LibraryEventRow): void {
     this.#db.prepare("INSERT INTO library_events (id, mandate_id, version_id, kind, revision, created_at, body) VALUES (?, ?, ?, ?, ?, ?, ?)").run(row.id, row.mandateId, row.versionId, row.kind, row.revision, row.createdAt, JSON.stringify(row));
+  }
+  insertListingCode(row: ListingCodeRow): void {
+    this.#db.prepare("INSERT INTO library_listing_codes (id, mandate_id, code, kind, created_at) VALUES (?, ?, ?, ?, ?)").run(row.id, row.mandateId, row.code, row.kind, row.createdAt);
+  }
+  listListingCodes(mandateId?: string): ListingCodeRow[] {
+    const rows = (mandateId === undefined ? this.#db.prepare("SELECT * FROM library_listing_codes ORDER BY rowid").all() : this.#db.prepare("SELECT * FROM library_listing_codes WHERE mandate_id = ? ORDER BY rowid").all(mandateId)) as Array<Record<string, string>>;
+    return rows.map((r) => ({ id: r.id!, mandateId: r.mandate_id!, code: r.code!, kind: r.kind as ListingCodeRow["kind"], createdAt: r.created_at! }));
   }
   insertCounterpartyEvent(row: CounterpartyEventRow): void {
     this.#db.prepare("INSERT INTO library_counterparties (id, mandate_id, entry_id, kind, created_at, body) VALUES (?, ?, ?, ?, ?, ?)").run(row.id, row.mandateId, row.entryId, row.kind, row.createdAt, JSON.stringify(row));
