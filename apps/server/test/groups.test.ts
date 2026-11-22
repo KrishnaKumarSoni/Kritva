@@ -102,3 +102,26 @@ describe("several counterparties: starting negotiations", () => {
     expect(second.json.message).toContain("up to 1");
   });
 });
+
+describe("several counterparties: the board", () => {
+  it("shows one row per counterparty with the best offer starred and offers outside the limits flagged", async () => {
+    const { call, mandateId, say, offer } = groupSetup();
+    await call("POST", `/api/operator/library/${mandateId}/counterparties`, { name: "Ravi" });
+    await call("POST", `/api/operator/library/${mandateId}/counterparties`, { name: "Asha" });
+    await call("POST", `/api/operator/library/${mandateId}/counterparties`, { name: "Meera" });
+    const started = (await call("POST", `/api/operator/library/${mandateId}/start`)).json.started as Array<{ sessionId: string }>;
+    const [ravi, asha, meera] = started.map((s) => s.sessionId);
+    await say(ravi!, "I can do 19,500", offer(19_500));
+    await say(asha!, "18,500?", offer(18_500));
+    await say(meera!, "15,000", offer(15_000));
+    const board = await call("GET", `/api/operator/library/${mandateId}/board`);
+    expect(board.status).toBe(200);
+    const row = (name: string) => board.json.rows.find((r: { name: string }) => r.name === name);
+    expect(row("Ravi").best).toBe(true);
+    expect(row("Ravi").offer.amount).toBe("₹19,500");
+    expect(row("Ravi").gap).toBe("₹1,500 above your floor");
+    expect(row("Meera").flag).toBe("outside_limits");
+    expect(row("Meera").gap).toBe("₹3,000 below your floor");
+    expect(board.json.counters).toMatchObject({ negotiationsRun: 3, dealsOutsideLimits: 0 });
+  });
+});

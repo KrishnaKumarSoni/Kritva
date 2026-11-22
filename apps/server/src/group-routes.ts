@@ -4,7 +4,7 @@
  * The board itself is in board-routes (it reads every member session).
  */
 import type { Hono } from "hono";
-import type { ConfirmedMandate, DealGroups, JoinVia, MandateLibrary, NegotiationRecord } from "@kritva/core";
+import { formatValue, numericValue, orderTerms, projectBoard, projectState, type ConfirmedMandate, type DealGroups, type JoinVia, type MandateLibrary, type NegotiationRecord, type OfferTerm, type MandateView } from "@kritva/core";
 
 export type StartOutcome = { ok: true; sessionId: string } | { ok: false; status: 400 | 409; error: string; message: string };
 
@@ -40,6 +40,9 @@ export interface GroupRouteDeps {
   record: NegotiationRecord;
   library: MandateLibrary;
   groups: DealGroups;
+  locale: string;
+  /** Session IDs with a voice call connected now (browser or phone), when the server tracks them. */
+  liveCalls?: () => Set<string>;
 }
 
 export function registerGroupRoutes(app: Hono, deps: GroupRouteDeps): void {
@@ -108,6 +111,69 @@ export function registerGroupRoutes(app: Hono, deps: GroupRouteDeps): void {
     return c.json({ started, refused, ...(await listView(id)) }, started.length > 0 ? 201 : 200);
   });
 
+  /** The deal's board: one row per counterparty, the best live offer, pending approvals and the counters. */
+  app.get("/api/operator/library/:id/board", async (c) => {
+    const id = c.req.param("id");
+    const detail = found(id);
+    if (!detail) return c.json({ error: "not_found" }, 404);
+    const group = groups.latestFor(id);
+    const entries = library.counterparties(id);
+    if (!group) return c.json({ mandateId: id, title: detail.title, state: detail.state, max: groups.maxOpen, rows: [], waiting: entries.map((e) => ({ entryId: e.id, name: e.name })), bestSessionId: null, reservation: null, concluded: null, counters: { negotiationsRun: 0, timeMs: 0, dealsOutsideLimits: 0 } });
+    const live = deps.liveCalls?.() ?? null;
+    const inputs = await Promise.all(group.members.map(async (m) => {
+      const ctx = await record.context(m.sessionId);
+      const entry = entries.find((e) => e.id === m.entryId) ?? null;
+      return { sessionId: m.sessionId, state: projectState(ctx), ctx, entry: entry ? { id: entry.id, name: entry.name } : null, via: m.via };
+    }));
+    const board = projectBoard(inputs, group);
+    const nameOf = (sessionId: string) => board.rows.find((r) => r.sessionId === sessionId)?.name ?? null;
+    const rows = board.rows.map((row, i) => {
+      const state = inputs[i]!.state;
+      const view = state.view;
+      const pending = state.pendingApproval;
+      return {
+        sessionId: row.sessionId,
+        name: row.name,
+        via: row.via,
+        channel: row.channel,
+        live: live ? live.has(row.sessionId) : row.live,
+        status: row.status,
+        offer: row.offer ? { amount: amountText(view, row.offer.amount, deps.locale), changes: changedTerms(view, row.offer.terms, deps.locale), accepted: row.offer.accepted, at: row.offer.at } : null,
+        gap: gapText(view, row.gap, deps.locale),
+        gapValue: row.gap,
+        score: row.score === null ? null : Math.round(row.score * 100),
+        flag: row.flag,
+        best: row.best,
+        lastActivityAt: row.lastActivityAt,
+        link: `/?view=buyer#session=${row.sessionId}`,
+        approval: pending
+          ? {
+              requestId: pending.requestId,
+              offerId: pending.offerId,
+              mandateRevision: state.mandateRevision,
+              purpose: pending.purpose,
+              terms: orderTerms(view, inputs[i]!.ctx.offerTerms(pending.offerId)?.terms ?? []).map((t) => ({ name: view.terms.get(t.termId)?.name ?? t.termId, value: formatValue(t.value, deps.locale) })),
+              // Another counterparty holds the deal: this one can be approved only if that falls through.
+              heldBy: group.reservation && group.reservation.sessionId !== row.sessionId ? (nameOf(group.reservation.sessionId) ?? "another counterparty") : null,
+            }
+          : null,
+      };
+    });
+    const started = new Set(group.members.map((m) => m.entryId));
+    return c.json({
+      mandateId: id,
+      title: detail.title,
+      state: detail.state,
+      max: groups.maxOpen,
+      rows,
+      waiting: entries.filter((e) => !started.has(e.id)).map((e) => ({ entryId: e.id, name: e.name })),
+      bestSessionId: board.bestSessionId,
+      reservation: group.reservation ? { sessionId: group.reservation.sessionId, name: nameOf(group.reservation.sessionId) } : null,
+      concluded: group.concluded ? { sessionId: group.concluded.sessionId, name: nameOf(group.concluded.sessionId) } : null,
+      counters: board.counters,
+    });
+  });
+
   /** The console reports how long a decision took on screen; the header adds it up. */
   app.post("/api/operator/library/:id/time", async (c) => {
     const id = c.req.param("id");
@@ -117,4 +183,30 @@ export function registerGroupRoutes(app: Hono, deps: GroupRouteDeps): void {
     groups.recordTime(group.groupId, { action: body.action, sessionId: typeof body.sessionId === "string" ? body.sessionId : null, ms: body.ms });
     return c.json({ ok: true });
   });
+}
+
+function amountText(view: MandateView, amount: number | null, locale: string): string | null {
+  const n = view.negotiable;
+  return n && amount !== null ? formatValue(numericValue(n, amount), locale) : null;
+}
+
+/** "₹1,500 above your floor" or "₹500 below your floor", in the principal's direction. */
+function gapText(view: MandateView, gap: number | null, locale: string): string | null {
+  const n = view.negotiable;
+  if (!n || gap === null) return null;
+  const word = n.direction === "up" ? "floor" : "ceiling";
+  if (gap === 0) return `At your ${word}`;
+  const amount = formatValue(numericValue(n, Math.abs(gap)), locale);
+  return n.direction === "up" ? `${amount} ${gap > 0 ? "above" : "below"} your ${word}` : `${amount} ${gap > 0 ? "under" : "over"} your ${word}`;
+}
+
+/** The terms of an offer that differ from the principal's public package (the price is shown on its own). */
+function changedTerms(view: MandateView, terms: OfferTerm[], locale: string): string[] {
+  return orderTerms(view, terms)
+    .filter((t) => t.termId !== view.negotiable?.termId)
+    .filter((t) => {
+      const base = view.defaultPackage.find((d) => d.termId === t.termId);
+      return !base || JSON.stringify(base.value) !== JSON.stringify(t.value);
+    })
+    .map((t) => `${view.terms.get(t.termId)?.name ?? t.termId}: ${formatValue(t.value, locale)}`);
 }

@@ -106,7 +106,7 @@ export function createApp(deps: AppDeps): Hono {
   }
 
   if (deps.library) registerLibraryRoutes(app, { library: deps.library, record, engine, locale, examples: deps.examples ?? [], protectedIds: (deps.listings ?? []).map((l) => l.libraryId), groups: deps.groups ?? null });
-  if (deps.library && deps.groups) registerGroupRoutes(app, { record, library: deps.library, groups: deps.groups });
+  if (deps.library && deps.groups) registerGroupRoutes(app, { record, library: deps.library, groups: deps.groups, locale });
   if (deps.library && deps.intake) registerIntakeRoutes(app, { intake: deps.intake, library: deps.library, record, engine, locale });
   registerVoiceRoutes(app, {
     record,
