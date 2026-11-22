@@ -50,7 +50,7 @@ This work lets one principal run one mandate against several counterparties at t
 - Latency matters (Bangalore). Nothing slow is added to a normal turn. Reading a group of at most 5 sessions is cheap.
 - Never use em dashes. AWS later for deployment. OpenAI for models.
 - Interface work uses the `fluid-design`, `apple-design`, `better-ui`, `better-polish` and `better-interface` skills, Geist Serif headings, burnt orange `#CC5500` for primary actions, jet black `#0A0A0A`, white, and Kritva-styled dropdowns (CLAUDE.md).
-- Other sessions are changing the same code (section 15). Their work lands first and this builds on it.
+- Other sessions are changing the same code (section 15). Their work lands first and this builds on it. Planned record changes are announced to the approval session before they are made: an optional `competition` field on the `decision` event, the group events in their own module and tables, and a new `mention_other_offers` permission action. `record/rules.ts` does not change.
 
 ## 4. Approaches
 
@@ -241,7 +241,7 @@ King-size bed · Koramangala                         [Start negotiations (2)]
 
 | Session | Owns | Effect on this work |
 |---|---|---|
-| Parent (`epics-12-14-console-voice-demo`) | The refactor: code checks slimmed to hard limits, a plain-text conversation guide, a price and terms split in the brief. Touches `engine.ts`, `gate.ts`, `reply-check.ts`, `compose.ts`, `negotiator.ts`, `app.ts` and the phone routes. | Merged into this branch before any building. The reply-check rule (9.2) goes into whatever hard-limit check remains. |
+| Parent (`epics-12-14-console-voice-demo`) | The refactor: code checks slimmed to hard limits, a plain-text conversation guide, a price and terms split in the brief. Touches `engine.ts`, `gate.ts`, `reply-check.ts`, `compose.ts`, `negotiator.ts`, `app.ts` and the phone routes. | Merged into this branch (commit `4424d97` and the voice-wait commit after it). The reply check still has its hard-limit rules, and the `invented_competition` rule (9.2) joins them. Baseline after the merge: 352 core and 129 server tests pass. |
 | Approval (`claude/approval-flow-1d75c9`) | Per-session approval: approve, counter and decline; the wrap-up; follow-ups; the contact consent event; the approval card; the `#onApproved` and `#recordAgreement` hooks. | This work hooks into those two functions and reuses the consent event and the card. Changes to `record/events.ts` and `record/rules.ts` are announced to each other first. |
 | Phone calls | Vobiz trunk, `phone/routes.ts`. | Caller matching and the cap are added there (section 13). |
 | Tone | Reply wording. | The closing message follows the conversation guide like every other reply. |
