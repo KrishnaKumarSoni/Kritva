@@ -130,4 +130,17 @@ describe("the mandate's counterparty list", () => {
     expect(lib.counterparties("m_demo")).toEqual([]);
     expect(lib.addCounterparty("m_demo", { name: "  " }, 5)).toMatchObject({ ok: false, code: "invalid_input" });
   });
+
+  it("a changed case file becomes the next revision of an imported mandate, until the principal edits it", () => {
+    const lib = library();
+    expect(lib.active("m_demo")!.revision).toBe(1);
+    const changed = structuredClone(mandate);
+    changed.goals[0]!.description = `${changed.goals[0]!.description} (updated)`;
+    lib.importConfirmed({ mandateId: "m_demo", title: "Demo", mandate: changed, input: { title: "Demo", principalRole: "principal", counterpartyRole: "counterparty", publicText: "x", privateText: "" } });
+    expect(lib.active("m_demo")!.revision).toBe(2);
+    expect(lib.active("m_demo")!.mandate.goals[0]!.description).toContain("(updated)");
+    // The same file again changes nothing.
+    lib.importConfirmed({ mandateId: "m_demo", title: "Demo", mandate: changed, input: { title: "Demo", principalRole: "principal", counterpartyRole: "counterparty", publicText: "x", privateText: "" } });
+    expect(lib.active("m_demo")!.revision).toBe(2);
+  });
 });

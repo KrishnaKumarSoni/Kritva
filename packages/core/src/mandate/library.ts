@@ -22,6 +22,7 @@ import { PermissionMode, type ConfirmedMandate, type MandateDraft, type Principa
 type Mode = (typeof PermissionMode.options)[number];
 import { validateDraft, type ValidationIssue } from "../schema/validate.ts";
 import { confirmMandate } from "./confirm.ts";
+import { canonicalJson } from "../record/events.ts";
 import { readiness, type Readiness } from "./revisions.ts";
 
 export interface LibraryInput {
@@ -60,6 +61,8 @@ interface VersionRow {
   basedOnVersionId: string | null;
   draft: MandateDraft;
   draftHash: string;
+  /** Imported from a case file by the host (not written by the principal). */
+  imported?: boolean;
 }
 
 interface LibraryEventRow {
@@ -272,6 +275,30 @@ export class MandateLibrary {
     return { ok: true, value: null };
   }
 
+  /**
+   * A case file that changed since it was imported becomes the next confirmed revision, so an existing
+   * data folder picks up the change. Only while the active revision is still an import nobody edited:
+   * once the principal has changed the mandate (or has a draft open), their version stands.
+   */
+  #refreshImport(existing: LibraryDetail, input: { mandateId: string; input: LibraryInput; mandate: ConfirmedMandate }): LibraryDetail {
+    if (existing.deleted || !existing.active) return existing;
+    if (canonicalJson(existing.active.mandate) === canonicalJson(input.mandate)) return existing;
+    const versions = this.#backend.listVersions(input.mandateId);
+    const active = versions.find((v) => v.id === existing.active!.versionId);
+    // Revision 1 with no other versions was imported before imports were marked.
+    const untouched = active?.imported === true || (versions.length === 1 && existing.active.revision === 1);
+    if (!active || !untouched || versions.at(-1)?.id !== active.id) return existing;
+    const at = this.#now().toISOString();
+    const draft = { ...structuredClone(input.mandate), approval: { status: "unapproved" as const } } as unknown as MandateDraft;
+    const row: VersionRow = { ...version(input.mandateId, active.seq + 1, at, "text", input.input, [], active.id, draft), imported: true };
+    const revision = existing.active.revision + 1;
+    this.#backend.transaction(() => {
+      this.#backend.insertVersion(row);
+      this.#backend.insertEvent({ id: `lev_${randomUUID()}`, mandateId: input.mandateId, versionId: row.id, kind: "confirmed", revision, createdAt: at, confirmed: input.mandate });
+    });
+    return this.get(input.mandateId)!;
+  }
+
   /** The confirmed revision sessions should use now. Unconfirmed drafts never appear here. */
   active(mandateId: string): { revision: number; mandate: ConfirmedMandate } | null {
     const d = this.get(mandateId);
@@ -352,10 +379,10 @@ export class MandateLibrary {
    */
   importConfirmed(input: { mandateId: string; title: string; input: LibraryInput; mandate: ConfirmedMandate }): LibraryDetail {
     const existing = this.get(input.mandateId);
-    if (existing) return existing;
+    if (existing) return this.#refreshImport(existing, input);
     const at = this.#now().toISOString();
     const draft = { ...structuredClone(input.mandate), approval: { status: "unapproved" as const } } as unknown as MandateDraft;
-    const row = version(input.mandateId, 1, at, "text", input.input, [], null, draft);
+    const row: VersionRow = { ...version(input.mandateId, 1, at, "text", input.input, [], null, draft), imported: true };
     this.#backend.transaction(() => {
       this.#backend.insertMandate({ id: input.mandateId, caseId: input.mandate.caseId, title: input.title, createdAt: at });
       this.#backend.insertVersion(row);
