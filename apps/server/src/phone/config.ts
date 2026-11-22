@@ -26,7 +26,7 @@ export interface PhoneSettings {
   webhookSecret: string;
   /** The OpenAI project ID ("proj_..."), the user part of the SIP URI. Only used to print the setup values. */
   projectId: string | null;
-  /** OpenAI's SIP host. Default: the global host, which Vobiz documents and which worked on the first live calls (GeoIP-routed). */
+  /** OpenAI's SIP host. Default: the global host (GeoIP-routed), the one OpenAI documents for Twilio. */
   sipHost: string;
   routes: PhoneRoute[];
   /** Country code assumed for numbers written without one ("080 7123 4567" in India). */
@@ -43,13 +43,6 @@ export interface PhoneSettings {
   /** Log every sideband event type and the masked SIP headers of each call (KRITVA_PHONE_TRACE=1), for diagnosing a call. */
   trace: boolean;
   /**
-   * The audio codec to declare to OpenAI for calls Kritva placed (KRITVA_PHONE_OUTBOUND_CODEC). Vobiz's
-   * outbound legs use G.711 mu-law (PCMU), and OpenAI stayed silent on them when no format was given;
-   * inbound calls (A-law from the networks) worked without one. Off by default: declaring PCMU did not
-   * bring audio on the live test either (section 15.4).
-   */
-  outboundCodec: "pcmu" | "pcma" | null;
-  /**
    * Public names the shared line answers for (KRITVA_PHONE_ANSWERS_FOR, comma-separated), so the front
    * desk can say yes to "Is this ABC Corporation?" before the code. Demo listings add their own public
    * principal names. Never read out to callers.
@@ -59,7 +52,7 @@ export interface PhoneSettings {
 
 /** OpenAI's global SIP host, routed by the caller's location (https://developers.openai.com/api/docs/guides/realtime-sip). */
 export const GLOBAL_SIP_HOST = "sip.api.openai.com";
-/** The India edge. Untested with Vobiz since the accept was fixed; KRITVA_PHONE_SIP_HOST selects it. */
+/** OpenAI's India edge, for a provider whose media servers are in India; KRITVA_PHONE_SIP_HOST selects it. Twilio's are not. */
 export const INDIA_SIP_HOST = "sip-in.api.openai.com";
 
 /** A phone number as digits with its country code: "+91 80 7123 4567", "080 7123 4567" and "8071234567" all become "918071234567". */
@@ -131,7 +124,6 @@ export function phoneSettingsFromEnv(env: NodeJS.ProcessEnv = process.env): { se
     maxCalls: Math.round(seconds(env.KRITVA_PHONE_MAX_CALLS, 5, 1, 100)),
     acceptMode: env.KRITVA_PHONE_ACCEPT === "full" ? "full" : "minimal",
     trace: env.KRITVA_PHONE_TRACE === "1",
-    outboundCodec: env.KRITVA_PHONE_OUTBOUND_CODEC === "pcmu" ? "pcmu" : env.KRITVA_PHONE_OUTBOUND_CODEC === "pcma" ? "pcma" : null,
     answersFor: (env.KRITVA_PHONE_ANSWERS_FOR ?? "").split(",").map((n) => n.trim().slice(0, 100)).filter(Boolean).slice(0, 20),
   };
   return { settings: webhookSecret && parsed.routes.length ? settings : null, problems };
@@ -149,24 +141,28 @@ export function usesListingCodes(settings: Pick<PhoneSettings, "routes">): boole
 }
 
 /**
- * The SIP URI the phone provider sends calls to. Vobiz needs the explicit TLS port (5061) and has
- * TLS chosen in its console; other providers take `;transport=tls` instead
- * (https://www.vobiz.ai/docs/integrations/openai-realtime).
+ * OpenAI's SIP address for the project, over TLS, as Twilio's `<Dial><Sip>` dials it
+ * (https://developers.openai.com/api/docs/guides/realtime-sip).
  */
 export function sipUri(settings: Pick<PhoneSettings, "projectId" | "sipHost">): string {
-  return `sip:${settings.projectId ?? "proj_YOUR_PROJECT_ID"}@${settings.sipHost}:5061`;
+  return `sip:${settings.projectId ?? "proj_YOUR_PROJECT_ID"}@${settings.sipHost};transport=tls`;
 }
 
-/** Outbound calling settings (Kritva dials counterparties through Vobiz). See outbound.ts. */
+/** Twilio's account credentials (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN), or null when either is missing. */
+export function twilioFromEnv(env: NodeJS.ProcessEnv): { accountSid: string; authToken: string } | null {
+  const accountSid = env.TWILIO_ACCOUNT_SID?.trim();
+  const authToken = env.TWILIO_AUTH_TOKEN?.trim();
+  return accountSid && authToken ? { accountSid, authToken } : null;
+}
+
+/** Outbound calling settings (Kritva dials counterparties through Twilio). See outbound.ts. */
 export interface OutboundConfig {
-  authId: string;
+  accountSid: string;
   authToken: string;
-  /** Kritva's Vobiz number, digits with country code. */
+  /** Kritva's Twilio number, digits with country code. */
   callerId: string;
   publicUrl: string;
   bridgeUri: string;
-  /** "number" (default): hand answered calls over through Kritva's own number; "sip": straight to OpenAI's SIP address. */
-  bridge: "number" | "sip";
   /** Numbers Kritva may call (digits with country code), or ["*"]. Empty until calling is approved. */
   allow: string[];
   maxCalls: number;
@@ -175,8 +171,8 @@ export interface OutboundConfig {
 }
 
 /**
- * Outbound calls are on when phone calls are on and VOBIZ_AUTH_ID, VOBIZ_AUTH_TOKEN,
- * KRITVA_PHONE_CALLER_ID (Kritva's Vobiz number), KRITVA_PUBLIC_URL (https, reachable by Vobiz)
+ * Outbound calls are on when phone calls are on and TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN,
+ * KRITVA_PHONE_CALLER_ID (Kritva's Twilio number), KRITVA_PUBLIC_URL (https, reachable by Twilio)
  * and OPENAI_PROJECT_ID are set. KRITVA_PHONE_OUTBOUND_ALLOW lists the numbers that may be called
  * ("*" for any); without it nothing can be dialled, which is the safe default.
  */
@@ -187,8 +183,8 @@ export function outboundFromEnv(env: NodeJS.ProcessEnv, phone: PhoneSettings): {
     if (!value) problems.push(`${name} is not set.`);
     return value ?? "";
   };
-  const authId = need("VOBIZ_AUTH_ID");
-  const authToken = need("VOBIZ_AUTH_TOKEN");
+  const accountSid = need("TWILIO_ACCOUNT_SID");
+  const authToken = need("TWILIO_AUTH_TOKEN");
   const callerRaw = need("KRITVA_PHONE_CALLER_ID");
   const publicUrl = need("KRITVA_PUBLIC_URL");
   if (!phone.projectId) problems.push("OPENAI_PROJECT_ID is not set.");
@@ -199,12 +195,11 @@ export function outboundFromEnv(env: NodeJS.ProcessEnv, phone: PhoneSettings): {
   if (problems.length) return { config: null, problems };
   return {
     config: {
-      authId,
+      accountSid,
       authToken,
       callerId,
       publicUrl,
-      bridgeUri: `${sipUri(phone)};transport=tls`,
-      bridge: env.KRITVA_PHONE_BRIDGE === "sip" ? "sip" : "number",
+      bridgeUri: sipUri(phone),
       allow,
       maxCalls: phone.maxCalls,
       timeLimitSeconds: Math.round(phone.maxCallMs / 1000),

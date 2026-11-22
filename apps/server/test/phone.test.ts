@@ -25,7 +25,7 @@ import { loadConfirmedMandates, loadExamples, loadListings } from "../src/main-h
 import { GLOBAL_SIP_HOST, normalizeNumber, outboundFromEnv, parseRoutes, phoneSettingsFromEnv, sipUri, type PhoneSettings } from "../src/phone/config.ts";
 import { OutboundDialer, type OutboundSettings } from "../src/phone/outbound.ts";
 import type { LiveCallRegistry } from "../src/phone/routes.ts";
-import type { OutboundTelephony, PlaceCall } from "../src/phone/vobiz.ts";
+import { dialSipTwiml, twilioSignature, verifyTwilioSignature, type OutboundTelephony, type PlaceCall, type TwilioWebhookAuth } from "../src/phone/twilio.ts";
 import { heardPart, ServerPlayback, type Clock, type PlaybackReport } from "../src/phone/playback.ts";
 import { callerNumber, dialledNumbers, maskNumber, routeFor } from "../src/phone/sip-headers.ts";
 import { signWebhook, verifyWebhook, WebhookSignatureError } from "../src/phone/webhook-signature.ts";
@@ -62,7 +62,7 @@ describe("Phone: settings", () => {
     expect(phoneSettingsFromEnv({ OPENAI_WEBHOOK_SECRET: SECRET }).settings).toBeNull();
     const { settings } = phoneSettingsFromEnv({ OPENAI_WEBHOOK_SECRET: SECRET, KRITVA_PHONE_ROUTES: `${NUMBER}=bed-sale`, OPENAI_PROJECT_ID: "proj_abc" });
     expect(settings).toMatchObject({ sipHost: GLOBAL_SIP_HOST, noiseReduction: "near_field", idleMs: 30_000, maxCallMs: 15 * 60_000, maxCalls: 5 });
-    expect(sipUri(settings!)).toBe("sip:proj_abc@sip.api.openai.com:5061");
+    expect(sipUri(settings!)).toBe("sip:proj_abc@sip.api.openai.com;transport=tls");
   });
 });
 
@@ -75,7 +75,7 @@ describe("Phone: SIP headers", () => {
 
   it("finds the dialled number in To, and a provider's own header first", () => {
     expect(dialledNumbers(headers)).toEqual(["918071234567"]);
-    expect(dialledNumbers([{ name: "X-Vobiz-DID", value: "08071234599" }, ...headers])).toEqual(["918071234599", "918071234567"]);
+    expect(dialledNumbers([{ name: "X-Kritva-Called", value: "918071234599" }, ...headers])).toEqual(["918071234599", "918071234567"]);
     expect(dialledNumbers([{ name: "To", value: "<sip:proj_abc@sip-in.api.openai.com>" }])).toEqual([]);
   });
 
@@ -352,7 +352,7 @@ const until = async (check: () => boolean | Promise<boolean>, ms = 4_000) => {
   }
 };
 
-/** Records what Kritva asks Vobiz to do. */
+/** Records what Kritva asks Twilio to do. */
 class FakeTelephony implements OutboundTelephony {
   readonly placed: PlaceCall[] = [];
   readonly hungUp: string[] = [];
@@ -364,7 +364,7 @@ class FakeTelephony implements OutboundTelephony {
       throw error;
     }
     this.placed.push(call);
-    return { providerCallId: `vobiz_${this.placed.length}` };
+    return { providerCallId: `CA_${this.placed.length}` };
   }
   async hangup(providerCallId: string) {
     this.hungUp.push(providerCallId);
@@ -384,7 +384,7 @@ class FakeLiveCalls implements LiveCallRegistry {
   }
 }
 
-function setup(options: { library?: boolean; settings?: Partial<PhoneSettings>; outbound?: Partial<OutboundSettings>; injectDialer?: boolean; followUps?: boolean; groups?: number } = {}) {
+function setup(options: { library?: boolean; settings?: Partial<PhoneSettings>; outbound?: Partial<OutboundSettings>; injectDialer?: boolean; followUps?: boolean; groups?: number; twilio?: TwilioWebhookAuth } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "kritva-phone-"));
   const db = join(dir, "db.sqlite");
   const record = new NegotiationRecord(new SqliteRecordBackend(db));
@@ -400,19 +400,19 @@ function setup(options: { library?: boolean; settings?: Partial<PhoneSettings>; 
   const telephony = new FakeTelephony();
   const liveCalls = new FakeLiveCalls();
   let injected: OutboundDialer | null = null;
-  const outboundSettings: OutboundSettings = { callerId: "918064264194", publicUrl: "https://kritva.example.test", bridgeUri: "sip:proj_test@sip.api.openai.com:5061;transport=tls", bridge: "sip", allow: [normalizeNumber(COUNTERPARTY)], maxCalls: 5, timeLimitSeconds: 900, countryCode: "91", ...options.outbound };
-  const settings: PhoneSettings = { webhookSecret: SECRET, projectId: "proj_test", sipHost: GLOBAL_SIP_HOST, routes: parseRoutes(`${NUMBER}=bed-sale`).routes, countryCode: "91", noiseReduction: "near_field", idleMs: 60_000, maxCallMs: 600_000, maxCalls: 5, acceptMode: "minimal", trace: false, outboundCodec: "pcmu", ...options.settings };
+  const outboundSettings: OutboundSettings = { callerId: "918064264194", publicUrl: "https://kritva.example.test", bridgeUri: "sip:proj_test@sip.api.openai.com;transport=tls", allow: [normalizeNumber(COUNTERPARTY)], maxCalls: 5, timeLimitSeconds: 900, countryCode: "91", ...options.outbound };
+  const settings: PhoneSettings = { webhookSecret: SECRET, projectId: "proj_test", sipHost: GLOBAL_SIP_HOST, routes: parseRoutes(`${NUMBER}=bed-sale`).routes, countryCode: "91", noiseReduction: "near_field", idleMs: 60_000, maxCallMs: 600_000, maxCalls: 5, acceptMode: "minimal", trace: false, ...options.settings };
   const logs: Array<Record<string, unknown>> = [];
-  /** A fake Vobiz: each Make Call request is kept; retries run at once. */
-  const followUpVobiz = { calls: [] as Array<{ url: string; body: Record<string, any> }>, fail: false };
+  /** A fake Twilio: each Calls API request is kept (its form fields); retries run at once. */
+  const followUpTwilio = { calls: [] as Array<{ url: string; body: Record<string, string> }>, fail: false };
   const followUps = options.followUps
     ? new FollowUpCalls({
         record,
         engine,
-        settings: followUpSettingsFromEnv({ VOBIZ_AUTH_ID: "MA_TEST", VOBIZ_AUTH_TOKEN: "tok", KRITVA_FOLLOW_UP_FROM: "+91 80 7123 4567", KRITVA_PUBLIC_URL: "https://kritva.example" }, sipUri(settings)).settings!,
+        settings: followUpSettingsFromEnv({ TWILIO_ACCOUNT_SID: "AC_TEST", TWILIO_AUTH_TOKEN: "tok", KRITVA_PHONE_CALLER_ID: "+91 80 7123 4567", KRITVA_PUBLIC_URL: "https://kritva.example" }, sipUri(settings)).settings!,
         fetch: (async (url: string, init: RequestInit) => {
-          followUpVobiz.calls.push({ url, body: JSON.parse(String(init.body)) });
-          return new Response(JSON.stringify(followUpVobiz.fail ? { message: "no" } : { request_uuid: `vb_${followUpVobiz.calls.length}` }), { status: followUpVobiz.fail ? 400 : 200 });
+          followUpTwilio.calls.push({ url, body: Object.fromEntries(new URLSearchParams(String(init.body))) });
+          return new Response(JSON.stringify(followUpTwilio.fail ? { message: "no" } : { sid: `CA_${followUpTwilio.calls.length}` }), { status: followUpTwilio.fail ? 400 : 201 });
         }) as typeof fetch,
         later: (fn) => fn(),
         log: (e) => logs.push(e),
@@ -429,7 +429,7 @@ function setup(options: { library?: boolean; settings?: Partial<PhoneSettings>; 
     examples,
     listings,
     realtime: { connector, settings: realtimeSettingsFromEnv({}) },
-    phone: { settings, connector, log: (e) => logs.push(e), pollMs: 40, acceptBackoffMs: [0, 0, 0], outbound: options.outbound && !options.injectDialer ? { telephony, settings: outboundSettings } : null },
+    phone: { settings, connector, log: (e) => logs.push(e), pollMs: 40, acceptBackoffMs: [0, 0, 0], outbound: options.outbound && !options.injectDialer ? { telephony, settings: outboundSettings } : null, twilio: options.twilio ?? null },
     dialer: options.injectDialer ? (injected = new OutboundDialer({ engine, telephony, settings: outboundSettings })) : null,
     liveCalls,
     groups,
@@ -470,11 +470,11 @@ function setup(options: { library?: boolean; settings?: Partial<PhoneSettings>; 
   const mandate = mandates.find((m) => m.id === "bed-sale/demo")!.mandate;
   const priceTerm = mandate.terms.find((t) => t.valueType === "money")!.id;
   const offer = (amount: number) => ({ intent: "offer", offer_kind: "offer", offer_terms: [{ term_id: priceTerm, value: { type: "money", amount, currency: null, unit: null, text: null, boolean: null } }] });
-  /** OpenAI's webhook for the bridged leg of an outbound call, with the SIP headers Vobiz sent. */
+  /** OpenAI's webhook for the leg Twilio handed over for an outbound call, with the SIP headers it sent. */
   const bridge = (callId: string, headers: Array<{ name: string; value: string }>) =>
-    ring(callId, NUMBER, undefined, JSON.stringify({ id: `evt_${callId}`, object: "event", type: "realtime.call.incoming", created_at: 1, data: { call_id: callId, sip_headers: [{ name: "From", value: "<sip:+918064264194@13.200.197.87>;tag=1" }, { name: "To", value: `<sip:proj_test@${GLOBAL_SIP_HOST}:5061>` }, ...headers] } }));
-  /** Vobiz calling one of Kritva's callback URLs for an outbound call. */
-  const vobiz = async (url: string, fields: Record<string, string> = {}) => {
+    ring(callId, NUMBER, undefined, JSON.stringify({ id: `evt_${callId}`, object: "event", type: "realtime.call.incoming", created_at: 1, data: { call_id: callId, sip_headers: [{ name: "From", value: "<sip:+918064264194@54.172.60.1>;tag=1" }, { name: "To", value: `<sip:proj_test@${GLOBAL_SIP_HOST}>` }, ...headers] } }));
+  /** Twilio calling one of Kritva's callback URLs (form fields, as Twilio posts them). */
+  const twilio = async (url: string, fields: Record<string, string> = {}) => {
     const res = await app.request(url.replace("https://kritva.example.test", ""), { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(fields).toString() });
     return { status: res.status, text: await res.text(), type: res.headers.get("content-type") };
   };
@@ -489,7 +489,7 @@ function setup(options: { library?: boolean; settings?: Partial<PhoneSettings>; 
     if (!started.ok) throw new Error(started.error.message);
     return started.session.id;
   };
-  return { groups, listings, app, record, engine, llm, library, connector, telephony, liveCalls, injected: () => injected, link, logs, ring, bridge, vobiz, placeCall, getCall, newSession, sessions, events, messages, deliveries, connections, play, offer, followUpVobiz };
+  return { groups, listings, app, record, engine, llm, library, connector, telephony, liveCalls, injected: () => injected, link, logs, ring, bridge, twilio, placeCall, getCall, newSession, sessions, events, messages, deliveries, connections, play, offer, followUpTwilio };
 }
 
 describe("Phone: incoming calls", () => {
@@ -613,7 +613,7 @@ describe("Phone: incoming calls", () => {
     await until(() => t.connector.attached === 1);
     await until(async () => ((await (await t.app.request("/api/operator/phone")).json()) as any).calls.length === 1);
     const status = (await (await t.app.request("/api/operator/phone")).json()) as any;
-    expect(status.sipUri).toBe("sip:proj_test@sip.api.openai.com:5061");
+    expect(status.sipUri).toBe("sip:proj_test@sip.api.openai.com;transport=tls");
     expect(status.routes).toEqual([{ number: NUMBER, target: { kind: "listing", caseId: "bed-sale" } }]);
     expect(JSON.stringify(status)).not.toContain(SECRET);
   });
@@ -712,12 +712,12 @@ describe("Phone: during a call", () => {
 });
 
 describe("Phone: outbound calls (Kritva dials the counterparty)", () => {
-  it("is off without Vobiz settings, and the allowlist starts empty", () => {
+  it("is off without Twilio settings, and the allowlist starts empty", () => {
     const { settings } = phoneSettingsFromEnv({ OPENAI_WEBHOOK_SECRET: SECRET, KRITVA_PHONE_ROUTES: "*=bed-sale", OPENAI_PROJECT_ID: "proj_abc" });
     expect(outboundFromEnv({}, settings!).config).toBeNull();
-    const env = { VOBIZ_AUTH_ID: "MA_X", VOBIZ_AUTH_TOKEN: "t", KRITVA_PHONE_CALLER_ID: "08064264194", KRITVA_PUBLIC_URL: "https://x.example" };
+    const env = { TWILIO_ACCOUNT_SID: "AC_X", TWILIO_AUTH_TOKEN: "t", KRITVA_PHONE_CALLER_ID: "+1 912 502 1960", KRITVA_PUBLIC_URL: "https://x.example" };
     const on = outboundFromEnv(env, settings!).config!;
-    expect(on).toMatchObject({ callerId: "918064264194", bridgeUri: "sip:proj_abc@sip.api.openai.com:5061;transport=tls", allow: [] });
+    expect(on).toMatchObject({ accountSid: "AC_X", callerId: "19125021960", bridgeUri: "sip:proj_abc@sip.api.openai.com;transport=tls", allow: [] });
     expect(outboundFromEnv({ ...env, KRITVA_PHONE_OUTBOUND_ALLOW: "+91 98123 45678,*" }, settings!).config!.allow).toEqual(["919812345678", "*"]);
     expect(outboundFromEnv({ ...env, KRITVA_PUBLIC_URL: "http://x.example" }, settings!).problems.join(" ")).toMatch(/https/);
   });
@@ -730,10 +730,9 @@ describe("Phone: outbound calls (Kritva dials the counterparty)", () => {
     expect(res.json).toMatchObject({ sessionId, state: "dialling", to: "91******5678", outcome: null });
     const [placed] = t.telephony.placed;
     expect(placed).toMatchObject({ from: "+918064264194", to: COUNTERPARTY, timeLimitSeconds: 900 });
-    const token = /\/api\/phone\/vobiz\/([\w-]+)\/answer$/.exec(placed!.answerUrl)![1]!;
+    const token = /\/api\/phone\/twilio\/call\/([\w-]+)\/answer$/.exec(placed!.answerUrl)![1]!;
     expect(token.length).toBeGreaterThanOrEqual(24);
-    expect(placed!.ringUrl).toBe(`https://kritva.example.test/api/phone/vobiz/${token}/ring`);
-    expect(placed!.hangupUrl).toBe(`https://kritva.example.test/api/phone/vobiz/${token}/hangup`);
+    expect(placed!.statusUrl).toBe(`https://kritva.example.test/api/phone/twilio/call/${token}/status`);
     // The number never enters the negotiation record.
     expect(JSON.stringify(await t.events(sessionId))).not.toContain("9812345678");
   });
@@ -751,7 +750,7 @@ describe("Phone: outbound calls (Kritva dials the counterparty)", () => {
     expect((await t.placeCall(sessionId, COUNTERPARTY, "click-0002")).status).toBe(502);
   });
 
-  it("answered: the XML bridges to OpenAI over TLS with the token; the bridged call joins the same session, greets and is recorded as Kritva's call", async () => {
+  it("answered: the TwiML hands the call to OpenAI over TLS with the token; the bridged call joins the same session, greets and is recorded as Kritva's call", async () => {
     const t = setup({ outbound: {} });
     const greetings: Array<Record<string, unknown>> = [];
     const greet = t.engine.greet.bind(t.engine);
@@ -760,15 +759,14 @@ describe("Phone: outbound calls (Kritva dials the counterparty)", () => {
     const { callId } = (await t.placeCall(sessionId)).json;
     const base = t.telephony.placed[0]!.answerUrl.replace(/\/answer$/, "");
     const token = base.split("/").at(-1)!;
-    await t.vobiz(`${base}/ring`, { CallStatus: "ringing" });
+    await t.twilio(`${base}/status`, { CallStatus: "ringing" });
     expect((await t.getCall(callId)).state).toBe("ringing");
-    const answer = await t.vobiz(`${base}/answer`, { CallStatus: "in-progress" });
+    const answer = await t.twilio(`${base}/answer`, { CallStatus: "in-progress" });
     expect(answer.type).toMatch(/xml/);
-    expect(answer.text).toContain(`<User sipHeaders="kritva_call=${token}">sip:proj_test@sip.api.openai.com:5061;transport=tls</User>`);
-    expect(answer.text).toContain('callerId="+918064264194"');
+    expect(answer.text).toContain(`<Sip>sip:proj_test@sip.api.openai.com;transport=tls?X-Kritva-Call=${token}</Sip>`);
     expect((await t.getCall(callId)).state).toBe("answered");
     const sessionsBefore = (await t.sessions()).length;
-    const res = await t.bridge("rtc_out1", [{ name: "X-VH-kritva_call", value: token }]);
+    const res = await t.bridge("rtc_out1", [{ name: "X-Kritva-Call", value: token }]);
     expect(res.json).toMatchObject({ ok: true, sessionId });
     expect((await t.sessions()).length).toBe(sessionsBefore);
     await until(() => t.link.says().length === 1);
@@ -776,42 +774,54 @@ describe("Phone: outbound calls (Kritva dials the counterparty)", () => {
     // The engine is asked for an outbound opener (who is calling, for whom and why).
     expect(greetings[0]).toMatchObject({ sessionId, channel: "voice", outbound: true });
     expect((await t.connections(sessionId))[0]).toEqual({ status: "connected", transport: "phone", reason: null, direction: "outbound" });
-    // They hang up: the realtime side ends, Kritva makes sure Vobiz's leg ends too, and the call completed.
+    // They hang up: the realtime side ends, Kritva makes sure Twilio's leg ends too, and the call completed.
     t.link.hangUp();
     await until(async () => (await t.getCall(callId)).state === "ended");
     expect((await t.getCall(callId)).outcome).toBe("completed");
-    expect(t.telephony.hungUp).toEqual(["vobiz_1"]);
+    expect(t.telephony.hungUp).toEqual(["CA_1"]);
     expect((await t.connections(sessionId))[1]).toMatchObject({ status: "ended", direction: "outbound" });
     const op = (await (await t.app.request(`/api/operator/sessions/${sessionId}`)).json()) as any;
     expect(op.events.map((e: any) => e.title)).toContain("Kritva's call connected");
   });
 
-  it("own-number route (the default): the answer XML forwards the call to Kritva's number, so it arrives through the inbound trunk", async () => {
-    const t = setup({ outbound: { bridge: "number" } });
-    const sessionId = await t.newSession();
-    const { callId } = (await t.placeCall(sessionId)).json;
-    const answer = await t.vobiz(t.telephony.placed[0]!.answerUrl);
-    expect(answer.text).toContain("<Number>+918064264194</Number>");
-    expect(answer.text).not.toContain("sip:");
-    // The forwarded call arrives with Kritva's number as the caller and no tag: it is the one answered call waiting.
-    const res = await t.bridge("rtc_loop1", []);
-    expect(res.json.sessionId).toBe(sessionId);
-    await until(async () => (await t.getCall(callId)).state === "connected");
-    expect(t.logs.find((l) => l.kind === "phone_outbound_bridged")).toMatchObject({ matchedBy: "only_waiting", from: "91******4194" });
-    // Kritva's own calls declare G.711 mu-law to OpenAI; inbound calls declare nothing.
-    const update = t.link.sent.find((e) => e.type === "session.update")!.session;
-    expect(update.audio.input.format).toEqual({ type: "audio/pcmu" });
-    expect(update.audio.output.format).toEqual({ type: "audio/pcmu" });
-    expect(update.audio.output.voice).toBe("marin");
+  it("inbound: the number's Voice URL answers with TwiML that hands the call to OpenAI, tagged with the dialled and calling numbers", async () => {
+    const t = setup();
+    const answer = await t.twilio("/api/phone/twilio/voice", { CallSid: "CA_in1", From: "+919876543210", To: `+${NUMBER.replace(/\D/g, "")}`, CallStatus: "ringing" });
+    expect(answer.status).toBe(200);
+    expect(answer.type).toMatch(/xml/);
+    expect(answer.text).toContain('answerOnBridge="true"');
+    expect(answer.text).toContain(`<Sip>sip:proj_test@sip.api.openai.com;transport=tls?X-Kritva-Called=${NUMBER.replace(/\D/g, "")}&amp;X-Kritva-Caller=919876543210</Sip>`);
+    // The handed-over call routes by X-Kritva-Called and knows the caller from X-Kritva-Caller.
+    const handed = JSON.stringify({ id: "evt_tw_in", object: "event", type: "realtime.call.incoming", created_at: 1, data: { call_id: "rtc_tw_in", sip_headers: [{ name: "From", value: "<sip:+919811112222@54.172.60.1>;tag=1" }, { name: "To", value: `<sip:proj_test@${GLOBAL_SIP_HOST}>` }, { name: "X-Kritva-Called", value: NUMBER.replace(/\D/g, "") }, { name: "X-Kritva-Caller", value: "919811112222" }] } });
+    const res = await t.ring("rtc_tw_in", NUMBER, undefined, handed);
+    expect(res.json.ok).toBe(true);
+    expect(t.logs.find((l) => l.kind === "phone_incoming")).toMatchObject({ caller: "91******2222" });
+  });
+
+  it("Twilio's webhook signature: computed as Twilio documents, checked against the public URL", async () => {
+    // Twilio's documented example (https://www.twilio.com/docs/usage/webhooks/webhooks-security).
+    const params = { CallSid: "CA1234567890ABCDE", Caller: "+12349013030", Digits: "1234", From: "+12349013030", To: "+18005551212" };
+    expect(twilioSignature("12345", "https://mycompany.com/myapp.php?foo=1&bar=2", params)).toBe("0/KCTR6DLpKmkAf8muzZqo1nDgQ=");
+    expect(verifyTwilioSignature("12345", "https://mycompany.com/myapp.php?foo=1&bar=2", params, "0/KCTR6DLpKmkAf8muzZqo1nDgQ=")).toBe(true);
+    expect(verifyTwilioSignature("12345", "https://mycompany.com/myapp.php?foo=1&bar=2", { ...params, Digits: "9" }, "0/KCTR6DLpKmkAf8muzZqo1nDgQ=")).toBe(false);
+    expect(() => dialSipTwiml({ sipUri: "sip:a@b", headers: { Bad: "x" }, timeLimitSeconds: 60 })).toThrow(/X-/);
+    // With the auth token set, an unsigned request is refused and a signed one is answered.
+    const t = setup({ twilio: { authToken: "tw_secret", publicUrl: "https://kritva.example.test" } });
+    expect((await t.twilio("/api/phone/twilio/voice", { From: "+919876543210", To: "+19125021960" })).status).toBe(403);
+    const fields = { From: "+919876543210", To: "+19125021960" };
+    const signature = twilioSignature("tw_secret", "https://kritva.example.test/api/phone/twilio/voice", fields);
+    const res = await t.app.request("/api/phone/twilio/voice", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", "x-twilio-signature": signature }, body: new URLSearchParams(fields).toString() });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("X-Kritva-Called=19125021960");
   });
 
   it("two counterparties answering together: the second hand-off waits for the first, and each reaches its own negotiation", async () => {
-    const t = setup({ outbound: { bridge: "number", allow: ["*"] } });
+    const t = setup({ outbound: { allow: ["*"] } });
     const [s1, s2] = [await t.newSession(), await t.newSession()];
     const a = (await t.placeCall(s1, "+919800000001")).json.callId;
     const b = (await t.placeCall(s2, "+919800000002")).json.callId;
-    const first = t.vobiz(t.telephony.placed[0]!.answerUrl);
-    const second = t.vobiz(t.telephony.placed[1]!.answerUrl);
+    const first = t.twilio(t.telephony.placed[0]!.answerUrl);
+    const second = t.twilio(t.telephony.placed[1]!.answerUrl);
     await first;
     await new Promise((r) => setTimeout(r, 300));
     // The second answer is still waiting: only the first call is handing off.
@@ -824,40 +834,44 @@ describe("Phone: outbound calls (Kritva dials the counterparty)", () => {
     await until(async () => (await t.getCall(a)).state === "connected" && (await t.getCall(b)).state === "connected");
   });
 
-  it("when Vobiz reports the phone leg hung up, Kritva ends its side of the bridged call too", async () => {
+  it("when Twilio reports the phone leg hung up, Kritva ends its side of the bridged call too", async () => {
     const t = setup({ outbound: {} });
     const sessionId = await t.newSession();
     const { callId } = (await t.placeCall(sessionId)).json;
     const token = t.telephony.placed[0]!.answerUrl.split("/").at(-2)!;
-    await t.vobiz(t.telephony.placed[0]!.answerUrl);
-    await t.bridge("rtc_out_bye", [{ name: "X-VH-kritva_call", value: token }]);
+    await t.twilio(t.telephony.placed[0]!.answerUrl);
+    await t.bridge("rtc_out_bye", [{ name: "X-Kritva-Call", value: token }]);
     await until(async () => (await t.getCall(callId)).state === "connected");
-    // OpenAI never closes the sideband here; only Vobiz's hang-up callback says the call is over.
-    await t.vobiz(t.telephony.placed[0]!.hangupUrl, { HangupCauseName: "NORMAL_CLEARING" });
+    // OpenAI never closes the sideband here; only Twilio's status callback says the call is over.
+    await t.twilio(t.telephony.placed[0]!.statusUrl, { CallStatus: "completed" });
     await until(async () => (await t.connections(sessionId)).length === 2);
     expect((await t.connections(sessionId))[1]).toMatchObject({ status: "ended", reason: "hung_up", direction: "outbound" });
     expect(t.connector.hungUp).toEqual(["rtc_out_bye"]);
     expect((await t.getCall(callId)).outcome).toBe("completed");
   });
 
-  it("not answered: a hang-up before the answer is no_answer, or busy when Vobiz says so", async () => {
+  it("not answered: Twilio's no-answer is no_answer, busy is busy, failed is failed", async () => {
     const t = setup({ outbound: {} });
     const sessionId = await t.newSession();
     const first = (await t.placeCall(sessionId)).json.callId;
-    await t.vobiz(t.telephony.placed[0]!.hangupUrl, { HangupCauseName: "NO_ANSWER" });
+    await t.twilio(t.telephony.placed[0]!.statusUrl, { CallStatus: "no-answer" });
     expect(await t.getCall(first)).toMatchObject({ state: "ended", outcome: "no_answer" });
     const second = (await t.placeCall(sessionId)).json.callId;
-    await t.vobiz(t.telephony.placed[1]!.hangupUrl, { HangupCauseName: "USER_BUSY" });
+    await t.twilio(t.telephony.placed[1]!.statusUrl, { CallStatus: "ringing" });
+    await t.twilio(t.telephony.placed[1]!.statusUrl, { CallStatus: "busy" });
     expect((await t.getCall(second)).outcome).toBe("busy");
     // A late answer callback for an ended call hangs up rather than bridging.
-    expect((await t.vobiz(t.telephony.placed[1]!.answerUrl)).text).toContain("<Hangup/>");
+    expect((await t.twilio(t.telephony.placed[1]!.answerUrl)).text).toContain("<Hangup/>");
+    const third = (await t.placeCall(sessionId)).json.callId;
+    await t.twilio(t.telephony.placed[2]!.statusUrl, { CallStatus: "failed" });
+    expect((await t.getCall(third)).outcome).toBe("failed");
   });
 
   it("without the tag, the one call waiting for its bridge is matched; with none waiting, a call routes as inbound", async () => {
     const t = setup({ outbound: {}, settings: { routes: parseRoutes("*=bed-sale").routes } });
     const sessionId = await t.newSession();
     const { callId } = (await t.placeCall(sessionId)).json;
-    await t.vobiz(t.telephony.placed[0]!.answerUrl);
+    await t.twilio(t.telephony.placed[0]!.answerUrl);
     expect((await t.bridge("rtc_out2", [])).json.sessionId).toBe(sessionId);
     await until(async () => (await t.getCall(callId)).state === "connected");
     const other = await t.ring("rtc_in9");
@@ -870,7 +884,7 @@ describe("Phone: outbound calls (Kritva dials the counterparty)", () => {
     const { callId } = (await t.placeCall(sessionId)).json;
     const res = await t.app.request(`/api/operator/calls/${callId}/hangup`, { method: "POST" });
     expect(((await res.json()) as any).outcome).toBe("cancelled");
-    expect(t.telephony.hungUp).toEqual(["vobiz_1"]);
+    expect(t.telephony.hungUp).toEqual(["CA_1"]);
     expect(((await (await t.app.request(`/api/operator/sessions/${sessionId}/calls`)).json()) as any[])).toHaveLength(1);
   });
 
@@ -886,7 +900,7 @@ describe("Phone: outbound calls (Kritva dials the counterparty)", () => {
     await t.app.request(`/api/operator/calls/${third.callId}/hangup`, { method: "POST" });
     expect(await t.getCall(third.callId)).toMatchObject({ state: "ended", outcome: "cancelled" });
     // The first goes unanswered: the second is dialled next.
-    await t.vobiz(t.telephony.placed[0]!.hangupUrl, { HangupCauseName: "NO_ANSWER" });
+    await t.twilio(t.telephony.placed[0]!.statusUrl, { CallStatus: "no-answer" });
     await until(() => t.telephony.placed.length === 2);
     expect(t.telephony.placed[1]!.to).toBe("+919800000002");
     expect((await t.getCall(second.callId)).state).toBe("dialling");
@@ -904,8 +918,8 @@ describe("Phone: outbound calls (Kritva dials the counterparty)", () => {
     const outbound = await t.newSession();
     const { callId } = (await t.placeCall(outbound)).json;
     const token = t.telephony.placed[0]!.answerUrl.split("/").at(-2)!;
-    await t.vobiz(t.telephony.placed[0]!.answerUrl);
-    await t.bridge("rtc_reg_out", [{ name: "X-VH-kritva_call", value: token }]);
+    await t.twilio(t.telephony.placed[0]!.answerUrl);
+    await t.bridge("rtc_reg_out", [{ name: "X-Kritva-Call", value: token }]);
     await until(() => t.liveCalls.events.length === 3);
     expect(t.liveCalls.events[2]).toEqual({ kind: "register", sessionId: outbound, contact: "919812345678" });
     expect((await t.getCall(callId)).state).toBe("connected");
@@ -916,7 +930,7 @@ describe("Phone: outbound calls (Kritva dials the counterparty)", () => {
     const sessionId = await t.newSession();
     const viaRoute = (await t.placeCall(sessionId)).json;
     expect(t.injected()!.get(viaRoute.callId)).toMatchObject({ sessionId, state: "dialling" });
-    await t.vobiz(t.telephony.placed[0]!.answerUrl);
+    await t.twilio(t.telephony.placed[0]!.answerUrl);
     expect((await t.bridge("rtc_inj", [])).json.sessionId).toBe(sessionId);
   });
 
@@ -984,22 +998,22 @@ describe("Phone: approval after the call, and a call-back", () => {
     expect(decided.followUp.via).toBe("call");
     expect(decided.reply).toBeNull();
     expect(decided.state.outcome.kind).toBe("in_progress");
-    expect(t.followUpVobiz.calls).toHaveLength(1);
-    expect(t.followUpVobiz.calls[0]!.url).toBe("https://api.vobiz.ai/api/v1/Account/MA_TEST/Call/");
-    expect(t.followUpVobiz.calls[0]!.body).toMatchObject({ from: "+918071234567", to: "+919876543210" });
-    const token = new URL(t.followUpVobiz.calls[0]!.body.answer_url).searchParams.get("t")!;
+    expect(t.followUpTwilio.calls).toHaveLength(1);
+    expect(t.followUpTwilio.calls[0]!.url).toBe("https://api.twilio.com/2010-04-01/Accounts/AC_TEST/Calls.json");
+    expect(t.followUpTwilio.calls[0]!.body).toMatchObject({ From: "+918071234567", To: "+919876543210", Record: "true" });
+    const token = t.followUpTwilio.calls[0]!.body.Url!.split("/").at(-2)!;
+    expect(t.followUpTwilio.calls[0]!.body.RecordingStatusCallback).toBe(`https://kritva.example/api/phone/twilio/follow-up/${token}/recording`);
 
-    // The buyer answers: Vobiz asks for the call's script.
-    const answer = await t.app.request(`/api/webhooks/vobiz/answer?t=${token}`, { method: "POST" });
+    // The counterparty answers: Twilio asks for the call's TwiML.
+    const answer = await t.app.request(`/api/phone/twilio/follow-up/${token}/answer`, { method: "POST" });
     const script = await answer.text();
-    expect(script).toContain(`KritvaFollowUp=${token}`);
-    expect(script).toMatch(/sip:proj_test@[\w.-]+:5061;transport=tls/);
-    expect(script).toContain('recordSession="true"');
+    expect(script).toContain(`X-Kritva-Follow-Up=${token}`);
+    expect(script).toMatch(/<Sip>sip:proj_test@[\w.-]+;transport=tls\?/);
 
     // The bridged call reaches OpenAI: it joins the same negotiation, with no route needed.
     const sessionsBefore = (await t.sessions()).length;
     const said = t.link.says().length;
-    const raw = JSON.stringify({ type: "realtime.call.incoming", data: { call_id: "rtc_back", sip_headers: [{ name: "To", value: "<sip:proj_test@sip-in.api.openai.com>" }, { name: "X-VH-KritvaFollowUp", value: token }] } });
+    const raw = JSON.stringify({ type: "realtime.call.incoming", data: { call_id: "rtc_back", sip_headers: [{ name: "To", value: "<sip:proj_test@sip-in.api.openai.com>" }, { name: "X-Kritva-Follow-Up", value: token }] } });
     const ts = Math.floor(Date.now() / 1000);
     const rung = await t.app.request("/api/webhooks/openai", { method: "POST", headers: { "content-type": "application/json", "webhook-id": "wh_back", "webhook-timestamp": String(ts), "webhook-signature": signWebhook(raw, "wh_back", ts, SECRET) }, body: raw });
     expect(((await rung.json()) as any).sessionId).toBe(t.sessionId);
@@ -1024,10 +1038,10 @@ describe("Phone: approval after the call, and a call-back", () => {
     await until(async () => (await t.connections(t.sessionId)).some((c) => c.status === "ended"));
     const pending = ((await (await t.app.request(`/api/operator/sessions/${t.sessionId}`)).json()) as any).state.pendingApproval;
     await t.app.request(`/api/operator/sessions/${t.sessionId}/approvals/${pending.requestId}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ decision: "approved", offerId: pending.offerId, mandateRevision: pending.mandateRevision }) });
-    const token = (i: number) => new URL(t.followUpVobiz.calls[i]!.body.hangup_url).searchParams.get("t")!;
-    await t.app.request(`/api/webhooks/vobiz/hangup?t=${token(0)}`, { method: "POST" });
-    await until(() => t.followUpVobiz.calls.length === 2);
-    await t.app.request(`/api/webhooks/vobiz/hangup?t=${token(1)}`, { method: "POST" });
+    const status = (i: number) => t.twilio(t.followUpTwilio.calls[i]!.body.StatusCallback!.replace("https://kritva.example", ""), { CallStatus: "no-answer" });
+    await status(0);
+    await until(() => t.followUpTwilio.calls.length === 2);
+    await status(1);
     await until(async () => (await t.engine.state(t.sessionId)).status === "no_agreement");
     const op = (await (await t.app.request(`/api/operator/sessions/${t.sessionId}`)).json()) as any;
     expect(op.state.followUp.status).toBe("lapsed");
@@ -1036,9 +1050,9 @@ describe("Phone: approval after the call, and a call-back", () => {
 
   it("an unknown token is refused politely, and webhooks with a used token do nothing", async () => {
     const t = setup({ followUps: true });
-    const res = await t.app.request("/api/webhooks/vobiz/answer?t=nope", { method: "POST" });
+    const res = await t.app.request("/api/phone/twilio/follow-up/nope/answer", { method: "POST" });
     expect(await res.text()).toContain("<Hangup/>");
-    expect((await t.app.request("/api/webhooks/vobiz/hangup?t=nope", { method: "POST" })).status).toBe(200);
+    expect((await t.twilio("/api/phone/twilio/follow-up/nope/status", { CallStatus: "completed" })).status).toBe(200);
   });
 });
 

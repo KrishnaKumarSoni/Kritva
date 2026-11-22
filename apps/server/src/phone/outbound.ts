@@ -3,10 +3,10 @@
  * (docs/Kritva_Phone_Calls.md, "Outbound calls").
  *
  *   call({ sessionId, to })
- *     → Vobiz Make Call (from Kritva's number, to them)          state: dialling
- *     → Vobiz ring callback                                       state: ringing
- *     → they answer; Vobiz asks the answer URL for XML            state: answered
- *       → the XML bridges the call to OpenAI's SIP address, tagged with this call's token
+ *     → Twilio Calls API (from Kritva's number, to them)          state: dialling
+ *     → Twilio status callback "ringing"                           state: ringing
+ *     → they answer; Twilio asks the answer URL for TwiML          state: answered
+ *       → <Dial><Sip> hands the call to OpenAI's SIP address with X-Kritva-Call=<this call's token>
  *     → OpenAI's realtime.call.incoming webhook carries the tag   state: connected
  *       → routes.ts accepts it into the session (not a new one) and runs the same PhoneCall
  *     → hang-up (theirs, Kritva's, or the provider's)             state: ended, with an outcome
@@ -20,20 +20,15 @@ import { randomBytes } from "node:crypto";
 import type { NegotiationEngine } from "@kritva/core";
 import { normalizeNumber } from "./config.ts";
 import { callerNumber, maskNumber, type SipHeader } from "./sip-headers.ts";
-import { bridgeXml, type OutboundTelephony } from "./vobiz.ts";
+import { dialSipTwiml, unansweredOutcome, type OutboundTelephony } from "./twilio.ts";
 
 export interface OutboundSettings {
-  /** Kritva's Vobiz number, digits with country code ("918064264194"). */
+  /** Kritva's Twilio number, digits with country code ("19125021960"). */
   callerId: string;
-  /** Public HTTPS base URL Vobiz can reach for its callbacks (the tunnel or the deployed host). */
+  /** Public HTTPS base URL Twilio can reach for its callbacks (the deployed host or a tunnel). */
   publicUrl: string;
-  /** OpenAI's SIP URI the answered call is bridged to ("sip:proj_...@sip.api.openai.com:5061;transport=tls"). */
+  /** OpenAI's SIP URI the answered call is handed to ("sip:proj_...@sip.api.openai.com;transport=tls"). */
   bridgeUri: string;
-  /**
-   * How an answered call reaches OpenAI: "number" through Kritva's own Vobiz number and the inbound
-   * trunk (works), or "sip" straight to the SIP URI (silent with Vobiz today). KRITVA_PHONE_BRIDGE.
-   */
-  bridge: "number" | "sip";
   /** Numbers Kritva may call (digits with country code), or ["*"] for any. Empty: none. */
   allow: string[];
   /** Calls at once (dialling, ringing or connected). */
@@ -82,18 +77,11 @@ interface OutboundCall {
   endReason: string | null;
 }
 
-/** Vobiz hang-up causes that mean the call never connected, mapped to an outcome. */
-const UNANSWERED: Array<[RegExp, OutboundOutcome]> = [
-  [/busy/i, "busy"],
-  [/no.?answer|timeout|not.?answered|unallocated|no.?user/i, "no_answer"],
-  [/cancel|originator/i, "cancelled"],
-];
-
 /** A bridged call answered with no OpenAI webhook within this time is treated as failed. */
 const BRIDGE_WAIT_MS = 45_000;
 /**
- * Hand-offs go one at a time, so the incoming call OpenAI reports is always the one answered call
- * waiting for its bridge (the "number" route carries no tag). A second answer waits up to this long.
+ * Hand-offs go one at a time, so even an incoming call whose X-Kritva-Call header was lost matches
+ * the one answered call waiting for its bridge. A second answer waits up to this long.
  */
 const HANDOFF_WAIT_MS = 12_000;
 
@@ -154,19 +142,19 @@ export class OutboundDialer {
     return dialled ? { ok: true, call: view(call) } : fail("provider_error", "The call couldn't be placed. Nothing was dialled.");
   }
 
-  /** Asks Vobiz to ring the number. False when the provider refused (the call is then ended as failed). */
+  /** Asks Twilio to ring the number. False when the provider refused (the call is then ended as failed). */
   async #dial(call: OutboundCall): Promise<boolean> {
     const s = this.#d.settings;
     call.state = "dialling";
-    const base = `${s.publicUrl.replace(/\/+$/, "")}/api/phone/vobiz/${call.token}`;
+    const base = `${s.publicUrl.replace(/\/+$/, "")}/api/phone/twilio/call/${call.token}`;
     try {
-      const placed = await this.#d.telephony.placeCall({ from: `+${s.callerId}`, to: `+${call.to}`, answerUrl: `${base}/answer`, ringUrl: `${base}/ring`, hangupUrl: `${base}/hangup`, timeLimitSeconds: s.timeLimitSeconds });
+      const placed = await this.#d.telephony.placeCall({ from: `+${s.callerId}`, to: `+${call.to}`, answerUrl: `${base}/answer`, statusUrl: `${base}/status`, timeLimitSeconds: s.timeLimitSeconds });
       call.providerCallId = placed.providerCallId;
     } catch (error) {
       this.#end(call, "failed", `provider: ${String(error).slice(0, 200)}`);
       return false;
     }
-    // Cancelled while Vobiz was queuing it (the state can change during the await): end the provider's call too.
+    // Cancelled while Twilio was queuing it (the state can change during the await): end the provider's call too.
     if ((call.state as OutboundState) === "ended") {
       void this.#d.telephony.hangup(call.providerCallId).catch(() => undefined);
       return true;
@@ -222,9 +210,9 @@ export class OutboundDialer {
     return () => this.#listeners.delete(listener);
   }
 
-  // ---------- Vobiz callbacks (public routes, authorised by the unguessable token in the URL) ----------
+  // ---------- Twilio callbacks (signed by Twilio, and tied to a call by the unguessable token in the URL) ----------
 
-  /** Vobiz rang the number. */
+  /** Twilio is ringing the number. */
   ringing(token: string): boolean {
     const call = this.#byToken.get(token);
     if (!call) return false;
@@ -235,7 +223,7 @@ export class OutboundDialer {
     return true;
   }
 
-  /** They answered: the XML that bridges the call to OpenAI, or null for an unknown or finished call. */
+  /** They answered: the TwiML that hands the call to OpenAI, or null for an unknown or finished call. */
   async answered(token: string): Promise<string | null> {
     const call = this.#byToken.get(token);
     if (!call || call.state === "ended") return null;
@@ -256,8 +244,7 @@ export class OutboundDialer {
       }
     }, BRIDGE_WAIT_MS).unref?.();
     const s = this.#d.settings;
-    const target = s.bridge === "sip" ? { kind: "sip" as const, uri: s.bridgeUri } : { kind: "number" as const, number: `+${s.callerId}` };
-    return bridgeXml({ callerId: `+${s.callerId}`, target, token: call.token, timeLimitSeconds: s.timeLimitSeconds });
+    return dialSipTwiml({ sipUri: s.bridgeUri, headers: { "X-Kritva-Call": call.token }, timeLimitSeconds: s.timeLimitSeconds });
   }
 
   /** Another call is answered and still waiting for its bridge to reach OpenAI. */
@@ -265,23 +252,22 @@ export class OutboundDialer {
     return [...this.#calls.values()].some((c) => c !== self && c.state === "answered");
   }
 
-  /** Vobiz reports the call over, with its hang-up cause when it gives one. */
+  /** Twilio reports the call over, with its final CallStatus ("completed", "busy", "no-answer", "failed", "canceled"). */
   hungUp(token: string, cause: string | null): boolean {
     const call = this.#byToken.get(token);
     if (!call) return false;
     if (call.state === "ended") return true;
     if (call.connectedAt) return this.#end(call, "completed", cause), true;
     if (call.answeredAt) return this.#end(call, "failed", cause ?? "Answered, but the call ended before Kritva's voice joined."), true;
-    const outcome = UNANSWERED.find(([rx]) => rx.test(cause ?? ""))?.[1] ?? "no_answer";
-    this.#end(call, outcome, cause);
+    this.#end(call, unansweredOutcome(cause), cause);
     return true;
   }
 
   // ---------- The bridged call arriving at OpenAI ----------
 
   /**
-   * The outbound call an incoming realtime call belongs to: the token in a SIP header that Vobiz
-   * added from `sipHeaders` (any header whose name mentions kritva_call, or a value carrying
+   * The outbound call an incoming realtime call belongs to: the token in the X-Kritva-Call SIP header
+   * that the answer TwiML adds (any header whose name mentions kritva-call, or a value carrying
    * `kritva_call=<token>`). Without the tag, the one call that is answered and waiting for its
    * bridge, if there is exactly one.
    */

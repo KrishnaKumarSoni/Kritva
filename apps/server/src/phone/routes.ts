@@ -1,14 +1,15 @@
 /**
  * Phone calls into Kritva (docs/Kritva_Phone_Calls.md).
  *
- *   Caller → Vobiz number → Vobiz SIP trunk (TLS + SRTP) → OpenAI SIP (sip.api.openai.com, routed by location)
+ *   Caller → Kritva's Twilio number → POST /api/phone/twilio/voice → TwiML <Dial><Sip>
+ *          → OpenAI SIP (sip.api.openai.com over TLS, with X-Kritva-Called / X-Kritva-Caller headers)
  *                                                                    │ webhook: realtime.call.incoming
  *                                                                    ▼
  *   POST /api/webhooks/openai → verify signature → route the dialled number to a listing or mandate
  *        → start a negotiation session → accept the call (same session settings as a browser call)
  *        → join over the sideband WebSocket → PhoneCall (RealtimeCall + server-side delivery)
  *
- * Audio never passes through this server: OpenAI and Vobiz exchange it directly. The server only
+ * Audio never passes through this server: OpenAI and Twilio exchange it directly. The server only
  * answers the webhook, controls the call and handles its events, exactly as for a browser call.
  *
  * A "code" route answers with the shared line's front desk instead (front-desk.ts): the agent asks for
@@ -26,11 +27,11 @@ import { openSessionFor, startNegotiation } from "../group-routes.ts";
 import type { ListingConfig } from "../main-helpers.ts";
 import { OpenAIRealtimeConnector, realtimeSession, RealtimeCallError, type RealtimeCall, type RealtimeCallControl, type RealtimeConnector, type RealtimeLink, type RealtimeSettings } from "../realtime-voice.ts";
 import { resolveListing } from "../voice-routes.ts";
-import { lineNumber, normalizeNumber, outboundFromEnv, phoneSettingsFromEnv, sipUri, usesListingCodes, type PhoneSettings, type PhoneTarget } from "./config.ts";
+import { lineNumber, normalizeNumber, outboundFromEnv, phoneSettingsFromEnv, sipUri, twilioFromEnv, usesListingCodes, type PhoneSettings, type PhoneTarget } from "./config.ts";
 import { AFTER_FRONT_DESK, FrontDesk, frontDeskInstructions, frontDeskSession, type FrontDeskTurn, type HandOver, type Lookup } from "./front-desk.ts";
 import { OutboundDialer, type OutboundSettings } from "./outbound.ts";
 import { PhoneCall, type EndReason } from "./phone-call.ts";
-import { VobizTelephony, type OutboundTelephony } from "./vobiz.ts";
+import { dialSipTwiml, FINAL_STATUSES, HANGUP_TWIML, readTwilioWebhook, TwilioTelephony, type OutboundTelephony, type TwilioWebhookAuth } from "./twilio.ts";
 import { callerNumber, maskNumber, routeFor, type SipHeader } from "./sip-headers.ts";
 import { verifyWebhook, WebhookSignatureError } from "./webhook-signature.ts";
 
@@ -60,8 +61,10 @@ export interface PhoneDeps {
   followUps?: { claim(headers: SipHeader[]): { sessionId: string } | null } | null;
   /** Hang up live calls when the process is stopped or restarted (the running server sets it; tests do not). */
   hangUpOnExit?: boolean;
-  /** Outbound calls through Vobiz (outbound.ts). Off when absent. */
+  /** Outbound calls through Twilio (outbound.ts). Off when absent. */
   outbound?: { telephony: OutboundTelephony; settings: OutboundSettings } | null;
+  /** Checks the signature on Twilio's webhooks (twilio.ts). Absent: not checked (tests). */
+  twilio?: TwilioWebhookAuth | null;
   /** An outbound dialer built by the host (main.ts), shared with other routes; used instead of building one from `outbound`. */
   dialer?: OutboundDialer | null;
   /** Calls connected now, with the counterparty's number while each lasts (the multiple-counterparties live-call registry). */
@@ -80,7 +83,7 @@ export function outboundDialer(phone: { outbound: PhoneDeps["outbound"]; log?: (
 }
 
 /**
- * How a call is answered. "minimal" (the default, as in Vobiz's working sample): the accept carries
+ * How a call is answered. "minimal" (the default): the accept carries
  * only the model, instructions and voice, and the full session follows as `session.update` over
  * the sideband before anything is said. A field OpenAI rejects then shows up as an `error` event in
  * the log instead of silently leaving a connected call without audio. "full" sends the whole
@@ -101,11 +104,6 @@ export function acceptPlan(full: Record<string, any>, mode: PhoneSettings["accep
  */
 const SETUP_DELAY_MS = Math.min(5000, Math.max(0, Number(process.env.KRITVA_PHONE_SETUP_DELAY_MS ?? 0) || 0));
 const setupPause = () => (SETUP_DELAY_MS ? new Promise<void>((r) => setTimeout(r, SETUP_DELAY_MS)) : Promise.resolve());
-
-/** Declares the call's audio codec for both directions of a session. */
-function withCodec(session: Record<string, any>, type: string) {
-  session.audio = { ...session.audio, input: { ...session.audio?.input, format: { type } }, output: { ...session.audio?.output, format: { type } } };
-}
 
 /** SIP header values for a trace, with every phone number masked. */
 const maskedHeaders = (headers: SipHeader[]) => headers.map((h) => `${h.name}: ${h.value.replace(/\+?\d{10,15}/g, (n) => maskNumber(n.replace(/\D/g, "")) ?? "")}`.slice(0, 300));
@@ -136,8 +134,8 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
   const callers = new Map<string, string | null>();
   /** Kritva's outbound call → the realtime call it bridged to, while both last. */
   const bridgedTo = new Map<string, string>();
-  // OpenAI did not pass on the hang-up of a bridged outbound call on the first live test, so when
-  // Vobiz reports the phone leg over, Kritva ends its side too (it would otherwise run on in silence).
+  // When Twilio reports the phone leg of an outbound call over, Kritva ends its realtime side too, in
+  // case OpenAI does not pass the hang-up on (the call would otherwise run on in silence).
   dialer?.onChange((view) => {
     if (view.state !== "ended") return;
     const realtimeCallId = bridgedTo.get(view.callId);
@@ -249,8 +247,6 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
     const waiting = continuing && (briefing?.status === "awaiting_approval" || briefing?.status === "paused");
     if (!briefing || (briefing.status !== "active" && !waiting)) return reject(callId, 480, "not_active");
     const plan = acceptPlan(realtimeSession(deps.realtime, briefing, { noiseReduction: settings.noiseReduction }), settings.acceptMode);
-    // Kritva's own calls arrive as G.711 mu-law from Vobiz: declare it, so OpenAI decodes and plays the call's audio.
-    if (outboundCallId && settings.outboundCodec) withCodec(plan.update ?? plan.accept, `audio/${settings.outboundCodec}`);
     const accepted = await acceptWithRetry(callId, plan.accept);
     if (!accepted.ok) {
       log({ kind: accepted.gone ? "phone_gone" : "phone_accept_failed", callId, sessionId, error: accepted.error });
@@ -284,7 +280,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
 
   const incoming = async (callId: string, headers: SipHeader[], mediaSecurity: unknown): Promise<{ status: 200 | 500; body: Record<string, unknown> }> => {
     if (settings.trace) log({ kind: "phone_trace_headers", callId, headers: maskedHeaders(headers) });
-    // Kritva's own outbound call, bridged to OpenAI by Vobiz once they answered: join its session.
+    // Kritva's own outbound call, handed to OpenAI by Twilio once they answered: join its session.
     const outbound = dialer?.match(headers) ?? null;
     if (outbound) {
       log({ kind: "phone_outbound_bridged", callId, outboundCallId: outbound.callId, sessionId: outbound.sessionId, matchedBy: outbound.how, from: outbound.from, mediaSecurity: mediaSecurity ?? null, headerNames: headers.map((h) => h.name) });
@@ -485,27 +481,47 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
     return c.json(result.body, result.status);
   });
 
+  // ---------- Twilio: Kritva's number (inbound) ----------
+  // The number's Voice URL (A call comes in → Webhook, HTTP POST). Every Twilio webhook is signed; a
+  // request whose signature does not match is refused, and the URL it was checked against is logged.
+  const twiml = (c: { body(data: string, status: 200 | 403, headers: Record<string, string>): Response }, body: string, status: 200 | 403 = 200) => c.body(body, status, { "Content-Type": "text/xml" });
+  app.post("/api/phone/twilio/voice", async (c) => {
+    const hook = await readTwilioWebhook(c, deps.twilio ?? null);
+    if (!hook.ok) {
+      log({ kind: "twilio_signature_mismatch", route: "voice", url: hook.url });
+      return twiml(c, HANGUP_TWIML, 403);
+    }
+    const p = hook.params;
+    const called = normalizeNumber(p.To ?? p.Called ?? "", settings.countryCode);
+    const caller = normalizeNumber(p.From ?? p.Caller ?? "", settings.countryCode);
+    log({ kind: "twilio_incoming", providerCallId: p.CallSid ?? null, called: /^\d{6,15}$/.test(called) ? called : null, caller: maskNumber(/^\d{6,15}$/.test(caller) ? caller : null) });
+    // The dialled number routes the call (sip-headers.ts reads X-Kritva-Called); the caller's number
+    // stays in memory for the live-call registry, never in the record.
+    return twiml(c, dialSipTwiml({ sipUri: sipUri(settings), headers: { "X-Kritva-Called": /^\d{6,15}$/.test(called) ? called : null, "X-Kritva-Caller": /^\d{6,15}$/.test(caller) ? caller : null }, timeLimitSeconds: settings.maxCallMs / 1000 + 60, answerOnBridge: true }));
+  });
+
   if (dialer) {
-    // ---------- Vobiz callbacks for outbound calls ----------
-    // Public routes: the per-call token in the path is unguessable (18 random bytes) and is the
-    // authorisation. Vobiz posts form fields or JSON; both are read.
-    const fields = async (c: { req: { header(name: string): string | undefined; parseBody(): Promise<Record<string, unknown>>; json(): Promise<unknown> } }) => {
-      try {
-        return (c.req.header("content-type") ?? "").includes("json") ? ((await c.req.json()) as Record<string, unknown>) : await c.req.parseBody();
-      } catch {
-        return {} as Record<string, unknown>;
+    // ---------- Twilio callbacks for outbound calls ----------
+    // Signed by Twilio, and tied to a call by the per-call token in the path (18 random bytes).
+    app.post("/api/phone/twilio/call/:token/answer", async (c) => {
+      const hook = await readTwilioWebhook(c, deps.twilio ?? null);
+      if (!hook.ok) {
+        log({ kind: "twilio_signature_mismatch", route: "answer", url: hook.url });
+        return twiml(c, HANGUP_TWIML, 403);
       }
-    };
-    const hangupXml = `<?xml version="1.0" encoding="UTF-8"?>\n<Response><Hangup/></Response>`;
-    app.post("/api/phone/vobiz/:token/answer", async (c) => {
-      const xml = await dialer.answered(c.req.param("token"));
-      return c.body(xml ?? hangupXml, 200, { "Content-Type": "application/xml" });
+      return twiml(c, (await dialer.answered(c.req.param("token"))) ?? HANGUP_TWIML);
     });
-    app.post("/api/phone/vobiz/:token/ring", (c) => c.json({ ok: dialer.ringing(c.req.param("token")) }));
-    app.post("/api/phone/vobiz/:token/hangup", async (c) => {
-      const f = await fields(c);
-      const cause = [f.HangupCauseName, f.HangupCause, f.hangup_cause_name, f.DialHangupCause, f.CallStatus].find((v): v is string => typeof v === "string" && v.length > 0) ?? null;
-      return c.json({ ok: dialer.hungUp(c.req.param("token"), cause) });
+    app.post("/api/phone/twilio/call/:token/status", async (c) => {
+      const hook = await readTwilioWebhook(c, deps.twilio ?? null);
+      if (!hook.ok) {
+        log({ kind: "twilio_signature_mismatch", route: "status", url: hook.url });
+        return c.json({ error: "bad_signature" }, 403);
+      }
+      const status = (hook.params.CallStatus ?? "").toLowerCase();
+      const token = c.req.param("token");
+      if (status === "ringing") return c.json({ ok: dialer.ringing(token) });
+      if (FINAL_STATUSES.has(status)) return c.json({ ok: dialer.hungUp(token, status) });
+      return c.json({ ok: true });
     });
 
     // ---------- Operator: place and follow outbound calls ----------
@@ -566,7 +582,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
  * Phone settings for the running server, or null (with the reason logged) when phone calls are off.
  * Needs OPENAI_API_KEY with realtime voice on, OPENAI_WEBHOOK_SECRET and KRITVA_PHONE_ROUTES.
  */
-export function phoneFromEnv(env: NodeJS.ProcessEnv = process.env, print: (line: string) => void = console.log): { settings: PhoneSettings; connector: RealtimeConnector & RealtimeCallControl; log: (entry: Record<string, unknown>) => void; hangUpOnExit: boolean; outbound: { telephony: OutboundTelephony; settings: OutboundSettings } | null } | null {
+export function phoneFromEnv(env: NodeJS.ProcessEnv = process.env, print: (line: string) => void = console.log): { settings: PhoneSettings; connector: RealtimeConnector & RealtimeCallControl; log: (entry: Record<string, unknown>) => void; hangUpOnExit: boolean; outbound: { telephony: OutboundTelephony; settings: OutboundSettings } | null; twilio: TwilioWebhookAuth | null } | null {
   const apiKey = env.OPENAI_API_KEY;
   const { settings, problems } = phoneSettingsFromEnv(env);
   if (!apiKey || (env.KRITVA_VOICE_MODE ?? "realtime") !== "realtime") {
@@ -579,7 +595,7 @@ export function phoneFromEnv(env: NodeJS.ProcessEnv = process.env, print: (line:
     return null;
   }
   for (const problem of problems) print(`Phone calls: ${problem}`);
-  print(`Phone calls: on. SIP URI for the trunk: ${sipUri(settings)} (TLS). OpenAI webhook: https://<public host>${WEBHOOK_PATH}`);
+  print(`Phone calls: on. OpenAI SIP URI: ${sipUri(settings)}. OpenAI webhook: https://<public host>${WEBHOOK_PATH}`);
   // KRITVA_PHONE_LOG_FILE also appends each log line to a file, so a call can be followed outside the server's console.
   const file = env.KRITVA_PHONE_LOG_FILE?.trim() || null;
   const log = (entry: Record<string, unknown>) => {
@@ -592,11 +608,17 @@ export function phoneFromEnv(env: NodeJS.ProcessEnv = process.env, print: (line:
       console.error("[phone] could not write the log file", error);
     }
   };
-  // Outbound calls (Kritva dials counterparties) need Vobiz credentials, Kritva's number and a public URL.
+  // Twilio's webhooks are checked with the account's auth token against the public URL Twilio calls.
+  const twilio = twilioFromEnv(env);
+  const publicUrl = env.KRITVA_PUBLIC_URL?.trim().replace(/\/+$/, "") || null;
+  const verify = env.TWILIO_VERIFY_SIGNATURE !== "off";
+  const twilioAuth = twilio && publicUrl && verify ? { authToken: twilio.authToken, publicUrl } : null;
+  print(twilioAuth ? `Twilio: number Voice URL ${publicUrl}/api/phone/twilio/voice (signatures checked).` : `Twilio: webhook signatures not checked (${!verify ? "TWILIO_VERIFY_SIGNATURE=off" : "TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and KRITVA_PUBLIC_URL are needed"}).`);
+  // Outbound calls (Kritva dials counterparties) need Twilio credentials, Kritva's number and a public URL.
   const out = outboundFromEnv(env, settings);
   const allowed = out.config ? (out.config.allow.includes("*") ? "any number" : `${out.config.allow.length} number(s)`) : "";
   if (out.config) print(`Outbound calls: on, from +${out.config.callerId}. ${out.config.allow.length ? `Allowed: ${allowed}.` : "No number is allowed yet (KRITVA_PHONE_OUTBOUND_ALLOW)."}`);
   else if (env.KRITVA_PHONE_CALLER_ID || env.KRITVA_PUBLIC_URL) print(`Outbound calls: off. ${out.problems.join(" ")}`);
-  const outbound = out.config ? { telephony: new VobizTelephony(out.config.authId, out.config.authToken), settings: out.config } : null;
-  return { settings, connector: new OpenAIRealtimeConnector(apiKey), log, hangUpOnExit: true, outbound };
+  const outbound = out.config ? { telephony: new TwilioTelephony({ accountSid: out.config.accountSid, authToken: out.config.authToken }), settings: out.config } : null;
+  return { settings, connector: new OpenAIRealtimeConnector(apiKey), log, hangUpOnExit: true, outbound, twilio: twilioAuth };
 }

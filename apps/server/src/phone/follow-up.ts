@@ -1,8 +1,8 @@
 /**
  * Call-backs after the principal decides (docs/superpowers/specs/2026-11-22-approval-follow-up-design.md).
  *
- *   Kritva → Vobiz Make Call (to the buyer) → buyer answers → Vobiz asks our answer URL for XML
- *   → <Record> the call, <Dial><User sipHeaders="KritvaFollowUp=token"> OpenAI's SIP address
+ *   Kritva → Twilio Calls API (to the counterparty, recorded) → they answer → Twilio asks our answer
+ *   URL for TwiML → <Dial><Sip> OpenAI's SIP address with X-Kritva-Follow-Up=<token>
  *   → OpenAI posts realtime.call.incoming → the phone routes claim(headers) → the call joins its
  *     negotiation and opens with the principal's decision.
  *
@@ -15,46 +15,46 @@ import { randomBytes } from "node:crypto";
 import type { Hono } from "hono";
 import type { NegotiationEngine, NegotiationRecord } from "@kritva/core";
 import { maskNumber, type SipHeader } from "./sip-headers.ts";
+import { dialSipTwiml, FINAL_STATUSES, HANGUP_TWIML, readTwilioWebhook, TwilioTelephony, type OutboundTelephony, type TwilioWebhookAuth } from "./twilio.ts";
 
 export interface FollowUpSettings {
-  authId: string;
+  accountSid: string;
   authToken: string;
-  /** Kritva's Vobiz number, digits with country code: the caller ID the buyer sees. */
+  /** Kritva's Twilio number, digits with country code: the caller ID the counterparty sees. */
   from: string;
-  /** Public base URL of this server (the tunnel), without a trailing slash. */
+  /** Public base URL of this server, without a trailing slash. */
   publicUrl: string;
-  /** Where the answered call is bridged: OpenAI's SIP address (or Kritva's own number, as a fallback). */
+  /** Where the answered call is handed: OpenAI's SIP address ("sip:proj_...@sip.api.openai.com;transport=tls"). */
   sipUri: string;
   retryMs: number;
   /** How long a placed call may ring. */
   ringSeconds: number;
-  apiBase: string;
 }
 
 /** Follow-up call settings from the environment, or null with the reason when call-backs are off. */
 export function followUpSettingsFromEnv(env: NodeJS.ProcessEnv, defaultSipUri: string | null): { settings: FollowUpSettings | null; problems: string[] } {
   const problems: string[] = [];
-  const authId = env.VOBIZ_AUTH_ID?.trim();
-  const authToken = env.VOBIZ_AUTH_TOKEN?.trim();
-  const from = env.KRITVA_FOLLOW_UP_FROM?.replace(/\D/g, "") ?? "";
+  const accountSid = env.TWILIO_ACCOUNT_SID?.trim();
+  const authToken = env.TWILIO_AUTH_TOKEN?.trim();
+  // The caller ID: KRITVA_FOLLOW_UP_FROM, else Kritva's number for outbound calls.
+  const from = (env.KRITVA_FOLLOW_UP_FROM || env.KRITVA_PHONE_CALLER_ID || "").replace(/\D/g, "");
   const publicUrl = env.KRITVA_PUBLIC_URL?.trim().replace(/\/+$/, "") ?? "";
-  const sipUri = env.KRITVA_FOLLOW_UP_SIP_URI?.trim() || (defaultSipUri ? `${defaultSipUri};transport=tls` : "");
-  if (!authId || !authToken) problems.push("VOBIZ_AUTH_ID and VOBIZ_AUTH_TOKEN are needed.");
-  if (from.length < 10) problems.push("KRITVA_FOLLOW_UP_FROM (Kritva's Vobiz number) is needed.");
-  if (!/^https:\/\//.test(publicUrl)) problems.push("KRITVA_PUBLIC_URL (the https tunnel to this server) is needed.");
+  const sipUri = env.KRITVA_FOLLOW_UP_SIP_URI?.trim() || defaultSipUri || "";
+  if (!accountSid || !authToken) problems.push("TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN are needed.");
+  if (from.length < 10) problems.push("KRITVA_PHONE_CALLER_ID (Kritva's Twilio number) is needed.");
+  if (!/^https:\/\//.test(publicUrl)) problems.push("KRITVA_PUBLIC_URL (this server's public https address) is needed.");
   if (!sipUri.startsWith("sip:")) problems.push("KRITVA_FOLLOW_UP_SIP_URI is needed (or phone calls with OPENAI_PROJECT_ID).");
   const minutes = Number(env.KRITVA_FOLLOW_UP_RETRY_MINUTES ?? 15);
   if (problems.length) return { settings: null, problems };
   return {
     settings: {
-      authId: authId!,
+      accountSid: accountSid!,
       authToken: authToken!,
       from,
       publicUrl,
       sipUri,
       retryMs: Math.max(1, Number.isFinite(minutes) ? minutes : 15) * 60_000,
       ringSeconds: 30,
-      apiBase: env.VOBIZ_API_BASE?.trim().replace(/\/+$/, "") || "https://api.vobiz.ai/api/v1",
     },
     problems,
   };
@@ -78,20 +78,24 @@ export interface FollowUpDeps {
   engine: NegotiationEngine;
   settings: FollowUpSettings;
   log?: (entry: Record<string, unknown>) => void;
+  /** Places and ends calls. Default: Twilio with the settings' credentials (and `fetch`, for tests). */
+  telephony?: OutboundTelephony;
   fetch?: typeof fetch;
+  /** Checks the signature on Twilio's webhooks. Absent: not checked (tests). */
+  twilio?: TwilioWebhookAuth | null;
   /** Schedules the retry (tests run it at once). */
   later?: (fn: () => void, ms: number) => void;
   now?: () => number;
 }
 
-const xml = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-
 export class FollowUpCalls {
   readonly #d: FollowUpDeps;
   readonly #attempts = new Map<string, Attempt>();
+  readonly #telephony: OutboundTelephony;
 
   constructor(deps: FollowUpDeps) {
     this.#d = deps;
+    this.#telephony = deps.telephony ?? new TwilioTelephony({ accountSid: deps.settings.accountSid, authToken: deps.settings.authToken }, { fetch: deps.fetch });
   }
 
   #log(entry: Record<string, unknown>) {
@@ -110,21 +114,14 @@ export class FollowUpCalls {
     const token = randomBytes(18).toString("base64url");
     const a: Attempt = { token, sessionId, responseId: decision.responseId, attempt, phone, placedAt: this.#now(), answeredAt: null, joined: false, finished: false };
     this.#attempts.set(token, a);
-    const url = (path: string) => `${this.#d.settings.publicUrl}/api/webhooks/vobiz/${path}?t=${token}`;
+    const url = (path: string) => `${this.#d.settings.publicUrl}/api/phone/twilio/follow-up/${token}/${path}`;
     let providerCallId: string | null = null;
     // Noted before the call is placed, so the call's own webhooks can never come before it.
     await this.#note(a, "calling", null);
     try {
-      const res = await (this.#d.fetch ?? fetch)(`${this.#d.settings.apiBase}/Account/${encodeURIComponent(this.#d.settings.authId)}/Call/`, {
-        method: "POST",
-        headers: { "X-Auth-ID": this.#d.settings.authId, "X-Auth-Token": this.#d.settings.authToken, "Content-Type": "application/json" },
-        // Numbers in E.164 with "+", as the phone routes' tested outbound calls send them.
-        body: JSON.stringify({ from: `+${this.#d.settings.from}`, to: `+${phone}`, answer_url: url("answer"), answer_method: "POST", hangup_url: url("hangup"), hangup_method: "POST", hangup_on_ring: this.#d.settings.ringSeconds, time_limit: 1800 }),
-        signal: AbortSignal.timeout(8_000),
-      });
-      const body = (await res.json().catch(() => ({}))) as { request_uuid?: string; message?: string };
-      if (!res.ok) throw new Error(`Vobiz ${res.status}: ${String(body.message ?? "").slice(0, 200)}`);
-      providerCallId = typeof body.request_uuid === "string" ? body.request_uuid.slice(0, 200) : null;
+      // The whole call is recorded for the principal; the recording arrives at url("recording").
+      const placed = await this.#telephony.placeCall({ from: `+${this.#d.settings.from}`, to: `+${phone}`, answerUrl: url("answer"), statusUrl: url("status"), recordingUrl: url("recording"), ringSeconds: this.#d.settings.ringSeconds, timeLimitSeconds: 1800 });
+      providerCallId = placed.providerCallId.slice(0, 200);
     } catch (error) {
       this.#log({ event: "dial_failed", sessionId, attempt, to: maskNumber(phone), error: String(error) });
       a.finished = true;
@@ -154,37 +151,30 @@ export class FollowUpCalls {
     return { sessionId: found.sessionId };
   }
 
-  /** The provider's webhooks. Each answers fast; the token decides which call-back it is about. */
+  /** Twilio's webhooks for call-backs. Each answers fast; the token in the path decides which call-back it is about. */
   register(app: Hono): void {
     const find = (token: string | undefined) => (token ? this.#attempts.get(token) ?? null : null);
-    const form = async (c: { req: { parseBody(): Promise<Record<string, unknown>> } }) => (await c.req.parseBody().catch(() => ({}))) as Record<string, unknown>;
+    const signed = async (c: Parameters<typeof readTwilioWebhook>[0], route: string) => {
+      const hook = await readTwilioWebhook(c, this.#d.twilio ?? null);
+      if (!hook.ok) this.#log({ event: "twilio_signature_mismatch", route, url: hook.url });
+      return hook.ok ? hook.params : null;
+    };
+    const base = "/api/phone/twilio/follow-up/:token";
 
-    app.post("/api/webhooks/vobiz/answer", async (c) => {
-      const a = find(c.req.query("t"));
-      if (!a || a.finished) return c.body('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>', 200, { "Content-Type": "application/xml" });
+    app.post(`${base}/answer`, async (c) => {
+      if (!(await signed(c, "answer"))) return c.body(HANGUP_TWIML, 403, { "Content-Type": "text/xml" });
+      const a = find(c.req.param("token"));
+      if (!a || a.finished) return c.body(HANGUP_TWIML, 200, { "Content-Type": "text/xml" });
       a.answeredAt = this.#now();
-      const s = this.#d.settings;
-      const url = (path: string) => xml(`${s.publicUrl}/api/webhooks/vobiz/${path}?t=${a.token}`);
-      // Record the whole call for the principal, then bridge it to the realtime voice.
-      const body = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Record recordSession="true" fileFormat="mp3" maxLength="1800" playBeep="false" redirect="false" callbackUrl="${url("recording")}" callbackMethod="POST"/>
-  <Dial callerId="${xml(`+${s.from}`)}" timeout="${s.ringSeconds}" action="${url("dial")}" method="POST" redirect="false">
-    <User sipHeaders="${xml(`KritvaFollowUp=${a.token}`)}">${xml(s.sipUri)}</User>
-  </Dial>
-</Response>`;
-      return c.body(body, 200, { "Content-Type": "application/xml" });
+      // Hand the answered call to the realtime voice, tagged so claim() finds its negotiation.
+      return c.body(dialSipTwiml({ sipUri: this.#d.settings.sipUri, headers: { "X-Kritva-Follow-Up": a.token }, timeLimitSeconds: 1800 }), 200, { "Content-Type": "text/xml" });
     });
 
-    app.post("/api/webhooks/vobiz/dial", async (c) => {
-      const a = find(c.req.query("t"));
-      const p = await form(c);
-      if (a) this.#log({ event: "dial_result", sessionId: a.sessionId, attempt: a.attempt, status: String(p.DialStatus ?? "") });
-      return c.body('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>', 200, { "Content-Type": "application/xml" });
-    });
-
-    app.post("/api/webhooks/vobiz/hangup", async (c) => {
-      const a = find(c.req.query("t"));
+    app.post(`${base}/status`, async (c) => {
+      const p = await signed(c, "status");
+      if (!p) return c.json({ error: "bad_signature" }, 403);
+      const a = find(c.req.param("token"));
+      if (!FINAL_STATUSES.has((p.CallStatus ?? "").toLowerCase())) return c.json({ ok: true });
       if (!a || a.finished) return c.json({ ok: true });
       a.finished = true;
       if (!a.joined) {
@@ -195,13 +185,14 @@ export class FollowUpCalls {
       return c.json({ ok: true });
     });
 
-    app.post("/api/webhooks/vobiz/recording", async (c) => {
-      const a = find(c.req.query("t"));
-      const p = await form(c);
-      const file = String(p.RecordUrl ?? p.RecordFile ?? "");
+    app.post(`${base}/recording`, async (c) => {
+      const p = await signed(c, "recording");
+      if (!p) return c.json({ error: "bad_signature" }, 403);
+      const a = find(c.req.param("token"));
+      const file = String(p.RecordingUrl ?? "");
       if (a && /^https:\/\//.test(file)) {
         const seconds = Number(p.RecordingDuration);
-        const saved = await this.#d.record.append(a.sessionId, { id: `rec_${a.token}`.slice(0, 128), type: "recording_saved", channel: null, payload: { source: "vobiz", file: file.slice(0, 500), contentType: "audio/mpeg", durationMs: Number.isFinite(seconds) ? Math.round(seconds * 1000) : null } }, { kind: "system", partyId: null });
+        const saved = await this.#d.record.append(a.sessionId, { id: `rec_${a.token}`.slice(0, 128), type: "recording_saved", channel: null, payload: { source: "twilio", file: file.slice(0, 500), contentType: "audio/mpeg", durationMs: Number.isFinite(seconds) ? Math.round(seconds * 1000) : null } }, { kind: "system", partyId: null });
         if (!saved.ok) this.#log({ event: "recording_not_saved", sessionId: a.sessionId, error: saved.error.message });
       }
       return c.json({ ok: true });

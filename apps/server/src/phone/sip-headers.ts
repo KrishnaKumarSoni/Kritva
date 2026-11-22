@@ -2,10 +2,10 @@
  * Reading phone numbers from the SIP INVITE headers that OpenAI's `realtime.call.incoming` webhook
  * passes on (`data.sip_headers`: `{ name, value }` pairs, in order, untrusted).
  *
- * Vobiz does not document which headers carry the dialled number, so this looks in the usual
- * places, most specific first, and routing (routing.ts) takes the first number that matches a
- * configured route. A "*" route covers a provider that rewrites every header. The incoming-call log
- * lists the header names of each call, so the first real call shows what Vobiz sends.
+ * Kritva's Twilio Voice URL adds X-Kritva-Called (the number dialled) and X-Kritva-Caller (who is
+ * calling) to the call it hands to OpenAI. Other places are checked too, most specific first, and
+ * routing takes the first number that matches a configured route. A "*" route covers a call with no
+ * usable number. The incoming-call log lists the header names of each call.
  */
 import { normalizeNumber, type PhoneRoute } from "./config.ts";
 
@@ -19,7 +19,7 @@ const DIALLED_HEADER = /^x-.*(did|called|dialed|dialled|destination|to-?number|o
 /** Standard headers that can carry the dialled number, in the order they are checked. */
 const DIALLED_STANDARD = ["to", "p-called-party-id", "diversion", "history-info"];
 /** Headers that carry who is calling, most trusted first. */
-const CALLER = ["p-asserted-identity", "remote-party-id", "from"];
+const CALLER = ["x-kritva-caller", "p-asserted-identity", "remote-party-id", "from"];
 
 /** The phone number in a header value: `<sip:+918071234567@host;user=phone>;tag=1`, `tel:+91...` or a bare number. */
 export function numberIn(value: string): string | null {

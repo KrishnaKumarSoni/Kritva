@@ -12,7 +12,7 @@ import { loadCaseRuntime, maxCounterparties } from "./main-helpers.ts";
 import { LiveCalls } from "./live-calls.ts";
 import { hangUpPending } from "./group-routes.ts";
 import { FollowUpCalls, followUpSettingsFromEnv } from "./phone/follow-up.ts";
-import { sipUri } from "./phone/config.ts";
+import { sipUri, twilioFromEnv } from "./phone/config.ts";
 import { AuthStore, authFromEnv } from "./auth.ts";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
@@ -65,10 +65,10 @@ const intake = new IntakeService({ store: new SqliteIntakeStore(join(dataDir, "k
 // Phone calls (docs/Kritva_Phone_Calls.md), and Kritva's outbound dialer, shared by the phone routes and the counterparties' board.
 const phone = phoneFromEnv();
 dialer = outboundDialer(phone, engine);
-// Call-backs after the seller decides (Vobiz). Without them, every follow-up goes to the buyer's chat.
+// Call-backs after the principal decides (Twilio). Without them, every follow-up goes to the counterparty's chat.
 const followUpConfig = followUpSettingsFromEnv(process.env, phone ? sipUri(phone.settings) : null);
-const followUps = phone && followUpConfig.settings ? new FollowUpCalls({ record, engine, settings: followUpConfig.settings, log: (entry) => console.log("[follow-up]", JSON.stringify(entry)) }) : null;
-console.log(followUps ? "Call-backs: on (Vobiz)." : `Call-backs: off${phone ? `. ${followUpConfig.problems.join(" ")}` : " (phone calls are off)"}. Follow-ups go to the buyer's chat.`);
+const followUps = phone && followUpConfig.settings ? new FollowUpCalls({ record, engine, settings: followUpConfig.settings, twilio: phone.twilio, log: (entry) => console.log("[follow-up]", JSON.stringify(entry)) }) : null;
+console.log(followUps ? "Call-backs: on (Twilio)." : `Call-backs: off${phone ? `. ${followUpConfig.problems.join(" ")}` : " (phone calls are off)"}. Follow-ups go to the buyer's chat.`);
 const configuredKey = process.env.KRITVA_OPERATOR_KEY?.trim();
 // The access key is for scripts and tools; people sign in to the console with an emailed link.
 const operatorKey = configuredKey || randomBytes(24).toString("base64url");
@@ -93,16 +93,16 @@ const app = createApp({
     process.env.OPENAI_API_KEY && (process.env.KRITVA_VOICE_MODE ?? "realtime") === "realtime"
       ? { connector: new OpenAIRealtimeConnector(process.env.OPENAI_API_KEY), settings: realtimeSettingsFromEnv(), log: (entry) => console.log("[voice]", JSON.stringify(entry)) }
       : null,
-  // Phone calls: on when OPENAI_WEBHOOK_SECRET and KRITVA_PHONE_ROUTES are set; outbound when Vobiz is configured too.
+  // Phone calls: on when OPENAI_WEBHOOK_SECRET and KRITVA_PHONE_ROUTES are set; outbound when Twilio is configured too.
   phone,
   groups,
   liveCalls,
   dialer,
-  // The deal board places calls only when KRITVA_BOARD_CALLS=on (outbound audio depends on Vobiz).
+  // The deal board places calls only when KRITVA_BOARD_CALLS=on.
   boardCalls: process.env.KRITVA_BOARD_CALLS === "on",
   followUps,
   recordingsDir: join(dataDir, "recordings"),
-  vobizAuth: process.env.VOBIZ_AUTH_ID && process.env.VOBIZ_AUTH_TOKEN ? { authId: process.env.VOBIZ_AUTH_ID, authToken: process.env.VOBIZ_AUTH_TOKEN } : null,
+  twilio: twilioFromEnv(process.env),
 });
 const port = Number(process.env.PORT ?? 8787);
 

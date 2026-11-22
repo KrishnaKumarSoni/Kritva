@@ -2,7 +2,7 @@
  * The shared line's front desk (docs/Kritva_Phone_Calls.md, "Listing codes and the front desk").
  *
  * One phone number can serve many mandates, and the call itself does not say which one the caller
- * means (Vobiz does not even pass the dialled number). So a call on a "code" route is answered before
+ * means. So a call on a "code" route is answered before
  * any negotiation exists: the realtime agent picks up, talks with the caller as the plain-text guide
  * (voice-front-desk-guide.md) says, and asks for the 4-digit listing code printed on the listing.
  *

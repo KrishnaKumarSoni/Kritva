@@ -80,7 +80,7 @@ export interface NegotiationState {
   /** An approval request the counterparty's change of terms made void, while its replacement is open. */
   supersededApproval: { offerId: string; terms: OfferTerm[] } | null;
   /** Call recordings kept for the principal, oldest first. */
-  recordings: Array<{ id: string; source: "browser" | "vobiz"; file: string; contentType: string; durationMs: number | null; recordedAt: string }>;
+  recordings: Array<{ id: string; source: "browser" | "twilio" | "vobiz"; file: string; contentType: string; durationMs: number | null; recordedAt: string }>;
   /** The status to return to when a pause ends. */
   statusBeforePause: SessionStatus | null;
   acceptances: Array<{ id: string; offerId: string; termsHash: string }>;

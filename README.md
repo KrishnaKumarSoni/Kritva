@@ -23,7 +23,7 @@ Kritva is a reusable AI negotiation capability for apps and assistants. It repre
 | 13. Browser voice | The buyer talks in the browser. Each utterance is transcribed and sent through the same text negotiation path; only recorded, checked replies are spoken. Talking over Kritva stops it and records what was heard; a cut-off read-back never counts as delivered. Phone calls are their own row below. |
 | Mandate intake agent | The principal sets up a mandate by chatting with a separate setup agent (OpenAI Agents SDK, text and images). It infers the roles, what the other side may see and what stays private, asks only for what it can't infer (usually the limit, plus the details the other side will ask about), and fills the same mandate input the mapper reads. A progress bar follows what it has gathered; the finished draft appears in the chat with **Make it live**. Mandates are live, paused, closed or deleted from the list. See `packages/core/src/intake/`. |
 | 14. Demo listing | A clearly labelled demo bed listing built from the confirmed mandate's public content, with "Call seller" opening one browser voice session beside the seller console. "New demo session" starts fresh with the same saved mandate. |
-| Phone calls | A buyer dials a Vobiz number; a Vobiz SIP trunk sends the call to OpenAI's realtime SIP endpoint and Kritva answers with the same realtime voice and call controller as the browser. The server routes the call to a listing or mandate, decides delivery itself from OpenAI's playback events, and records how each call ended. Tested on a live call on 2026-11-22. Setup, design and findings: `docs/Kritva_Phone_Calls.md`. |
+| Phone calls | A counterparty dials Kritva's Twilio number; Twilio hands the call to OpenAI's realtime SIP endpoint (TwiML `<Dial><Sip>`) and Kritva answers with the same realtime voice and call controller as the browser. The server routes the call to a listing or mandate, decides delivery itself from OpenAI's playback events, and records how each call ended. Tested on a live call on 2026-11-22. Setup, design and findings: `docs/Kritva_Phone_Calls.md`. |
 | Sign-in and the curtain | The principal signs in with an emailed one-time link (Amazon SES, or the server log locally); no password or key on screen. Every load of the console opens with a jet-black curtain that rises on the console, signing out brings it down, and a mandate's first go-live gets a full-screen moment with the line's number and listing code. See `docs/Kritva_Sign_In.md`. |
 | Listing codes and the front desk | One number serves every mandate. Each live mandate has a 4-digit listing code (with a check digit, so a misheard code never reaches another listing), shown on the Mandates page with "Copy for your ad". On a `code` route the agent answers the line, asks for the code in its own words from a plain-text guide, finds the listing, and the call goes on with that mandate as one conversation. See `docs/Kritva_Phone_Calls.md`, section 16. |
 
@@ -56,10 +56,9 @@ apps/server/              HTTP API for the slice (Hono); buyer and operator rout
   src/eval/               Epic 10: buyer simulator, plain LLM seller, scoring and reports
   src/voice-routes.ts     Epics 13-14: voice turns, reply audio, the demo listing and "Call seller"
   src/realtime-voice.ts   realtime voice: the call controller shared by browser and phone calls
-  src/phone/              phone calls: OpenAI webhook, number routing, server-side delivery, hang-up
+  src/phone/              phone calls: Twilio (twilio.ts), OpenAI webhook, number routing, server-side delivery, outbound calls
   scripts/voice-check.ts  Epic 13 timing check through the real audio pipeline (no microphone needed)
   scripts/phone-check.ts  phone setup check: SIP URI, routes, and a signed test webhook
-  scripts/vobiz-trunk.ts  shows the Vobiz trunk and turns SRTP on (the console has no switch)
   scripts/run-scenarios.ts  the buyer scenarios, through the same routes as the chat page
 apps/web/                 conversation, negotiation console and mandates (React + Vite)
 cases/                    case content, kept outside the core

@@ -304,7 +304,8 @@ export const PAYLOADS = {
   }),
   /** A call recording kept for the principal. */
   recording_saved: z.strictObject({
-    source: z.enum(["browser", "vobiz"]),
+    // "vobiz": recordings saved before Kritva moved its phone calls to Twilio; kept so older records still read.
+    source: z.enum(["browser", "twilio", "vobiz"]),
     /** A stored file name under the server's recordings folder, or the provider's URL. */
     file: z.string().min(1).max(500),
     contentType: z.string().min(1).max(100),

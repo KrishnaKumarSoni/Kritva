@@ -115,7 +115,7 @@ export interface OperatorState {
   } | null;
   /** How long the offer stands, how to reach the other party, and where the follow-up is. Absent on older servers. */
   followUp?: FollowUpView;
-  recordings?: Array<{ id: string; source: "browser" | "vobiz"; durationMs: number | null; recordedAt: string }>;
+  recordings?: Array<{ id: string; source: "browser" | "twilio" | "vobiz"; durationMs: number | null; recordedAt: string }>;
   /** The last reply was cut off mid-speech and the buyer hasn't spoken since. */
   voiceInterrupted?: boolean;
   paused: boolean;

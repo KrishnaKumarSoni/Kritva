@@ -1,10 +1,10 @@
 /**
- * Setup check for phone calls (docs/Kritva_Phone_Calls.md). Prints what Vobiz and OpenAI need from
+ * Setup check for phone calls (docs/Kritva_Phone_Calls.md). Prints what Twilio and OpenAI need from
  * the current settings, and optionally sends a signed webhook to a running server to prove the
  * public URL and the webhook secret match, before a real call is placed.
  *
  *   node --env-file=.env apps/server/scripts/phone-check.ts
- *       Shows the settings, the SIP URI for the Vobiz origination URI, and any problem.
+ *       Shows the settings, the Twilio Voice URL, OpenAI's SIP URI, and any problem.
  *   node --env-file=.env apps/server/scripts/phone-check.ts --url https://<tunnel host>
  *       Sends OpenAI's empty test event (as the dashboard's "Send test event" does). Expect 200.
  *   node --env-file=.env apps/server/scripts/phone-check.ts --url https://<tunnel host> --ring +918071234567
@@ -29,8 +29,10 @@ console.log(settings ? "Phone calls: on" : "Phone calls: off");
 for (const problem of problems) console.log(`  problem: ${problem}`);
 if (!process.env.OPENAI_API_KEY) console.log("  problem: OPENAI_API_KEY is not set.");
 const host = settings?.sipHost ?? process.env.KRITVA_PHONE_SIP_HOST ?? GLOBAL_SIP_HOST;
-console.log(`\nVobiz origination URI:  ${sipUri({ projectId: settings?.projectId ?? process.env.OPENAI_PROJECT_ID ?? null, sipHost: host })}`);
-console.log("  transport TLS (chosen in the Vobiz console), trunk Secure (SRTP) on");
+const publicUrl = process.env.KRITVA_PUBLIC_URL?.trim().replace(/\/+$/, "") || "https://<public host>";
+console.log(`\nTwilio number Voice URL: ${publicUrl}/api/phone/twilio/voice   (A call comes in: Webhook, HTTP POST)`);
+console.log(`OpenAI SIP URI (dialled by the TwiML): ${sipUri({ projectId: settings?.projectId ?? process.env.OPENAI_PROJECT_ID ?? null, sipHost: host })}`);
+if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) console.log("  problem: TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN are not set (needed for signatures and outbound calls).");
 console.log(`OpenAI webhook URL:     https://<public host>${WEBHOOK_PATH}   (event: realtime.call.incoming)`);
 if (settings) {
   console.log("\nNumbers:");
@@ -44,7 +46,7 @@ if (url) {
   if (!secret) throw new Error("OPENAI_WEBHOOK_SECRET is needed to sign the test webhook.");
   const ring = option("--ring");
   const event = ring
-    ? { id: `evt_check_${randomUUID()}`, object: "event", type: "realtime.call.incoming", created_at: Math.floor(Date.now() / 1000), data: { call_id: `rtc_check_${randomUUID().replace(/-/g, "")}`, sip_headers: [{ name: "From", value: "<sip:+910000000000@check.invalid>;tag=check" }, { name: "To", value: `<sip:${ring}@${host}>` }] } }
+    ? { id: `evt_check_${randomUUID()}`, object: "event", type: "realtime.call.incoming", created_at: Math.floor(Date.now() / 1000), data: { call_id: `rtc_check_${randomUUID().replace(/-/g, "")}`, sip_headers: [{ name: "From", value: "<sip:+910000000000@check.invalid>;tag=check" }, { name: "X-Kritva-Called", value: ring.replace(/\D/g, "") }] } }
     : { id: `evt_check_${randomUUID()}`, object: "event", type: "realtime.call.incoming", created_at: Math.floor(Date.now() / 1000), data: {} };
   const body = JSON.stringify(event);
   const id = `wh_check_${randomUUID()}`;
