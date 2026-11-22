@@ -201,17 +201,20 @@ export function CounterpartiesPanel({ mandateId, state, pending, onOpen }: Props
           </form>
 
           <div className="counterparties-start">
+            {/* The panel's one primary action, shown only when there is something to start. */}
+            {live && waiting > 0 && !concluded && (
             <button
               type="button"
               className="button button-accent"
-              disabled={!live || waiting === 0 || concluded || busy === "start"}
+              disabled={busy === "start"}
               onClick={() => void run("start", () => api.deals.start(mandateId), canCall && withPhone > 0 ? "Started. Kritva is calling everyone with a number; the others have a private link." : "Started. Each has a private link to share.")}
             >
               {busy === "start" && <span className="spinner" aria-hidden="true" />}
               {startLabel}
             </button>
+            )}
             <p className="counterparties-hint">
-              {!live ? "Make the mandate live to start." : concluded ? "This deal is agreed." : canCall ? "Kritva calls everyone with a number. The others get a private link." : "Each gets a private link. Calling out is off on this server."}
+              {!live ? "Make the mandate live to start negotiations." : concluded ? "This deal is agreed." : waiting === 0 ? (entries.length === 0 ? "Add someone to start a negotiation with them." : "Everyone on the list has a negotiation.") : canCall ? "Kritva calls everyone with a number. The others get a private link." : "Each gets a private link. Calling out is off on this server."}
             </p>
           </div>
         </>

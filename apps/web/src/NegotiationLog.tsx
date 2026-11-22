@@ -7,6 +7,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, type NegotiationLogRow } from "./api.ts";
 import { BeakerIcon, ChevronIcon, PhoneIcon } from "./icons.tsx";
+import { Select, type SelectOption } from "./Select.tsx";
 
 const POLL_MS = 5000;
 const spring = { type: "spring", duration: 0.35, bounce: 0 } as const;
@@ -62,7 +63,15 @@ function when(iso: string): string {
   return new Date(iso).toLocaleDateString([], { day: "numeric", month: "short" });
 }
 
-export function NegotiationLog({ onOpen, onRows }: { onOpen: (row: NegotiationLogRow) => void; onRows?: (rows: NegotiationLogRow[]) => void }) {
+interface TestAction {
+  mandates: SelectOption[];
+  mandateId: string | null;
+  onChoose: (id: string) => void;
+  onStart: () => void;
+  starting: boolean;
+}
+
+export function NegotiationLog({ onOpen, onRows, test }: { onOpen: (row: NegotiationLogRow) => void; onRows?: (rows: NegotiationLogRow[]) => void; test: TestAction }) {
   const [rows, setRows] = useState<NegotiationLogRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
@@ -118,18 +127,30 @@ export function NegotiationLog({ onOpen, onRows }: { onOpen: (row: NegotiationLo
             )}
           </p>
         </div>
-        <div className="log-filters" role="group" aria-label="Show">
-          {FILTERS.map((f) => (
-            <button key={f.id} type="button" className="filter" aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>
-              {f.label}
-            </button>
-          ))}
+        {/* The page's one primary action: test a mandate by playing the other side. */}
+        <div className="page-action">
+          <Select label="Mandate to test" value={test.mandateId} options={test.mandates} onChange={test.onChoose} />
+          <button type="button" className="button button-accent" onClick={test.onStart} disabled={test.starting || !test.mandateId}>
+            {test.starting ? <span className="spinner" aria-hidden="true" /> : <BeakerIcon />}
+            Test negotiation
+          </button>
         </div>
       </header>
 
       {error && <p className="composer-error" role="alert">{error}</p>}
 
       <section className="panel log-panel" aria-label="Negotiation log">
+        {/* Filters belong to the list they filter. */}
+        <div className="log-toolbar">
+          <div className="log-filters" role="group" aria-label="Show">
+            {FILTERS.map((f) => (
+              <button key={f.id} type="button" className="filter" aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <span className="log-shown tabular">{rows ? `${shown.length} shown` : ""}</span>
+        </div>
         <div className="log-head" aria-hidden="true">
           <span>Who</span>
           <span>How</span>

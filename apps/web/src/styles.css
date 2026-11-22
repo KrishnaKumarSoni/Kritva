@@ -3200,7 +3200,28 @@ input {
   }
 }
 
+/* ---------- Page header: title on the leading edge, the page's one primary action on the trailing edge ---------- */
+.page-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 /* ---------- Negotiation log ---------- */
+.log-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-2);
+}
+.log-shown {
+  color: var(--color-text-tertiary);
+  font-size: var(--text-caption);
+  padding-inline-end: var(--space-2);
+}
 .log-filters {
   display: flex;
   flex-wrap: wrap;
@@ -3225,7 +3246,7 @@ input {
   gap: var(--space-3);
 }
 .log-head {
-  padding: 10px calc(var(--space-2) + var(--space-3)) 8px;
+  padding: 6px calc(var(--space-2) + var(--space-3)) 8px;
   border-block-end: 1px solid var(--color-border);
   color: var(--color-text-tertiary);
   font-size: var(--text-caption);

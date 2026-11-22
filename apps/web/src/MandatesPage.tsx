@@ -174,7 +174,8 @@ export function MandatesPage({ onUse, initialId = null, onOpenNegotiation }: Pro
             </h2>
             <p className="panel-subtitle">What Kritva may do for you.</p>
           </div>
-          <button type="button" className="button button-accent button-small" onClick={startNew} aria-current={newSelected ? "page" : undefined}>
+          {/* A list action, not the page's primary: that one lives with the open mandate. */}
+          <button type="button" className="button button-secondary button-small" onClick={startNew} aria-current={newSelected ? "page" : undefined}>
             <PlusIcon />
             New
           </button>

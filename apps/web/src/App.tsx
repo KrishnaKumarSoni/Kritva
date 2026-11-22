@@ -2,12 +2,10 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { motion, useReducedMotion } from "motion/react";
 import { api, ApiError, type BuyerView, type Decision, type MandateOption, type NegotiationLogRow, type OperatorView, type TermValue } from "./api.ts";
 import { NegotiationLog, howOf, whoOf } from "./NegotiationLog.tsx";
-import { BeakerIcon } from "./icons.tsx";
 import { Chat } from "./Chat.tsx";
 import { InsightsPanel } from "./InsightsPanel.tsx";
 import { MandatesPage } from "./MandatesPage.tsx";
 import { BoardPage } from "./BoardPage.tsx";
-import { Select } from "./Select.tsx";
 
 const POLL_MS = 2500;
 
@@ -224,14 +222,14 @@ export function App() {
   };
 
   /** A test: the principal plays the other side, by chat or voice, against the chosen mandate. */
-  const newNegotiation = async () => {
-    if (!mandateId) return;
+  const newNegotiation = async (chosen: string | null = mandateId) => {
+    if (!chosen) return;
     setStarting(true);
     try {
-      const { session } = await api.startSession(mandateId, null);
-      const title = mandates.find((m) => m.id === mandateId)?.title ?? "Test";
+      const { session } = await api.startSession(chosen, null);
+      const title = mandates.find((m) => m.id === chosen)?.title ?? "Test";
       const now = new Date().toISOString();
-      openNegotiation(session.id, { sessionId: session.id, startedAt: now, lastAt: now, mandate: { id: mandateId, title }, counterparty: null, origin: "test", channels: [], calls: { count: 0, seconds: 0 }, messages: 0, status: "active", live: false });
+      openNegotiation(session.id, { sessionId: session.id, startedAt: now, lastAt: now, mandate: { id: chosen, title }, counterparty: null, origin: "test", channels: [], calls: { count: 0, seconds: 0 }, messages: 0, status: "active", live: false });
     } catch (e) {
       setConsoleError(e instanceof ApiError ? e.message : "Unable to start a negotiation.");
     } finally {
@@ -278,21 +276,8 @@ export function App() {
             ))}
           </nav>
         )}
+        {/* The top bar is navigation only. Each page carries its own actions, next to what they change. */}
         <div className="topbar-actions">
-          {access && view === "negotiation" && (
-            <>
-              <Select
-                label="Mandate to test"
-                value={mandateId}
-                options={mandates.map((m) => ({ value: m.id, label: m.title, description: m.description }))}
-                onChange={setMandateId}
-              />
-              <button type="button" className="button button-neutral" onClick={newNegotiation} disabled={starting || !mandateId}>
-                {starting ? <span className="spinner" aria-hidden="true" /> : <BeakerIcon />}
-                Test negotiation
-              </button>
-            </>
-          )}
           {!access && !counterpartyOnly && (
             <form className="unlock" onSubmit={unlock}>
               {askKey && <input className="seller-key" type="password" aria-label="Access key" placeholder="Access key" autoFocus required value={key} onChange={(e) => setKey(e.target.value)} />}
@@ -315,14 +300,19 @@ export function App() {
         <MandatesPage
           initialId={openMandate}
           onUse={(id) => {
+            // "Test it" on a mandate: start a test negotiation with it straight away.
             setMandateId(id);
-            setView("negotiation");
-            loadMandates();
+            void newNegotiation(id);
           }}
           onOpenNegotiation={(id) => openNegotiation(id)}
         />
       )}
-      {access && view === "negotiation" && negMode === "log" && <NegotiationLog onOpen={(row) => openNegotiation(row.sessionId, row)} />}
+      {access && view === "negotiation" && negMode === "log" && (
+        <NegotiationLog
+          onOpen={(row) => openNegotiation(row.sessionId, row)}
+          test={{ mandates: mandates.map((m) => ({ value: m.id, label: m.title, description: m.description })), mandateId, onChoose: setMandateId, onStart: () => void newNegotiation(), starting }}
+        />
+      )}
       <main className={access ? "layout" : "layout layout-single"} hidden={access && (view !== "negotiation" || negMode !== "session")}>
         <h1 className="visually-hidden">Kritva</h1>
         <Chat

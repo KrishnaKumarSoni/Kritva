@@ -6,7 +6,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent } from "react";
 import { api, ApiError, type IntakeMessageView, type IntakeView, type LibraryExample, type MandateReview, type PhoneLine, type PrincipalSide } from "./api.ts";
-import { AlertIcon, CheckIcon, CopyIcon, ImageIcon, LockIcon, PhoneIcon, SendIcon, SparkIcon, XIcon } from "./icons.tsx";
+import { AlertIcon, BeakerIcon, CheckIcon, CopyIcon, ImageIcon, LockIcon, PhoneIcon, SendIcon, SparkIcon, XIcon } from "./icons.tsx";
 
 const spring = { type: "spring", duration: 0.35, bounce: 0 } as const;
 const MAX_IMAGES = 4;
@@ -174,8 +174,9 @@ export function IntakeChat({ view, examples, line = null, onChange, onSaved, onU
           <StateChip state={view.state === "new" && hasUserMessage ? "draft" : view.state} />
         </div>
         {view.state === "live" && view.mandateId && (
-          <button type="button" className="button button-neutral" onClick={() => onUse(`library:${view.mandateId}`)}>
-            Use for the next negotiation
+          <button type="button" className="button button-secondary button-small" onClick={() => onUse(`library:${view.mandateId}`)} title="Start a test negotiation with this mandate">
+            <BeakerIcon />
+            Test it
           </button>
         )}
       </header>

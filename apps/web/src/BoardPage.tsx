@@ -170,15 +170,18 @@ export function BoardPage({ onOpen, onManage }: Props) {
           </p>
         </div>
         <div className="board-actions">
+          {/* The page's primary action, only when someone on the list is waiting to start. */}
+          {board && waiting > 0 && !board.concluded && (
           <button
             type="button"
             className="button button-accent"
-            disabled={!board || waiting === 0 || busy === "start" || Boolean(board.concluded)}
+            disabled={busy === "start"}
             onClick={() => act("start", () => api.deals.start(libraryId!), { action: "start", sessionId: null })}
           >
             {busy === "start" && <span className="spinner" aria-hidden="true" />}
-            {waiting > 0 ? `Start ${waiting} ${waiting === 1 ? "negotiation" : "negotiations"}` : "Start negotiations"}
+            {`Start ${waiting} ${waiting === 1 ? "negotiation" : "negotiations"}`}
           </button>
+          )}
         </div>
       </header>
 
