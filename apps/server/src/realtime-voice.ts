@@ -11,6 +11,7 @@
  * The engine still decides every amount, offer and agreement. The same controller serves SIP
  * (phone) calls: only how the call starts and how delivery is observed differ (see src/phone/).
  */
+import { readFileSync } from "node:fs";
 import type { Hono } from "hono";
 import type { NegotiationEngine, NegotiationRecord, PayloadOf, ReplyViolation } from "@kritva/core";
 import { findAmounts } from "@kritva/core";
@@ -240,6 +241,18 @@ export function realtimeSession(settings: RealtimeSettings, briefing: VoiceBrief
 
 // ---------- Language ----------
 
+/** "in Hindi (Devanagari script)" for a wait line, from the language the call is in. */
+function languageLabel(code: string): string {
+  const scripts: Record<string, string> = { hi: "Devanagari", ta: "Tamil", kn: "Kannada", te: "Telugu", ml: "Malayalam", bn: "Bengali", mr: "Devanagari" };
+  let name = code;
+  try {
+    name = new Intl.DisplayNames(["en"], { type: "language" }).of(code) ?? code;
+  } catch {
+    /* keep the code */
+  }
+  return scripts[code] ? `in ${name} (${scripts[code]} script)` : `in ${name}`;
+}
+
 /** The language a text is written in, from its script; Latin script counts as English. */
 export function scriptLanguage(text: string): string {
   if (/\p{Script=Devanagari}/u.test(text)) return "hi";
@@ -266,28 +279,19 @@ const RETRY: Record<string, string> = {
 const line = (table: Record<string, string>, language: string) => table[language] ?? table.en!;
 
 /**
- * Silence on a call sounds like a dropped line, so Kritva speaks during every expected wait: while the
- * engine works on a deal turn ("working") and while the seller's approval is pending ("hold"). The lines
- * promise nothing and carry no amount; they are kept as transcript fragments, never as messages.
+ * Waiting on a call. The model cannot hear silence or feel time passing, so code only reports the
+ * facts: the line has been quiet this long while a reply is being worked out, or while the person
+ * represented decides. The agent decides whether to speak and what to say, guided by the plain-text
+ * waiting guide; it may call stay_quiet instead. Whatever it says is checked like its other words.
  */
-export const FILLER_TIMING = { firstAfterMs: 2_200, everyMs: 6_000, maxPerWait: 3, holdEveryMs: 18_000 };
-const FILLERS: Record<"working" | "hold" | "long_hold", Record<string, string[]>> = {
-  working: {
-    en: ["One moment, I'm just checking that.", "Still with you, nearly there.", "Thanks for bearing with me."],
-    hi: ["एक पल, अभी देखते हैं।", "बस एक सेकंड, लगभग हो गया।", "थोड़ा रुकने के लिए शुक्रिया।"],
-    ta: ["ஒரு நிமிடம், சரிபார்க்கிறேன்.", "இன்னும் கொஞ்சம், கிட்டத்தட்ட முடிந்தது.", "பொறுமைக்கு நன்றி."],
-  },
-  hold: {
-    en: ["I'm still waiting to hear back on that. Thanks for holding.", "Still waiting on a reply. I'm right here with you."],
-    hi: ["अभी जवाब का इंतज़ार है। होल्ड करने के लिए शुक्रिया।", "जवाब अभी आना बाकी है, मैं लाइन पर हूँ।"],
-    ta: ["அதற்கான பதிலுக்காக இன்னும் காத்திருக்கிறேன். காத்திருப்பதற்கு நன்றி.", "இன்னும் பதில் வரவில்லை. நான் இங்கேயே இருக்கிறேன்."],
-  },
-  long_hold: {
-    en: ["It's taking a little longer than usual. You're welcome to stay on, and I'll tell you the moment I hear back."],
-    hi: ["इसमें थोड़ा ज़्यादा समय लग रहा है। आप लाइन पर रहिए, जवाब आते ही आपको बताते हैं।"],
-    ta: ["இதற்கு வழக்கத்தை விட சற்று நேரம் ஆகிறது. நீங்கள் இணைப்பில் இருங்கள், பதில் வந்ததும் சொல்கிறேன்."],
-  },
-};
+export const WAIT_SENSOR = { quietMs: 3_000, sampleMs: 500 };
+const WAITING_GUIDE = readFileSync(new URL("./voice-waiting-guide.md", import.meta.url), "utf8").trim();
+export const STAY_QUIET_TOOL = {
+  type: "function",
+  name: "stay_quiet",
+  description: "Say nothing this time: the pause is natural, or you spoke a moment ago.",
+  parameters: { type: "object", properties: {}, additionalProperties: false },
+} as const;
 
 const verbatim = (text: string) => `Say exactly the following to them, word for word, in the same language, with nothing before or after it:\n${text}`;
 
@@ -302,8 +306,8 @@ export interface CallDeps {
   afterSeq: number;
   log?: (entry: Record<string, unknown>) => void;
   pollMs?: number;
-  /** Overrides for the filler timing (tests). */
-  fillerTiming?: Partial<typeof FILLER_TIMING>;
+  /** Overrides for the wait sensor (tests). */
+  waitSensor?: Partial<typeof WAIT_SENSOR>;
 }
 
 /**
@@ -316,11 +320,15 @@ export class RealtimeCall {
   #active = false;
   #queue: Array<{ messageId: string; text: string }> = [];
   #pendingSay: { messageId: string; text: string } | null = null;
-  /** When the call last had sound (either side), for the approval-wait fillers. */
+  /** When the call last had sound (either side); the wait sensor reports quiet stretches from it. */
   #lastSoundAt = Date.now();
-  #fillersSaid = 0;
-  #holdsSaid = 0;
-  readonly #timing: typeof FILLER_TIMING;
+  /** Since when a reply is being worked out (null: not working), and since when approval is pending. */
+  #workingSince: number | null = null;
+  #approvalSince: number | null = null;
+  #lastOwnWords = "";
+  #lastReportAt = 0;
+  #sensor: ReturnType<typeof setInterval> | null = null;
+  readonly #wait: typeof WAIT_SENSOR;
   #spoken = new Set<string>();
   #transcripts = new Map<string, string>();
   #transcriptWaiters = new Map<string, Array<(text: string) => void>>();
@@ -336,7 +344,8 @@ export class RealtimeCall {
 
   constructor(deps: CallDeps) {
     this.#d = deps;
-    this.#timing = { ...FILLER_TIMING, ...deps.fillerTiming };
+    this.#wait = { ...WAIT_SENSOR, ...deps.waitSensor };
+    this.#sensor = setInterval(() => this.#sense(), this.#wait.sampleMs);
     deps.link.onEvent = (e) => void this.#onEvent(e).catch((error) => this.#log({ kind: "error", error: String(error) }));
     deps.link.onClose = () => this.close();
   }
@@ -376,6 +385,7 @@ export class RealtimeCall {
     if (this.#closed) return;
     this.#closed = true;
     if (this.#poll) clearInterval(this.#poll);
+    if (this.#sensor) clearInterval(this.#sensor);
     this.#d.link.close();
   }
 
@@ -444,13 +454,16 @@ export class RealtimeCall {
         }
         return;
       }
-      case "response.done":
+      case "response.done": {
         this.#active = false;
         this.#pendingSay = null;
-        this.#lastSoundAt = Date.now();
+        // Only a response that said something counts as sound; staying quiet leaves the silence running.
+        const output: Array<Record<string, any>> = Array.isArray(e.response?.output) ? e.response.output : [];
+        if (output.some((o) => Array.isArray(o.content) && o.content.length > 0)) this.#lastSoundAt = Date.now();
         await this.#finished(e.response ?? {});
         this.#drain();
         return;
+      }
       default:
         return;
     }
@@ -464,9 +477,10 @@ export class RealtimeCall {
       .filter(Boolean)
       .join(" ")
       .trim();
-    if (response.metadata?.kritva === "filler") return;
+    if (response.metadata?.kritva === "wait") return this.#waited(output, spoken);
     const ours = response.metadata?.kritva === "say";
     if (ours) {
+      if (spoken) this.#lastOwnWords = spoken;
       this.#checkFidelity(String(response.metadata?.message_id ?? ""), spoken);
       return;
     }
@@ -496,6 +510,7 @@ export class RealtimeCall {
       this.#log({ kind: "heard", source: heard === transcript ? "transcript" : "voice_model", transcript, modelWords });
       this.#language = /^[a-z]{2,3}$/.test(args.language ?? "") ? args.language! : scriptLanguage(heard);
       if (acknowledgement) {
+        this.#lastOwnWords = acknowledgement;
         const problems = await this.#d.engine.checkVoiceWords(this.#d.sessionId, acknowledgement, heard);
         await this.#d.engine.recordVoiceFragment({ sessionId: this.#d.sessionId, text: acknowledgement, utteranceId: String(call.call_id ?? itemId ?? "ack") });
         if (problems.length) await this.#correct(problems, acknowledgement);
@@ -505,10 +520,10 @@ export class RealtimeCall {
         return this.#sayLine(line(RETRY, this.#language), "Asked them to repeat: nothing was heard.");
       }
       const messageId = `msg_${(itemId ?? String(call.call_id ?? "")).replace(/[^\w-]/g, "").slice(0, 90) || crypto.randomUUID()}`;
-      const stopFillers = this.#fillWhileWorking();
+      this.#workingSince = Date.now();
       const result = await this.#d.engine
         .handleCounterpartyMessage({ sessionId: this.#d.sessionId, text: heard.slice(0, 2_000), channel: "voice", messageId, utteranceId: itemId, language: this.#language })
-        .finally(stopFillers);
+        .finally(() => (this.#workingSince = null));
       this.#log({ kind: "deal_turn", ms: Math.round(performance.now() - started), engine: result.ok ? result.timings : null, ok: result.ok, language: this.#language });
       if (!result.ok) {
         this.#output(call, { reply_to_say: null, note: "The turn could not be taken." });
@@ -544,6 +559,7 @@ export class RealtimeCall {
         utteranceId: itemId,
       });
       if (!recorded.ok) return this.#log({ kind: "record_failed", code: recorded.code });
+      this.#lastOwnWords = spoken;
       this.#spoken.add(recorded.replyId);
       this.#log({ kind: "conversation_turn", cut, violations: recorded.violations.map((v) => v.rule) });
       if (recorded.violations.length) await this.#correct(recorded.violations, spoken);
@@ -595,45 +611,52 @@ export class RealtimeCall {
       const p = e.payload as PayloadOf<"message">;
       if (p.direction === "outbound") this.#say(e.id, p.text);
     }
-    // Waiting for the seller's approval: never a long silence on the line.
-    if (status !== "awaiting_approval") this.#holdsSaid = 0;
-    else if (!this.#active && this.#queue.length === 0 && Date.now() - this.#lastSoundAt >= this.#timing.holdEveryMs) {
-      this.#holdsSaid += 1;
-      this.#filler(this.#holdsSaid === 4 ? "long_hold" : "hold");
-    }
+    // Waiting for the decision of the person represented: the sensor reports how long.
+    if (status === "awaiting_approval") this.#approvalSince ??= Date.now();
+    else this.#approvalSince = null;
   }
 
-  /** While the engine works on a deal turn, a short line after a pause and then every few seconds. */
-  #fillWhileWorking(): () => void {
-    let said = 0;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const next = (ms: number) => {
-      timer = setTimeout(() => {
-        if (this.#closed) return;
-        if (!this.#active && this.#queue.length === 0) {
-          this.#filler("working");
-          said += 1;
-        }
-        if (said < this.#timing.maxPerWait) next(this.#timing.everyMs);
-      }, ms);
-    };
-    next(this.#timing.firstAfterMs);
-    return () => {
-      if (timer) clearTimeout(timer);
-    };
-  }
-
-  /** Says one filler line in their language, word for word, and keeps it as a transcript fragment. */
-  #filler(kind: keyof typeof FILLERS) {
-    const lines = FILLERS[kind][this.#language] ?? FILLERS[kind].en!;
-    const text = lines[this.#fillersSaid % lines.length]!;
-    this.#fillersSaid += 1;
-    const known = FILLERS[kind][this.#language] !== undefined;
-    const instructions = known ? verbatim(text) : `In the language they are speaking, say only a very short, natural phrase meaning: "${text}" Nothing else, no numbers, no promises.`;
+  /** Reports a quiet stretch during a wait to the agent, which decides whether and what to say. */
+  #sense() {
+    if (this.#closed || this.#active || this.#queue.length > 0) return;
+    const waitingSince = this.#workingSince ?? this.#approvalSince;
+    if (waitingSince === null) return;
+    const now = Date.now();
+    const quietMs = now - this.#lastSoundAt;
+    if (quietMs < this.#wait.quietMs || now - this.#lastReportAt < this.#wait.quietMs) return;
+    const quiet = Math.round(quietMs / 1000);
+    const waited = Math.round((now - waitingSince) / 1000);
+    const situation = this.#workingSince !== null
+      ? `You are still working out your reply to their last message (${waited} seconds so far). The line has been quiet for ${quiet} seconds.`
+      : `You are waiting for the decision of the person you represent (${waited} seconds so far). The line has been quiet for ${quiet} seconds.`;
+    const last = this.#lastOwnWords ? ` Your last words were: "${this.#lastOwnWords.slice(0, 200)}"` : "";
+    const language = languageLabel(this.#language);
     this.#active = true;
-    this.#d.link.send({ type: "response.create", response: { instructions, tool_choice: "none", metadata: { kritva: "filler", kind } } });
-    this.#log({ kind: "filler", filler: kind, text });
-    void this.#d.engine.recordVoiceFragment({ sessionId: this.#d.sessionId, text, utteranceId: `filler_${this.#fillersSaid}` }).catch(() => undefined);
+    this.#lastReportAt = now;
+    // Out of band and without the conversation: a pause is filled, never used to answer the open question.
+    this.#d.link.send({
+      type: "response.create",
+      response: {
+        conversation: "none",
+        input: [],
+        instructions: `${WAITING_GUIDE}\n\nSpeak ${language}. Never use dashes.\n\nNow: ${situation}${last}`,
+        tools: [STAY_QUIET_TOOL],
+        tool_choice: "auto",
+        metadata: { kritva: "wait", situation: this.#workingSince !== null ? "working" : "approval" },
+      },
+    });
+    this.#log({ kind: "wait_reported", situation: this.#workingSince !== null ? "working" : "approval", quiet, waited });
+  }
+
+  /** What the agent did with a wait report: stayed quiet, or spoke (checked and kept as a fragment). */
+  async #waited(output: Array<Record<string, any>>, spoken: string): Promise<void> {
+    // An out-of-band stay_quiet call is not in the conversation, so it needs no output.
+    this.#log({ kind: "wait_answered", spoke: Boolean(spoken), text: spoken.slice(0, 160) });
+    if (!spoken) return;
+    this.#lastOwnWords = spoken;
+    await this.#d.engine.recordVoiceFragment({ sessionId: this.#d.sessionId, text: spoken, utteranceId: `wait_${Date.now()}` }).catch(() => undefined);
+    const problems = await this.#d.engine.checkVoiceWords(this.#d.sessionId, spoken);
+    if (problems.length) await this.#correct(problems, spoken);
   }
 }
 
