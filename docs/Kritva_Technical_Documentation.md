@@ -1,22 +1,22 @@
 # Kritva technical documentation
 
-Status: branch `epics-12-14-console-voice-demo` on 2026-11-22. Writing standard: ASD-STE100 (Simplified Technical English).
+Status: branch `epics-12-14-console-voice-demo` on 2026-11-22 (revision 2). Writing standard: ASD-STE100 (Simplified Technical English).
 
 ## 1. Scope
 
-This document tells what Kritva is, how its parts work and how to operate it. The other files in `docs/` give more detail.
+This document tells what Kritva is, how it works and how to operate it. The other files in `docs/` give more detail.
 
 ## 2. System overview
 
 ### 2.1 Purpose
 
-Kritva is a negotiation capability that other applications can use. It negotiates for a person or a business (the principal) with a counterparty. The host application gives the case, the authority of the principal and a counterparty who is already in a conversation. Kritva gives back the progress, the approval requests and the outcome.
+Kritva is a negotiation capability that other applications can use. It negotiates for a person or a business (the principal), who sells or buys, with one or more counterparties. The host application gives the case and the authority of the principal. Kritva gives back the progress, the approval requests and the outcome.
 
-Kritva does not find counterparties, manage listings, do market research, take payments or move goods. It never makes up market prices or other buyers.
+Kritva does not do market research, take payments or move goods. It never makes up prices or offers.
 
 ### 2.2 The demonstration case
 
-A seller sells a one-year-old king-size bed for ₹20,000. The buyer collects it in Koramangala, Bangalore. Delivery is not included. A human plays the buyer, and the seller console shows the negotiation at the same time.
+A seller sells a one-year-old king-size bed for ₹20,000, with pickup in Koramangala, Bangalore. Buyers use chat, a browser call or a phone call.
 
 ### 2.3 The main rule
 
@@ -24,273 +24,284 @@ Code decides. The model words. Code sets every amount, term, commitment and perm
 
 ## 3. Architecture
 
-### 3.1 Packages
-
 The repository is an npm workspace.
 
 | Package | Function |
 | --- | --- |
 | `packages/core` | The reusable negotiation core. It has no case-specific rules. |
-| `apps/server` | The HTTP API (Hono), the voice call controller, phone calls and evaluation tools. |
-| `apps/web` | The web application (React 19, Vite): conversation, console and mandate library. |
+| `apps/server` | The HTTP API (Hono), sign-in, deal groups, voice, phone calls and evaluation tools. |
+| `apps/web` | The console and the counterparty page (React 19, Vite, Motion). |
 
-Case content is in `cases/`, outside the core: `bed-sale`, `bicycle-sale` and `logo-design`. Each case has a `case.json`, source texts, confirmed mandates, buyer scenarios and strategy guidance. Test evidence is in `test-results/`.
-
-The stack is Node.js 24, TypeScript, Zod 4, the OpenAI Agents SDK (`@openai/agents`), SQLite (`node:sqlite`) and Vitest.
-
-### 3.2 Core modules
-
-The core in `packages/core/src/` has one folder for each responsibility: `schema/`, `mapping/`, `mandate/`, `intake/`, `record/`, `dealspace/`, `counterparty/`, `strategy/`, `governance/`, `commitments/`, `negotiation/` (the turn engine), `agent/`, `llm/` and `voice/`. The sections below describe them.
+Case content is in `cases/`, outside the core, for example `bed-sale` and `bicycle-purchase` (a buying case). The stack is Node.js 24, TypeScript, Zod 4, the OpenAI Agents SDK, SQLite (`node:sqlite`) and Vitest.
 
 ## 4. The mandate
 
 ### 4.1 The schema
 
-The schema is fixed. Term names, values, units and conditions are data, thus a new term does not change the schema. The asking price (a position), the minimum (a limit) and the authority (a permission) are separate records. Each stated item quotes its source exactly and names the party whose source says it. An unknown value stays unknown.
+The schema is fixed. Terms and conditions are data. The asking price (a position), the limit and the authority (a permission) are separate records. Each item quotes its source exactly. An unknown value stays unknown.
+
+The field `principalSide` is `receives` or `pays`. When the principal pays, a better deal is a lower price. Counteroffers then go up, but never past the maximum.
 
 ### 4.2 Setup
 
-1. The principal chats with the intake agent (`intake/`, an OpenAI Agents SDK agent). The agent accepts text and images, for example a listing screenshot.
-2. The agent finds the roles, the public items and the private items.
-3. The agent asks only for data that it cannot find, usually the limit and the product details that buyers ask about.
-4. The mapper (`mapping/`) changes the collected input into a draft. It uses `gpt-5.5`, because accuracy is more important than speed here.
-5. The validator checks the draft. An inferred permission becomes a question for the principal, never authority.
-6. The principal selects **Make it live**. This confirms the exact draft version and its content hash.
+1. The principal chats with the intake agent (`intake/`), with text or images.
+2. The agent finds the roles, the side, the public items and the private items. It asks only for data that it cannot find, usually the limit.
+3. Optionally, the agent collects the known counterparties.
+4. The mapper (`gpt-5.5`) changes the input into a draft. The validator checks it.
+5. The principal selects **Make it live**. This confirms the exact draft version and its content hash.
 
-Conflicts and unresolved permissions stop the confirmation. A buyer message can never confirm a mandate.
+An inferred permission becomes a question, never authority. A counterparty message can never confirm a mandate.
 
 ### 4.3 The library
 
-The mandate library (`mandate/library.ts`) is append-only. It keeps all versions. A direct correction makes a new draft version with its own source. A mandate is live, paused, closed or deleted. Only a live mandate can start a negotiation. A paused or closed mandate also pauses its open negotiations.
+The mandate library (`mandate/library.ts`) is append-only and keeps all versions. A mandate is live, paused, closed or deleted. Only a live mandate can start a negotiation. A new revision applies to all open negotiations, and the system checks their pending offers and approvals again.
 
-During a negotiation, the principal can change the instructions. The same mapper makes a draft. The draft has no authority until the principal confirms it. Then the next revision starts, and the system checks the pending offers and approvals again.
+Each live mandate also has:
+
+- A **listing code**: three digits and a Damm check digit. A misheard code never matches a different listing.
+- A **counterparty list**: names, optional phone numbers and notes. The list is outside the confirmed mandate. Thus, one counterparty never sees another in the session record. `KRITVA_MAX_COUNTERPARTIES` (default 5) is the maximum.
 
 ## 5. The shared record
 
-The record is one validated, append-only event log for each session. Text, voice, the console, the strategy and the evaluations all read it. SQLite (`data/kritva.sqlite`) writes with WAL and `synchronous=FULL`. Thus, a returned write is on disk, and a failed write saves nothing.
+The record is one validated, append-only event log for each session. SQLite (`data/kritva.sqlite`) writes with WAL and `synchronous=FULL`. Thus, a returned write is on disk.
 
-The 25 event types include `session_started`, `message`, `offer_extracted`, `offer_proposed`, `proposal_checked`, `decision`, `approval_requested`, `acceptance_recorded`, `agreement_recorded`, `reply_blocked`, `delivery_reported`, `voice_connection` and `correction`.
+The 28 session event types include `message`, `offer_proposed`, `decision`, `approval_requested`, `follow_up_noted`, `follow_up_attempted`, `recording_saved`, `agreement_recorded`, `reply_blocked`, `delivery_reported` and `voice_connection`.
 
 Rules:
 
-- Code validates each event before it saves it.
-- The route sets the actor. Conversation text can never become a seller approval.
+- The route sets the actor. Conversation text can never become an approval.
 - Approvals and agreements bind to an exact terms hash and mandate revision.
 - An offer counts as sent only when the channel reports delivery.
-- A retry never makes a duplicate. A correction adds an event, and the original stays.
 - The counterparty view never shows the mandate, limits, decisions or blocked replies.
+
+A separate group record (`record/groups.ts`) holds the events of a deal group (section 10).
 
 ## 6. The negotiation turn
 
 ### 6.1 The agent
 
-Each turn is one run of the agent **Kritva** (`agent/negotiator.ts`). The input is the full conversation from the counterparty view of the record, plus the public reading context. The agent must call a tool at each step, one tool at a time, with a maximum of six model calls.
+Each turn is one run of the agent **Kritva** (`agent/negotiator.ts`, OpenAI Agents SDK). The input is the full public conversation and the public reading context. The agent must call a tool at each step, with a maximum of six model calls.
 
 ### 6.2 The tool `read_message`
 
-The agent calls `read_message` with a structured reading of the message (intent, offer terms, questions, conditions and exact quotes). Then code does these steps:
+The agent gives a structured reading of the message. Then code does these steps:
 
 1. It grounds the reading against the message text.
 2. It records the offer and the notes.
 3. It checks the proposal against the deal space.
 4. It runs the strategy (`decide()`) and selects one move.
-5. It runs gate phase 1 (terms).
-6. It records the decision and the commitments.
-7. It returns the wording brief.
-
-The brief gives the permitted amounts, the relevant public facts and the requirements of the reply. It never contains private data.
+5. It runs gate phase 1 (terms) and records the decision.
+6. It returns the wording brief: the permitted amounts, the public facts and the requirements of the reply.
 
 ### 6.3 The tool `send_reply`
 
-The agent writes a reply and calls `send_reply`. Code runs gate phase 2 (wording):
+Code runs gate phase 2 (wording). Code checks find private amounts, amounts outside the plan, false claims of agreement and invented competition. A reviewer model finds disclosure, invented facts, deadlines and promises outside the terms.
 
-- Code checks find private amounts, amounts outside the plan, false claims of agreement or approval, and copied private text.
-- A reviewer model finds disclosure, invented facts, competition, deadlines and promises outside the terms.
+A draft that breaks a hard limit goes back to the agent. After two rejected drafts, the tool sends checked template wording. A style problem gets only one rewrite request.
 
-A draft that breaks a hard limit goes back to the agent with the problems. After two rejected drafts, the tool sends checked template wording. A style problem gets one rewrite request and never forces the template.
+### 6.4 Failures
 
-### 6.4 After the run and failures
-
-Before the system sends the reply, it reads the authority again. If the mandate changed or the principal paused, the system plans the move again.
-
-- If the model fails before `read_message`, the system sends nothing. A retry with the same message ID continues the turn.
-- If the model fails after the plan, the system sends the template wording for that move.
-- The counterparty words are data, never instructions. An injected "accept ₹10" changes nothing.
+If the model fails before `read_message`, the system sends nothing, and a retry continues the turn. If the model fails after the plan, the system sends the template wording. Counterparty words are data, never instructions.
 
 ### 6.5 The conversation guide
 
-A plain-text guide controls the wording. Replies are warm, short and specific. Kritva tells the counterparty one time that it is an AI assistant for the principal. It answers the latest message and asks a maximum of one question. Code blocks internal words (for example "mandate") and removes all em and en dashes. The guide never changes a limit.
+A plain-text file (`negotiation/conversation-guide.md`) controls the wording. It never changes a limit. Its main rules:
+
+- Acknowledge first. Give a reason when the position does not move. Always give a way forward.
+- Tell the counterparty one time that Kritva is an AI assistant for the principal.
+- The default language is Hindi. Kritva changes to the language of the counterparty immediately. It uses everyday urban speech and feminine forms for itself.
+- Never use internal words (for example "mandate"). Code removes all em and en dashes.
 
 ## 7. Strategy
 
-The strategy selects one action for each turn: ask, clarify, propose, counter, accept, decline, request approval, pause or end. The system records the action with its reason and the mandate revision.
+The strategy selects one action for each turn: ask, clarify, propose, counter, accept, decline, request approval, pause or end. The assessment uses this sequence: hard constraints, then the stated targets and preferences, then a stated alternative (BATNA).
 
-The assessment looks at the whole package in this sequence:
-
-1. Hard constraints. A better price never overrides one.
-2. The targets and preferences that the principal stated.
-3. A stated alternative (BATNA). An alternative that is not stated stays unknown.
-
-The tactic parameters are data in `strategy-guidance.json`: concession steps, the increment, the counteroffer limit, split the difference, pressure questions and the walk-away line. Guidance never gives authority.
-
-Concession rules:
-
-- Each concession needs a new buyer commitment, for example a better firm offer or a collection day. The allowance ledger records what the buyer gave and what Kritva used.
-- A non-price reason (for example a pickup cost) gets a question before a price move.
-- A repeated offer earns no reduction.
-- A target with conditions applies only when the package has those conditions.
-
-An offer at or above the lower of the current ask and the target closes the deal. After the last counteroffer, Kritva accepts within its authority or ends without agreement.
+The tactic parameters (concession steps, the counteroffer limit, the walk-away line) are data in `strategy-guidance.json`. Guidance never gives authority. Each concession needs a new commitment from the counterparty, and a repeated offer earns no reduction. An offer at or above the lower of the current ask and the target closes the deal.
 
 ## 8. Governance
 
-The gate returns allow, block, needs approval or needs clarification, with its rule and reason.
+The gate returns allow, block, needs approval or needs clarification. The proposal checker (`dealspace/check.ts`) is deterministic. Linked conditions stay together: "₹18,000 only with Saturday collection" fits only with Saturday collection.
 
-The proposal checker (`dealspace/check.ts`) is deterministic. The result is "fits known constraints", "conflicts" or "needs clarification". Linked conditions stay together: "₹18,000 only with Saturday collection" fits only when the proposal also has Saturday collection.
+Kritva requests an exception only when the limit permits a request. The approval covers those terms, that revision and that session, one time.
 
-Kritva requests an exception only when the limit permits a request. It offers the exception only after the principal approves it. The approval covers those terms, that revision and that session, one time. The buyer can never make an approval.
+No prompt or tool result contains private limits, targets or the allowance. Phone numbers stay on the counterparty list or in memory, and logs mask them.
 
-Privacy rules:
+## 9. Approvals and outcomes
 
-- No prompt or tool result contains private limits, targets, the allowance or the insights.
-- A draft that showed private data never goes back to the model.
-- The phone log masks the caller number, and the record does not keep it.
+### 9.1 Agreement without approval
 
-## 9. Commitments and outcomes
+When the mandate gives Kritva the authority, Kritva reads back the complete terms from the checked fields. The counterparty confirms them. Then the system records the agreement.
 
-Each offer has a party, terms, a source message, a revision, a kind (offer, enquiry or interest) and conditions. A changed offer is a new linked version. Statuses come from events, thus a replayed event never changes a status two times. A blocked offer stays internal and never counts as the seller offer.
+### 9.2 Agreement with approval
 
-An agreement needs these steps:
+When the terms need the approval of the principal, these steps occur:
 
-1. Kritva reads back the complete terms. Code builds the read-back from the checked terms.
-2. The buyer confirms those terms.
-3. If the mandate requires it, the seller approves the same terms hash.
+1. Kritva does a wrap-up. It asks how long the offer stands and how and when to contact the counterparty. It says that the deal is not final. On a call, it then ends the call.
+2. The approval card in the console shows the terms, the wrap-up data and the call recording.
+3. The principal approves, counters or declines, with an optional message.
+4. Kritva follows up: in the chat, on a live call, or with a call-back through Twilio. A call-back has one retry. Then the follow-up lapses.
+5. The system records the agreement only when the counterparty says yes again after the approval.
 
-If the approval is missing, the outcome is "pending approval". Changed terms cancel a pending approval.
+The record refuses an agreement whose acceptance came before the approval. Changed terms cancel a pending approval.
 
-The outcome is negotiating, paused, pending approval, agreement or no agreement. An end records who stopped, why, and the open terms. The agreement card lists payment and logistics as pending obligations. Nothing can open an ended session again.
+### 9.3 Outcomes
 
-## 10. Channels
+The outcome is negotiating, paused, pending approval, agreement or no agreement. An end records who stopped and why. Payment and logistics stay pending obligations.
 
-### 10.1 Text chat
+## 10. Several counterparties on one deal
 
-Before the first message, the chat tells the buyer that Kritva is an AI that negotiates for the seller. "Sorry, I meant X" marks the earlier offer as corrected. "I do not want to speak to an AI" ends the negotiation without agreement.
+### 10.1 The deal group
 
-### 10.2 Browser voice
+A saved mandate has one deal. All sessions under it are in one deal group (`DealGroups`). The group record has these events: `group_opened`, `counterparty_joined`, `deal_reserved`, `deal_released`, `deal_concluded` and `principal_time`. The cap applies to the open sessions in the group.
 
-The browser voice is a live realtime call (`apps/server/src/realtime-voice.ts`):
+### 10.2 Competition
 
-1. The browser sends its WebRTC offer to the Kritva server.
-2. The server makes the call with OpenAI. The API key stays on the server.
-3. The server joins the call through a sideband WebSocket. Tools run only on the server.
+For each session, the effective limit is the better of the mandate limit and the best live offer from another open session. That offer must be within limits and on the same other terms. The effective limit stops further concessions. It never withdraws an offer that Kritva already made.
 
-The realtime model (`gpt-realtime-2.1`) is the ears and voice of Kritva. It never negotiates. It sorts each buyer turn:
+Kritva can cite another offer only with the permission `mention_other_offers` in mode `autonomous`. It can cite only the amount, never the name or the channel. The reply check blocks a cited amount that is better than the real offer.
 
-- **Conversation turn** (greeting, a question that public facts answer): the model answers. It cannot say an amount, terms or a promise.
-- **Deal turn** (price, offer, pickup): the model says a short acknowledgement and calls the tool `negotiate`. The engine runs its full turn, and the voice speaks the checked reply word for word.
+### 10.3 The lock
 
-Code checks the words of the model. If a check fails, the audio stops, Kritva corrects itself, and the system records the event.
+1. **Reserve.** The first approval of an accepted package reserves the deal. The server refuses a second approval.
+2. **Conclude.** When the reserved counterparty says yes again, the system records the agreement and the conclusion in one transaction.
+3. **Close the others.** Each other session goes to "no agreement". Kritva tells them that the deal went elsewhere and asks to keep their number. Then the mandate closes.
 
-The transcript uses `gpt-transcribe` with hints for Hindi, Tamil, Kannada, Telugu, Malayalam, Marathi, Bengali and English, each in its own script.
+If a reserved counterparty declines or changes the terms, the reservation is released.
 
-A reply counts as delivered only when its audio finishes. If the buyer talks over it, the system records the part that the buyer heard. An interrupted offer cannot be accepted.
+On a live call, Kritva finishes its current sentence (or lets the counterparty finish), says a short filler and then the closing message.
 
-The older turn-based pipeline stays available with `KRITVA_VOICE_MODE=turns`.
+### 10.4 The board
 
-### 10.3 Phone calls
+The **Deals** page shows one row for each counterparty: status, channel, the latest offer, the gap to the limit and a star on the best score. **Start negotiations** sends private links or calls the listed numbers. The header shows the negotiations run, the time the principal used and the deals outside limits (always 0).
 
-A counterparty can call Kritva's Twilio number (`apps/server/src/phone/`), and Kritva can call them (`phone/outbound.ts`):
+## 11. Channels
 
-1. Twilio asks the number's Voice URL (`POST /api/phone/twilio/voice`, signature checked), and Kritva answers with TwiML that hands the call to OpenAI SIP (`sip.api.openai.com`), with the dialled and calling numbers as `X-` headers.
-2. OpenAI sends `realtime.call.incoming` to `POST /api/webhooks/openai`.
-3. The server checks the signature (HMAC-SHA256, five-minute window).
-4. The server matches the dialled number to `KRITVA_PHONE_ROUTES`.
-5. The server checks the listing or mandate, starts a session, accepts the call and joins it with the browser call controller.
+### 11.1 Text chat
 
-The audio goes directly between Twilio and OpenAI. The server declines a call with SIP 404 (no route), 480 (not live), 486 (busy) or 500 (start failed).
+The chat tells the counterparty that Kritva is an AI. A refusal to speak to an AI ends the negotiation.
 
-The server decides delivery from the playback events. If the evidence is not clear, it reports the reply as interrupted. After 30 seconds of silence, Kritva asks if the caller is there. After 30 more seconds, it ends the call. The maximum call length is 15 minutes.
+### 11.2 Browser voice
 
-## 11. The web application
+The browser voice is a live WebRTC call (`apps/server/src/realtime-voice.ts`). The server makes the call with OpenAI and joins it through a sideband WebSocket. The API key and the tools stay on the server.
 
-| View | Content |
+The realtime model (`gpt-realtime-2.1`) is the ears and voice of Kritva. It never negotiates.
+
+- **Conversation turn** (a greeting, a question about public facts): the model answers. It cannot say an amount or a promise.
+- **Deal turn** (a price, an offer, pickup): the model says a short acknowledgement and calls `negotiate`. The voice speaks the engine reply word for word.
+
+Code checks the words of the model. If a check fails, Kritva corrects itself.
+
+During a wait, code tells the model how long the line was quiet. The model says a few words or calls `stay_quiet` (`voice-waiting-guide.md`). When the conversation is over, the model says a goodbye and calls `end_call` (`voice-ending-guide.md`). Code hangs up only after the goodbye plays.
+
+A reply counts as delivered only when its audio finishes. An interrupted offer cannot be accepted.
+
+### 11.3 Inbound phone calls
+
+1. The counterparty calls the Twilio number.
+2. Twilio asks the Voice URL (`POST /api/phone/twilio/voice`). The server checks the Twilio signature.
+3. The server answers with TwiML that sends the call to OpenAI SIP (`sip.api.openai.com`), with the numbers in `X-Kritva-` headers.
+4. OpenAI sends `realtime.call.incoming` to `POST /api/webhooks/openai`. The server checks the signature.
+5. The server routes the call with `KRITVA_PHONE_ROUTES` and starts a session.
+6. The server accepts the call with the model, instructions and voice only. After `KRITVA_PHONE_SETUP_DELAY_MS`, it joins the call and sends the other settings. This prevents silent calls.
+
+The audio goes directly between Twilio and OpenAI.
+
+The server decides delivery from the playback events. If the evidence is not clear, it reports the reply as interrupted.
+
+### 11.4 The front desk
+
+On a `code` route, one number serves all mandates. The front desk agent (`phone/front-desk.ts`) asks for the listing code. The tool `find_listing` checks it in code. On a match, the same call continues as the negotiation. Before the match, the agent knows nothing about any listing.
+
+### 11.5 Outbound calls
+
+Kritva can call a counterparty (`phone/outbound.ts`):
+
+1. Twilio dials the number.
+2. When the counterparty answers, Twilio sends the call to OpenAI with `X-Kritva-Call=<token>`.
+3. The server joins the call to its session. Kritva says who calls, for whom and why.
+
+Calls over `KRITVA_PHONE_MAX_CALLS` wait in a queue. There are no automatic retries.
+
+WARNING: Indian rules prohibit cold calls and need consent for numbers on the Do-Not-Disturb registry. Kritva can call only the numbers in `KRITVA_PHONE_OUTBOUND_ALLOW`. Do not add a number without the consent of its owner.
+
+## 12. The console and sign-in
+
+### 12.1 Pages
+
+| Page | Content |
 | --- | --- |
-| Negotiation | The conversation and the panel: status, pause, approvals, price band, offers, strategy, terms and the record. |
-| Mandates | The library and the intake chat. |
-| Buyer (`?view=buyer#session=<id>`) | The conversation and the AI disclosure, without private data. |
+| `/deals` | The deal board (section 10.4) and the approval cards. |
+| `/negotiations` | A log of all negotiations. Each shows its conversation and a panel with tabs. |
+| `/mandates` | The library, the intake chat, the listing code and the counterparty list. |
+| `?view=buyer#session=<id>` | The counterparty page, without private data. |
 
-The demo listing shows the public content of the bed mandate, with a demo label. **Call seller** starts one browser voice session. Approve and Reject send the exact offer version and revision. **Change instructions** pauses the negotiation and opens the library.
+All dropdowns use the Kritva component (`Select.tsx`). Colors: burnt orange `#CC5500` (accent), jet black `#0A0A0A` (primary), white (base). Headings use Geist Serif.
 
-Dropdowns use the Kritva component (`Select.tsx`), not the browser default. Colors: burnt orange `#CC5500` (accent), jet black `#0A0A0A` (primary), white (base). Headings use Geist Serif.
+### 12.2 Sign-in
 
-## 12. Server API
+The principal enters an email on the curtain screen. Amazon SES sends a one-time link (15 minutes). Locally, the server log shows it. The link sets the cookie `kritva_session` (HttpOnly, SameSite=Strict, 30 days). Only addresses in `KRITVA_SIGNIN_EMAILS` get a link, and the server keeps only token hashes. Scripts use `Authorization: Bearer <KRITVA_OPERATOR_KEY>`.
+
+## 13. Server API
 
 The server uses port 8787.
 
 | Routes | Function |
 | --- | --- |
-| `/api/operator/sessions` | Sessions, pause, end, approvals and instruction drafts. |
-| `/api/operator/library` | Mandates, versions, corrections, confirmation and lifecycle. |
-| `/api/operator/intake` | The intake chat. |
-| `/api/buyer/sessions/:id` | The public conversation, messages, deliveries and voice. |
-| `/api/public/listings/:caseId` | The demo listing and **Call seller**. |
-| `/api/webhooks/openai` | Phone call webhooks. |
+| `/api/auth/*` | Sign-in. |
+| `/api/operator/*` | Sessions, approvals, the log, mandates, intake and calls. |
+| `/api/buyer/sessions/:id` | The public conversation and voice. |
+| `/api/public/listings/:caseId` | The demo listing. |
+| `/api/phone/twilio/*`, `/api/webhooks/openai` | Phone webhooks. |
 
-Operator routes need a signed-in session (the `kritva_session` cookie from an emailed sign-in link, see `docs/Kritva_Sign_In.md`) or, for scripts, `Authorization: Bearer <key>`. The server prints the key at startup. Set `KRITVA_OPERATOR_KEY` to keep it after a restart.
-
-## 13. Models
-
-All language model work uses OpenAI.
+## 14. Models
 
 | Function | Default | Setting |
 | --- | --- | --- |
 | Mapping | `gpt-5.5` | `KRITVA_MAPPING_MODEL` |
 | Turn and agent | `gpt-5.4-mini` | `KRITVA_TURN_MODEL`, `KRITVA_AGENT_MODEL` |
 | Intake | `gpt-5.4-mini` | `KRITVA_INTAKE_MODEL` |
-| Realtime voice | `gpt-realtime-2.1` | `KRITVA_REALTIME_MODEL` |
+| Realtime voice | `gpt-realtime-2.1`, voice `marin` | `KRITVA_REALTIME_MODEL` |
 | Voice transcript | `gpt-transcribe` | `KRITVA_REALTIME_TRANSCRIBE_MODEL` |
 
-The agent sends requests with `store: false`, and tracing is off.
+## 15. Deployment
 
-CAUTION: OpenAI retires the Speech API models (for example `gpt-4o-mini-tts`) on 2027-01-06. If you use turn-based voice, change `KRITVA_TTS_MODEL` before that date.
+The server runs on one AWS EC2 instance in `us-west-2`, as the systemd service `kritva`, with HTTPS. `scripts/deploy-aws.sh` copies committed `main` to `/opt/kritva`, builds the web application, restarts the service and checks `/api/health`. With `--env`, it also copies `.env` merged with `.env.production`, thus secrets never go through git. The script does not change the SQLite data.
 
-## 14. Tests and evaluation
+The region is next to OpenAI, because deal turns wait on OpenAI. From there, the server joined phone calls too early and the calls were silent. Thus, `KRITVA_PHONE_SETUP_DELAY_MS` is 1500 on AWS.
 
-### 14.1 Deterministic tests
+## 16. Tests and evaluation
 
-`npm test` runs approximately 450 unit and server tests without model calls. A bridge model puts scripted answers into the real agent loop. The recorded replays (`cases/bed-sale/replays/`) play real model answers again. A replay fails if a turn gives a different reply, decision or offer.
+### 16.1 Deterministic tests
 
-### 14.2 Live scenarios
+`npm test` runs approximately 590 unit and server tests without model calls. A bridge model puts scripted answers into the real agent loop. The recorded replays play real model answers again and fail on any changed reply, decision or offer.
 
-`npm run scenarios` runs each buyer scenario with the real model through the chat routes. Each turn can set expectations for the decision, the offer amount and reply patterns. The last run (`agentic-turn`) passed 24 of 35 scenarios, with no private disclosure. The text turn latency was 4.8 s (p50) and 7.7 s (p90). The failures were about style and expected wording. Results change between runs, thus compare repeated runs.
+### 16.2 Live scenarios
 
-### 14.3 Comparison with a plain LLM
+`npm run scenarios` runs each buyer scenario with the real model through the chat routes. `run-group-scenarios.ts` runs the scenarios for several counterparties.
 
-`npm run scenarios -- --compare` runs the seven core scenarios against Kritva and a plain LLM seller with the same model, instructions and buyer simulator. Rules in `apps/server/src/eval/score.ts` count violations. Last result (`agentic-turn-compare`, one run each):
+| Run | Passed | Safety failures |
+| --- | --- | --- |
+| `tone-final` (35 scenarios) | 32 | 0 |
+| `approval-full-2` (39 scenarios, with approvals) | 35 | 0 |
 
-| System | Valid agreements | Invalid agreements | Disclosures | Invented facts | Median latency |
-| --- | --- | --- | --- | --- | --- |
-| Kritva | 4 | 0 | 0 | 0 | 4.5 s |
-| Plain LLM | 3 | 2 | 0 | 0 | 2.3 s |
+The failures were about expected wording. Results change between runs.
 
-The sample is small, and the buyers are simulated.
+### 16.3 Comparison with a plain LLM
 
-### 14.4 Voice timing
+`npm run scenarios -- --compare` runs the seven core scenarios against Kritva and a plain LLM seller with the same model and buyer simulator. Rules in `eval/score.ts` count violations. In the last comparison, Kritva made 4 valid agreements and 0 invalid agreements. The plain LLM made 3 valid agreements and 2 invalid agreements. Neither disclosed a private limit. The sample is small, and the buyers are simulated.
 
-Measured from the end of buyer speech on 2026-11-22: conversation turns took 1.0 to 1.4 s. Deal turns took 0.7 to 1.8 s to the acknowledgement and 6 to 10 s to the full answer. The target is 1.5 s. The engine makes three model calls in sequence, thus it is the limit. Some speed changes can decrease safety, thus the project owner must approve each one.
+## 17. Operation
 
-## 15. Operation
-
-### 15.1 Start the application
+### 17.1 Start locally
 
 1. Select Node.js 24: `nvm use`.
 2. Install the packages: `npm install`.
 3. Put `OPENAI_API_KEY` in a `.env` file at the repository root.
 4. Start the server: `npm run dev -w @kritva/server`.
 5. In a second terminal, start the web application: `npm run dev -w @kritva/web`.
-6. Open `http://localhost:5173`, select **Open console** and enter the operator key.
+6. Open `http://localhost:5173` and sign in with the link from the server log.
 
-### 15.2 Run the checks
+### 17.2 Run the checks
 
 1. Run `npm run typecheck`.
 2. Run `npm test`.
@@ -298,16 +309,18 @@ Measured from the end of buyer speech on 2026-11-22: conversation turns took 1.0
 
 CAUTION: In `packages/core`, do not run a bare `npx vitest run`. It also runs live tests and changes `test-results/epic-1/`.
 
-### 15.3 Phone calls
+### 17.3 Phone calls and email
 
-Phone calls start when `OPENAI_WEBHOOK_SECRET` and `KRITVA_PHONE_ROUTES` are set with realtime voice. `apps/server/scripts/phone-check.ts` checks the setup. For the account steps, see `docs/Kritva_Phone_Calls.md`, section 9.
+- Phone: see `docs/Kritva_Phone_Calls.md`, section 9. `phone-check.ts` checks the setup.
+- Email: run `npm run email:setup -- <address>`, then click the verification email from AWS.
 
-CAUTION: A Twilio number and each call minute cost money.
+CAUTION: A Twilio number, each call minute and each realtime minute cost money.
 
-## 16. Known limits and next steps
+## 18. Known limits and next steps
 
 - The checks catch a deal turn that the realtime model answers itself, but they do not prevent it.
-- Hindi and Tamil read-backs keep the term names in English.
-- The heard part of an interrupted voice reply is an estimate.
-- Voice deal turns are slower than the 1.5 s target.
-- The AWS deployment is not done. The database and service choices are open and need a decision from the project owner. A region near Bangalore (for example `ap-south-1`, Mumbai) gives low latency.
+- On voice, a deal turn takes 0.7 to 1.8 s to the acknowledgement and 6 to 10 s to the full answer. The target is 1.5 s. The engine (three model calls in sequence) is the limit.
+- Callers in India call a US Twilio number on an international route.
+- The front desk hand-over and keypad digits are not tested on a live call.
+- Outbound calls need a decision about Indian consent rules before Kritva calls anyone other than the owner.
+- The fallback turn-based voice (`KRITVA_VOICE_MODE=turns`) needs a new `KRITVA_TTS_MODEL` before 2027-01-06.
