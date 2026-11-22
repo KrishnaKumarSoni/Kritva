@@ -201,7 +201,7 @@ export const END_CALL_TOOL = {
 const ENDING_GUIDE = readFileSync(new URL("./voice-ending-guide.md", import.meta.url), "utf8").trim();
 
 /** How Kritva picks and switches language on a call. Shared by every voice prompt, so a call sounds like one person throughout. */
-export const LANGUAGE_RULES = `Language: follow the language rules in "How you sound" below. Before they have spoken, use its default language${DEFAULT_LANGUAGE ? ` (${DEFAULT_LANGUAGE})` : ""}. From their first words, reply in the language they speak (your short acknowledgement before a deal turn too), in its own script (Hindi in Devanagari, never Urdu script; Tamil in Tamil script; English in English), and switch the moment they switch or ask for another language, for every turn after that, including a repeat. If they mix Hindi and English, reply in the same natural mix. Do not switch language because of an accent, a name, a filler word or one borrowed word.`;
+export const LANGUAGE_RULES = `Language: follow the language rules in "How you sound" below. Before they have spoken, use its default language${DEFAULT_LANGUAGE ? ` (${DEFAULT_LANGUAGE})` : ""}. From their first words, reply in the language they speak (your short acknowledgement before a deal turn too), in its own script (Hindi in Devanagari, never Urdu script; Tamil in Tamil script; English in English), and switch the moment they switch or ask for another language, for every turn after that, including a repeat. If they mix Hindi and English, reply in the same natural mix. Do not switch language because of an accent, a name, a filler word or borrowed English words. On a call in Hindi (or another Indian language), English words inside it ("mesh back", "price", "delivery", "okay", "yes") are still that language: keep speaking it. Switch to English only when they speak whole sentences in English or ask for English.`;
 /** How Kritva's voice sounds on a call. */
 export const VOICE_RULES = `Voice: a friendly woman on the phone. Warm, relaxed, clear and unhurried; never salesy or over-excited. Speak English with an Indian English accent, never American or British, and every Indian language the way people in Indian cities speak it. In your own words too, use the everyday words "How you sound" gives ("Welcome!" when they thank you, "बस एक second", "Thank you", "Sorry"), never the formal ones it lists, and the feminine forms for yourself.`;
 
@@ -219,10 +219,11 @@ function callPlan(b: VoiceBriefing, principal: string): string {
   const ask = buying ? "their best price" : selling ? "what they would offer" : "their price";
   return `Why you are on this call: you are ${buying ? "buying" : selling ? "selling" : "making a deal"}${want} on behalf of ${principal}, and your job is to get ${principal} the best price and terms. You already know everything you need: the public facts below say what is needed, and the negotiation engine holds the strategy, the limits and every amount.
 How you run the call: you lead it, like a confident professional negotiator. Never wait for them to drive it.
-- Once they say it is a good time, say in one or two short sentences what ${principal} needs (only the key public facts, not all of them), then ask for ${ask}.
+- Once they say it is a good time, say in one short sentence what ${principal} needs (only the key public facts) and ask whether they have it. Ask for ${ask} only after they confirm they have what is needed.
+- Ask for ${ask} once. If they ask a question instead, just answer it and stop; never end every turn with the price ask.
 - Never ask "What would you like to know?", "What do you need from your side?", "Any requirements from your side?" or "What details do you need?". Never re-list facts you already said.
 - If they ask why you called or what you need from this call, say it in one short sentence and ask for ${ask}.
-- When they answer, agree, confirm they can meet the needs, or just say "yes", "okay" or "mm-hmm", move straight to the price: if they have not given a price yet, ask for ${ask}; if they have, it is a deal turn.
+- When they confirm they have it or can meet the needs, move to the price: if they have not given a price yet, ask for ${ask}; if they have, it is a deal turn.
 - Once the needs are settled the call is about the price and the deal. Every turn moves it forward. Never stall on small talk or specifications.`;
 }
 
@@ -330,6 +331,17 @@ export function isGreetingOnly(text: string): boolean {
 }
 
 /** The language a text is written in, from its script; Latin script counts as English. */
+/**
+ * The language to answer in after their words: their script is a fact, but a few English words ("yes",
+ * "mesh back") on a call in another language are not a switch. Whole English sentences, or asking for English, are.
+ */
+export function heardLanguage(text: string, current: string): string {
+  const language = scriptLanguage(text);
+  if (language !== "en" || current === "en") return language;
+  const words = text.match(/\p{L}+/gu)?.length ?? 0;
+  return words >= 5 || /\b(english|angrezi)\b/i.test(text) ? "en" : current;
+}
+
 export function scriptLanguage(text: string): string {
   if (/\p{Script=Devanagari}/u.test(text)) return "hi";
   if (/\p{Script=Tamil}/u.test(text)) return "ta";
@@ -384,7 +396,14 @@ export const STAY_QUIET_TOOL = {
   parameters: { type: "object", properties: {}, additionalProperties: false },
 } as const;
 
-const verbatim = (text: string) => `${ACCENT}\n\nSay exactly the following to them, word for word, in the same language, with nothing before or after it:\n${text}`;
+const CALL_SCRIPTS: Record<string, RegExp> = { hi: /\p{Script=Devanagari}/u, mr: /\p{Script=Devanagari}/u, ta: /\p{Script=Tamil}/u, kn: /\p{Script=Kannada}/u, te: /\p{Script=Telugu}/u, ml: /\p{Script=Malayalam}/u, bn: /\p{Script=Bengali}/u };
+/** "Say exactly the following...", or, for a reply not in the call's script, the same reply said in the call's language. */
+function sayHeader(text: string, language?: string): string {
+  const script = language ? CALL_SCRIPTS[language] : undefined;
+  if (!script || script.test(text) || !/\p{L}/u.test(text)) return "Say exactly the following to them, word for word, in the same language, with nothing before or after it";
+  return `Say exactly the following to them, but ${languageLabel(language!)}, the everyday way people in Indian cities speak it, with the English words they use. Keep every number, amount, date and term exactly as written; add nothing, drop nothing, and say nothing before or after it`;
+}
+const verbatim = (text: string, language?: string) => `${ACCENT}\n\n${sayHeader(text, language)}:\n${text}`;
 /**
  * Amounts as people say them: "20,000 rupees" (or "20,000 रुपये"), never "rupees 20,000" read off the
  * ₹ sign. Only the spoken form changes; the recorded reply keeps the ₹, and the amount stays exact.
@@ -395,8 +414,8 @@ export function spokenAmounts(text: string): string {
   return text.replace(/₹\s?(\d+(?:,\d+)*(?:\.\d+)?)/g, `$1 ${word}`);
 }
 /** A reply that may close the call: the agent decides, from the conversation, whether to hang up after it. */
-const verbatimMayEnd = (text: string) =>
-  `${ACCENT}\n\nSay exactly the following to them, word for word, in the same language, with nothing before or after it. After saying it, call end_call (with no more words) only if they had already said goodbye or clearly ended the conversation and nothing is left to settle; otherwise call nothing. The reply:\n${text}`;
+const verbatimMayEnd = (text: string, language?: string) =>
+  `${ACCENT}\n\n${sayHeader(text, language)}. After saying it, call end_call (with no more words) only if they had already said goodbye or clearly ended the conversation and nothing is left to settle; otherwise call nothing. The reply:\n${text}`;
 /** How long a goodbye takes to play, when the call does not report the end of playback: generous, never cut short. */
 const playTimeMs = (text: string) => Math.min(15_000, Math.max(2_500, 1_200 + text.length * 80));
 const OVER: Record<string, string> = { agreed: "agreed", no_agreement: "ended without agreement", ended: "ended" };
@@ -604,8 +623,8 @@ export class RealtimeCall {
       : next.filler
       ? { instructions: verbatim(next.text), tool_choice: "none", metadata: { kritva: "filler", kind: "break_in" } }
       : mayEnd
-        ? { instructions: verbatimMayEnd(spokenAmounts(next.text)), tools: [END_CALL_TOOL], tool_choice: "auto", metadata: { kritva: "say", message_id: next.messageId } }
-        : { instructions: verbatim(spokenAmounts(next.text)), tool_choice: "none", metadata: { kritva: "say", message_id: next.messageId } };
+        ? { instructions: verbatimMayEnd(spokenAmounts(next.text), this.#language), tools: [END_CALL_TOOL], tool_choice: "auto", metadata: { kritva: "say", message_id: next.messageId } }
+        : { instructions: verbatim(spokenAmounts(next.text), this.#language), tool_choice: "none", metadata: { kritva: "say", message_id: next.messageId } };
     this.#d.link.send({ type: "response.create", response });
   }
 
@@ -884,7 +903,7 @@ export class RealtimeCall {
       this.#log({ kind: "heard", source: heard === transcript ? "transcript" : "voice_model", transcript, modelWords });
       // The script they were transcribed in is a fact; the model's own label is a guess (it took Telugu for
       // Tamil, and English asked for mid-call for Hindi). Only with nothing heard does the label count.
-      this.#language = heard ? scriptLanguage(heard) : /^[a-z]{2,3}$/.test(args.language ?? "") ? args.language! : this.#language;
+      this.#language = heard ? heardLanguage(heard, this.#language) : /^[a-z]{2,3}$/.test(args.language ?? "") ? args.language! : this.#language;
       if (acknowledgement) {
         this.#lastOwnWords = acknowledgement;
         const problems = await this.#d.engine.checkVoiceWords(this.#d.sessionId, acknowledgement, heard);
@@ -934,7 +953,7 @@ export class RealtimeCall {
       const itemId = this.#lastUserItem;
       const theirs = (await this.#transcript(itemId)) || "(not transcribed)";
       const said = theirs === "(not transcribed)" ? spoken : theirs;
-      if (!isGreetingOnly(said)) this.#language = scriptLanguage(said);
+      if (!isGreetingOnly(said)) this.#language = heardLanguage(said, this.#language);
       const recorded = await this.#d.engine.recordVoiceAnswer({
         sessionId: this.#d.sessionId,
         buyerText: theirs,
