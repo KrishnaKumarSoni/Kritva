@@ -279,7 +279,7 @@ describe("Mandate lifecycle: live, paused, closed and deleted", () => {
     expect((await call("DELETE", `/api/operator/library/${created.mandateId}`)).status).toBe(200);
   });
 
-  it("deleting removes it from the list and from new negotiations; the demo listing's mandate is protected", async () => {
+  it("deleting removes it from the list and from new negotiations", async () => {
     const { call, makeLive } = setup();
     const { mandateId } = await makeLive();
     const deleted = await call("DELETE", `/api/operator/library/${mandateId}`);
@@ -289,7 +289,6 @@ describe("Mandate lifecycle: live, paused, closed and deleted", () => {
     expect((await call("GET", `/api/operator/intake/mandate/${mandateId}`)).status).toBe(404);
     expect((await call("POST", "/api/operator/sessions", { mandateId: `library:${mandateId}` })).status).toBe(409);
     expect((await call("DELETE", `/api/operator/library/${mandateId}`)).status).toBe(404);
-    expect((await call("DELETE", "/api/operator/library/man_protected")).status).toBe(409);
   });
 
   it("an unmapped intake conversation can be discarded", async () => {

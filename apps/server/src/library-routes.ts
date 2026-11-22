@@ -24,8 +24,6 @@ export interface LibraryDeps {
   engine: NegotiationEngine;
   locale: string;
   examples: Array<{ id: string; title: string; principalRole: string; counterpartyRole: string; publicText: string; privateText: string }>;
-  /** Mandates a demo listing depends on. They can be paused but not deleted. */
-  protectedIds?: string[];
   /** Deal groups: reopening a mandate whose deal concluded starts a fresh group. */
   groups?: DealGroups | null;
 }
@@ -107,7 +105,6 @@ export function registerLibraryRoutes(app: Hono, deps: LibraryDeps): void {
    */
   app.delete("/api/operator/library/:id", async (c) => {
     const mandateId = c.req.param("id");
-    if (deps.protectedIds?.includes(mandateId)) return c.json({ error: "protected", message: "The demo listing uses this mandate, so it can't be deleted. You can pause it instead." }, 409);
     const result = library.setLifecycle(mandateId, "deleted");
     if (!result.ok) return c.json({ error: result.code, message: result.message }, result.code === "not_found" ? 404 : 409);
     const sessions = await setSessionsPaused(deps, mandateId, true);

@@ -279,6 +279,14 @@ describe("several counterparties: the call-everyone campaign reaches each person
   });
 });
 
+describe("the demo listing's mandate", () => {
+  it("can be deleted like any other mandate", async () => {
+    const { call, mandateId } = groupSetup();
+    expect((await call("DELETE", `/api/operator/library/${mandateId}`)).status).toBe(200);
+    expect((await call("GET", `/api/operator/library/${mandateId}`)).status).toBe(404);
+  });
+});
+
 describe("several counterparties: resetting a mandate", () => {
   it("ends its open negotiations, hides them, and lets everyone on the list be reached again, once", async () => {
     const dialer = new FakeDialer();
