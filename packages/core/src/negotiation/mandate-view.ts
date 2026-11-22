@@ -77,17 +77,26 @@ export function readMandate(mandate: ConfirmedMandate): MandateView {
 
   const authority = readAuthority(mandate);
 
+  // The principal's side decides which way a better deal moves: receiving wants more, paying wants less.
+  // A limit of the other kind contradicts the side and is never used (the draft flags it as a conflict).
+  const side = mandate.principalSide ?? null;
+  const sideKind = side === "receives" ? "minimum" : side === "pays" ? "maximum" : null;
+  const boundsOf = (termId: string) => mandate.limits.filter(
+    (l) => l.partyId === principal.id && l.termId === termId && unconditional(l) && (l.kind === "minimum" || l.kind === "maximum") && l.value !== null && (sideKind === null || l.kind === sideKind),
+  );
+  // The main amount is what Kritva negotiates: the money term (one the principal set a limit on first),
+  // else an amount of another kind. The order the terms are listed in never decides it: intake often
+  // lists a quantity ("40 chairs") or a requirement ("at least a 3-year warranty") before the price.
+  const rank = (pkg: OfferTerm) => (pkg.value.type === "money" ? 2 : 0) + (boundsOf(pkg.termId).length > 0 ? 1 : 0);
+  const main = defaultPackage
+    .filter((pkg) => terms.has(pkg.termId) && (pkg.value.type === "money" || pkg.value.type === "quantity"))
+    .reduce<OfferTerm | undefined>((best, pkg) => (best === undefined || rank(pkg) > rank(best) ? pkg : best), undefined);
+
   let negotiable: NegotiableTerm | null = null;
-  for (const pkg of defaultPackage) {
+  for (const pkg of main ? [main] : []) {
     const term = terms.get(pkg.termId);
     if (!term || (pkg.value.type !== "money" && pkg.value.type !== "quantity")) continue;
-    // The principal's side decides which way a better deal moves: receiving wants more, paying wants less.
-    // A limit of the other kind contradicts the side and is never used (the draft flags it as a conflict).
-    const side = mandate.principalSide ?? null;
-    const sideKind = side === "receives" ? "minimum" : side === "pays" ? "maximum" : null;
-    const bounds = mandate.limits.filter(
-      (l) => l.partyId === principal.id && l.termId === term.id && unconditional(l) && (l.kind === "minimum" || l.kind === "maximum") && l.value !== null && (sideKind === null || l.kind === sideKind),
-    );
+    const bounds = boundsOf(term.id);
     const limit = bounds[0];
     const opening = pkg.value.amount;
     const direction = side === "pays" ? "down" : side === "receives" ? "up" : limit?.kind === "maximum" ? "down" : "up";

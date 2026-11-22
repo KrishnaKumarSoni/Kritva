@@ -497,7 +497,10 @@ export function principalSideOf(m: Pick<MandateDraft, "parties" | "limits"> & { 
   if (!m) return null;
   if (m.principalSide) return m.principalSide;
   const principal = m.parties.find((p) => p.isPrincipal);
-  const limit = m.limits.find((l) => l.partyId === principal?.id && l.conditionIds.length === 0 && (l.kind === "minimum" || l.kind === "maximum") && (l.value?.type === "money" || l.value?.type === "quantity"));
+  const own = m.limits.filter((l) => l.partyId === principal?.id && l.conditionIds.length === 0 && (l.kind === "minimum" || l.kind === "maximum"));
+  // The price says which side: a limit on money first. A minimum warranty or quantity says nothing
+  // about who pays, so another amount counts only when no money limit is set.
+  const limit = own.find((l) => l.value?.type === "money") ?? own.find((l) => l.value?.type === "quantity");
   return limit ? (limit.kind === "minimum" ? "receives" : "pays") : null;
 }
 
@@ -509,7 +512,10 @@ export function withPrincipalSide(draft: MandateDraft, side: PrincipalSide | nul
   if (!side) return { ...draft, principalSide: null };
   const principal = draft.parties.find((p) => p.isPrincipal);
   const wrong = side === "pays" ? "minimum" : "maximum";
-  const contradicting = draft.limits.filter((l) => l.partyId === principal?.id && l.kind === wrong && (l.value?.type === "money" || l.value?.type === "quantity"));
+  // Only the price can point the other way. A principal who pays may want at least a 3-year warranty,
+  // one who is paid at most a week to deliver: limits on other amounts count only with no money term.
+  const hasPrice = draft.terms.some((t) => t.valueType === "money");
+  const contradicting = draft.limits.filter((l) => l.partyId === principal?.id && l.kind === wrong && (l.value?.type === "money" || (!hasPrice && l.value?.type === "quantity")));
   const issues = contradicting.length === 0 ? draft.issues : [
     ...draft.issues,
     {
