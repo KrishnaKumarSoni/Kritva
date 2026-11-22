@@ -6,7 +6,8 @@
  * passed the outgoing checks, can be turned into audio. Provider credentials stay on the server.
  */
 import type { Hono } from "hono";
-import type { ConfirmedMandate, MandateLibrary, NegotiationEngine, NegotiationRecord, PayloadOf, SpeechProvider } from "@kritva/core";
+import type { ConfirmedMandate, DealGroups, MandateLibrary, NegotiationEngine, NegotiationRecord, PayloadOf, SpeechProvider } from "@kritva/core";
+import { startNegotiation } from "./group-routes.ts";
 import { formatValue, newEventId, readMandate } from "@kritva/core";
 import type { ListingConfig } from "./main-helpers.ts";
 
@@ -17,6 +18,8 @@ export interface VoiceDeps {
   library: MandateLibrary | null;
   listings: ListingConfig[];
   locale: string;
+  /** Several counterparties per saved mandate: a listing call joins the mandate's group. */
+  groups?: DealGroups | null;
   /** Optional hint for transcription (kept with the case, never in the core). */
   transcriptionPrompt?: string;
   buyerOutcome: (sessionId: string) => Promise<unknown>;
@@ -159,9 +162,9 @@ export function registerVoiceRoutes(app: Hono, deps: VoiceDeps): void {
           const r = resolve(caseId);
           if ("error" in r) return { status: r.error!.status, body: r.error!.body };
           const previous = typeof body.previousSessionId === "string" && (await record.getSession(body.previousSessionId)) ? body.previousSessionId : null;
-          const started = await record.startSession({ mandate: r.active.mandate, previousSessionId: previous, mandateSource: { mandateId: r.listing.libraryId, revision: r.active.revision } });
-          if (!started.ok) return { status: 400, body: { error: started.error.code, message: started.error.message } };
-          return { status: 201, body: { sessionId: started.session.id, mandateRevision: r.active.revision } };
+          const started = await startNegotiation(deps.groups ?? null, record, { mandate: r.active.mandate, source: { mandateId: r.listing.libraryId, revision: r.active.revision }, via: "listing", previousSessionId: previous });
+          if (!started.ok) return { status: started.status, body: { error: started.error, message: started.message } };
+          return { status: 201, body: { sessionId: started.sessionId, mandateRevision: r.active.revision } };
         })(),
       );
     }

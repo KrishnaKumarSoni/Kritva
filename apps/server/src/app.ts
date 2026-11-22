@@ -43,7 +43,9 @@ import {
   type OfferTerm,
   type RecordedEvent,
   type ValidConfirmedMandate,
+  type DealGroups,
 } from "@kritva/core";
+import { registerGroupRoutes, startNegotiation } from "./group-routes.ts";
 
 export interface MandateEntry {
   id: string;
@@ -74,6 +76,8 @@ export interface AppDeps {
   phone?: { settings: PhoneSettings; connector: RealtimeConnector & RealtimeCallControl; log?: (entry: Record<string, unknown>) => void; pollMs?: number; acceptBackoffMs?: number[] } | null;
   /** Required by the network server. In-process tools can call the app as the operator. */
   operatorKey?: string;
+  /** Several counterparties per saved mandate (docs/Kritva_Multiple_Counterparties.md). Off when absent. */
+  groups?: DealGroups | null;
 }
 
 export function createApp(deps: AppDeps): Hono {
@@ -101,7 +105,8 @@ export function createApp(deps: AppDeps): Hono {
     });
   }
 
-  if (deps.library) registerLibraryRoutes(app, { library: deps.library, record, engine, locale, examples: deps.examples ?? [], protectedIds: (deps.listings ?? []).map((l) => l.libraryId) });
+  if (deps.library) registerLibraryRoutes(app, { library: deps.library, record, engine, locale, examples: deps.examples ?? [], protectedIds: (deps.listings ?? []).map((l) => l.libraryId), groups: deps.groups ?? null });
+  if (deps.library && deps.groups) registerGroupRoutes(app, { record, library: deps.library, groups: deps.groups });
   if (deps.library && deps.intake) registerIntakeRoutes(app, { intake: deps.intake, library: deps.library, record, engine, locale });
   registerVoiceRoutes(app, {
     record,
@@ -110,6 +115,7 @@ export function createApp(deps: AppDeps): Hono {
     library: deps.library ?? null,
     listings: deps.listings ?? [],
     locale,
+    groups: deps.groups ?? null,
     transcriptionPrompt: deps.transcriptionPrompt,
     buyerOutcome: async (id) => {
       const state = await engine.state(id);
@@ -119,7 +125,7 @@ export function createApp(deps: AppDeps): Hono {
 
   registerRealtimeRoutes(app, { record, engine, connector: deps.realtime?.connector ?? null, settings: deps.realtime?.settings ?? realtimeSettingsFromEnv(), log: deps.realtime?.log });
   if (deps.phone) {
-    registerPhoneRoutes(app, { record, engine, library: deps.library ?? null, listings: deps.listings ?? [], connector: deps.phone.connector, settings: deps.phone.settings, realtime: deps.realtime?.settings ?? realtimeSettingsFromEnv(), log: deps.phone.log, pollMs: deps.phone.pollMs, acceptBackoffMs: deps.phone.acceptBackoffMs });
+    registerPhoneRoutes(app, { record, engine, library: deps.library ?? null, groups: deps.groups ?? null, listings: deps.listings ?? [], connector: deps.phone.connector, settings: deps.phone.settings, realtime: deps.realtime?.settings ?? realtimeSettingsFromEnv(), log: deps.phone.log, pollMs: deps.phone.pollMs, acceptBackoffMs: deps.phone.acceptBackoffMs });
   }
 
   /** Prepared mandates from cases/, plus saved mandates with a confirmed revision. Unconfirmed drafts never appear. */
@@ -152,7 +158,10 @@ export function createApp(deps: AppDeps): Hono {
       const active = detail && !detail.deleted ? (deps.library?.active(libraryId) ?? null) : null;
       if (!active) return c.json({ error: "not_confirmed", message: "Make this mandate live before starting a negotiation with it." }, 409);
       if (detail!.state !== "live") return c.json({ error: "not_live", message: `This mandate is ${detail!.state}. ${detail!.state === "paused" ? "Resume" : "Reopen"} it to start a negotiation.` }, 409);
-      started = await record.startSession({ mandate: active.mandate, previousSessionId: body.previousSessionId ?? null, mandateSource: { mandateId: libraryId, revision: active.revision } });
+      const r = await startNegotiation(deps.groups ?? null, record, { mandate: active.mandate, source: { mandateId: libraryId, revision: active.revision }, via: "console", previousSessionId: body.previousSessionId ?? null });
+      if (!r.ok) return c.json({ error: r.error, message: r.message }, r.status);
+      const session = await record.getSession(r.sessionId);
+      return c.json({ session, state: operatorState(await engine.state(r.sessionId), locale) }, 201);
     } else {
       const entry = body.mandateId === undefined ? mandates[0] : mandates.find((m) => m.id === body.mandateId);
       if (!entry) return c.json({ error: "no_mandate", message: "No confirmed mandate is available." }, 400);

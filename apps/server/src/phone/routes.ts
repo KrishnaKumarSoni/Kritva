@@ -16,11 +16,12 @@
  *   not live · 486 busy (KRITVA_PHONE_MAX_CALLS calls already) · 500 a session could not start.
  */
 import type { Hono } from "hono";
-import type { ConfirmedMandate, MandateLibrary, NegotiationEngine, NegotiationRecord } from "@kritva/core";
+import type { ConfirmedMandate, DealGroups, MandateLibrary, NegotiationEngine, NegotiationRecord } from "@kritva/core";
+import { openSessionFor, startNegotiation } from "../group-routes.ts";
 import type { ListingConfig } from "../main-helpers.ts";
 import { OpenAIRealtimeConnector, realtimeSession, RealtimeCallError, type RealtimeCallControl, type RealtimeConnector, type RealtimeSettings } from "../realtime-voice.ts";
 import { resolveListing } from "../voice-routes.ts";
-import { phoneSettingsFromEnv, sipUri, type PhoneSettings, type PhoneTarget } from "./config.ts";
+import { normalizeNumber, phoneSettingsFromEnv, sipUri, type PhoneSettings, type PhoneTarget } from "./config.ts";
 import { PhoneCall } from "./phone-call.ts";
 import { callerNumber, maskNumber, routeFor, type SipHeader } from "./sip-headers.ts";
 import { verifyWebhook, WebhookSignatureError } from "./webhook-signature.ts";
@@ -32,6 +33,8 @@ export const WEBHOOK_PATH = "/api/webhooks/openai";
 const ACCEPT_BACKOFF_MS = [0, 300, 900];
 
 export interface PhoneDeps {
+  /** Several counterparties per saved mandate (docs/Kritva_Multiple_Counterparties.md). */
+  groups?: DealGroups | null;
   record: NegotiationRecord;
   engine: NegotiationEngine;
   library: MandateLibrary | null;
@@ -144,9 +147,19 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
 
     let sessionId = sessions.get(callId);
     if (!sessionId) {
-      const started = await record.startSession({ mandate: target.mandate, previousSessionId: null, mandateSource: target.source });
-      if (!started.ok) return reject(callId, 500, `session_failed: ${started.error.code}`);
-      sessionId = started.session.id;
+      // Several counterparties: a listed counterparty's number continues their open negotiation;
+      // anyone else joins the mandate's group as a walk-in, within the cap.
+      const caller = callerNumber(headers, settings.countryCode);
+      const entry = caller && deps.groups ? (deps.library?.counterparties(target.source.mandateId) ?? []).find((e) => e.phone && normalizeNumber(e.phone, settings.countryCode) === caller) ?? null : null;
+      const existing = entry && deps.groups ? await openSessionFor(deps.groups, target.source.mandateId, entry.id) : null;
+      if (existing) {
+        sessionId = existing;
+        log({ kind: "phone_continues", callId, sessionId });
+      } else {
+        const started = await startNegotiation(deps.groups ?? null, record, { mandate: target.mandate, source: target.source, entryId: entry?.id ?? null, via: "phone" });
+        if (!started.ok) return reject(callId, started.error === "busy" ? 486 : started.error === "deal_concluded" ? 480 : 500, `session_failed: ${started.error}`);
+        sessionId = started.sessionId;
+      }
       sessions.set(callId, sessionId);
     }
     const briefing = await engine.voiceBriefing(sessionId);

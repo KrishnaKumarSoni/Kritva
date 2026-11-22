@@ -8,6 +8,7 @@ import {
   formatValue,
   type ConfirmedMandate,
   type Correction,
+  type DealGroups,
   type LibraryDetail,
   type MandateDraft,
   type MandateLibrary,
@@ -24,6 +25,8 @@ export interface LibraryDeps {
   examples: Array<{ id: string; title: string; principalRole: string; counterpartyRole: string; publicText: string; privateText: string }>;
   /** Mandates a demo listing depends on. They can be paused but not deleted. */
   protectedIds?: string[];
+  /** Deal groups: reopening a mandate whose deal concluded starts a fresh group. */
+  groups?: DealGroups | null;
 }
 
 const LIFECYCLE: Record<string, { action: "paused" | "resumed" | "closed" | "reopened"; pauseSessions: boolean }> = {
@@ -92,6 +95,7 @@ export function registerLibraryRoutes(app: Hono, deps: LibraryDeps): void {
     const mandateId = c.req.param("id");
     const result = library.setLifecycle(mandateId, step.action);
     if (!result.ok) return c.json({ error: result.code, message: result.message }, result.code === "not_found" ? 404 : 409);
+    if (step.action === "reopened") deps.groups?.reopen(mandateId, result.value.caseId);
     const sessions = await setSessionsPaused(deps, mandateId, step.pauseSessions);
     return c.json({ ...libraryView(result.value, locale), sessionsChanged: sessions });
   });

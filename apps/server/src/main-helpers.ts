@@ -143,3 +143,9 @@ export function loadCaseRuntime(root: string, library: MandateLibrary | null) {
     listingDetails: new Map(listings.map((listing) => [listing.caseId, listing])),
   };
 }
+
+/** KRITVA_MAX_COUNTERPARTIES: how many counterparties one saved mandate may list and negotiate with at once. Default 5. */
+export function maxCounterparties(raw: string | undefined): number {
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 1 && n <= 50 ? n : 5;
+}

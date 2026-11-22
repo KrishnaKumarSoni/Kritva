@@ -9,6 +9,7 @@
 import type { StructuredLlm } from "../llm/types.ts";
 import { hashTerms, type Actor, type Channel, type NewEvent, type OfferTerm, type PayloadOf, type RecordedEvent } from "../record/events.ts";
 import { newEventId, type NegotiationRecord } from "../record/store.ts";
+import type { DealGroups } from "../record/groups.ts";
 import { composeBrief, EXACT_TERMS_SLOT } from "./compose.ts";
 import { interpretRequest, readInterpretation, type FulfillmentTerms, type InterpretInput } from "./interpret.ts";
 import { user, type Model, type ModelSettings } from "@openai/agents";
@@ -52,6 +53,11 @@ export interface EngineOptions {
    */
   agentModel?: Model | string;
   agentModelSettings?: ModelSettings;
+  /**
+   * Several counterparties per saved mandate (docs/Kritva_Multiple_Counterparties.md): the deal's
+   * group. Without it, or for a session outside any group, every path is the single-counterparty one.
+   */
+  groups?: DealGroups | null;
 }
 
 export interface TurnResult {
@@ -80,6 +86,7 @@ export class NegotiationEngine {
   readonly #locks = new Map<string, Promise<unknown>>();
   readonly #agentModel: Model | string | undefined;
   readonly #agentModelSettings: ModelSettings | undefined;
+  readonly #groups: DealGroups | null;
 
   constructor(options: EngineOptions) {
     this.#record = options.record;
@@ -91,6 +98,7 @@ export class NegotiationEngine {
     this.#listingDetails = options.listingDetails ?? new Map();
     this.#agentModel = options.agentModel;
     this.#agentModelSettings = options.agentModelSettings;
+    this.#groups = options.groups ?? null;
   }
 
   guidanceFor(caseId: string): StrategyGuidance {

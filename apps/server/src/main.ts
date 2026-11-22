@@ -3,11 +3,11 @@ import { mkdirSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join, resolve } from "node:path";
 import { serve } from "@hono/node-server";
-import { createAgentFromEnv, createIntakeAgentFromEnv, createMappingLlmFromEnv, createSpeechFromEnv, createTurnLlmFromEnv, IntakeService, SqliteIntakeStore, MandateLibrary, MandateRevisions, NegotiationEngine, NegotiationRecord, SqliteLibraryBackend, SqliteRecordBackend } from "@kritva/core";
+import { createAgentFromEnv, createIntakeAgentFromEnv, createMappingLlmFromEnv, createSpeechFromEnv, createTurnLlmFromEnv, IntakeService, SqliteIntakeStore, DealGroups, MandateLibrary, MandateRevisions, NegotiationEngine, NegotiationRecord, SqliteLibraryBackend, SqliteRecordBackend } from "@kritva/core";
 import { createApp } from "./app.ts";
 import { OpenAIRealtimeConnector, realtimeSettingsFromEnv } from "./realtime-voice.ts";
 import { phoneFromEnv } from "./phone/routes.ts";
-import { loadCaseRuntime } from "./main-helpers.ts";
+import { loadCaseRuntime, maxCounterparties } from "./main-helpers.ts";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
 
@@ -15,6 +15,9 @@ const dataDir = process.env.KRITVA_DATA_DIR ?? join(ROOT, "data");
 mkdirSync(dataDir, { recursive: true });
 const record = new NegotiationRecord(new SqliteRecordBackend(join(dataDir, "kritva.sqlite")));
 const locale = process.env.KRITVA_LOCALE ?? "en-IN";
+// Several counterparties per saved mandate. The cap limits each mandate's counterparty list and its
+// open negotiations at once, so a mistake can't run up model use (docs/Kritva_Multiple_Counterparties.md).
+const groups = new DealGroups(record, { maxOpen: maxCounterparties(process.env.KRITVA_MAX_COUNTERPARTIES) });
 const mappingLlm = createMappingLlmFromEnv();
 // Case-level mandates live in their own tables, so they exist before any session starts.
 // The library maps the intake agent's plain-prose brief, which low reasoning effort handles as well as the
@@ -49,6 +52,7 @@ const app = createApp({
       : null,
   // Phone calls (docs/Kritva_Phone_Calls.md): on when OPENAI_WEBHOOK_SECRET and KRITVA_PHONE_ROUTES are set.
   phone: phoneFromEnv(),
+  groups,
 });
 const port = Number(process.env.PORT ?? 8787);
 
