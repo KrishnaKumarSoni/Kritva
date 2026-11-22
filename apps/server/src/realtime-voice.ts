@@ -38,8 +38,8 @@ export function realtimeSettingsFromEnv(env: NodeJS.ProcessEnv = process.env): R
     transcribeModel: env.KRITVA_REALTIME_TRANSCRIBE_MODEL ?? "gpt-transcribe",
     languages: (env.KRITVA_VOICE_LANGUAGES ?? "en,hi,ta,kn,te,ml,mr,bn").split(",").map((l) => l.trim()).filter((l) => /^[a-z]{2,3}$/.test(l)),
     eagerness: eagerness === "low" || eagerness === "medium" || eagerness === "auto" ? eagerness : "high",
-    // Minimal by default: at low effort the model announced its thinking aloud ("let me think about how to respond to that").
-    reasoning: env.KRITVA_REALTIME_REASONING === "low" || env.KRITVA_REALTIME_REASONING === "medium" ? env.KRITVA_REALTIME_REASONING : "minimal",
+    // Low by default: at minimal effort the voice model routed deal turns less carefully and the deal closed at the limit.
+    reasoning: env.KRITVA_REALTIME_REASONING === "minimal" || env.KRITVA_REALTIME_REASONING === "medium" ? env.KRITVA_REALTIME_REASONING : "low",
   };
 }
 
