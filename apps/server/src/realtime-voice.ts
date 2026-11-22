@@ -215,7 +215,7 @@ ${CONVERSATION_TONE}`;
 }
 
 /** Each language in its own script, and every number as digits so amounts are read exactly. */
-export const TRANSCRIPTION_PROMPT = "A buyer and a seller's assistant talk about an item and its price. Write each language in its own script: Hindi in Devanagari (never Urdu script), Tamil in Tamil script, English in English. Write every number and amount as digits, for example 18000 or 1.5 lakh.";
+export const TRANSCRIPTION_PROMPT = "Two people negotiate a deal by voice; one is Kritva, an assistant speaking for the person it represents, and they talk about terms and a price. Write each language in its own script: Hindi in Devanagari (never Urdu script), Tamil in Tamil script, English in English. Write every number and amount as digits, for example 18000 or 1.5 lakh.";
 
 export interface SessionOptions {
   /**

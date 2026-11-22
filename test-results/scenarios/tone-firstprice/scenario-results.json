@@ -1,0 +1,759 @@
+{
+  "runAt": "2026-11-22T03:25:32.550Z",
+  "commit": "f355c54 + uncommitted changes",
+  "model": "gpt-5.4-mini",
+  "runs": 4,
+  "passed": 4,
+  "total": 4,
+  "turnLatencyMs": {
+    "p50": 4970,
+    "p90": 9824,
+    "max": 10826
+  },
+  "results": [
+    {
+      "scenario": "collect-myself-agreement",
+      "run": 1,
+      "sessionId": "ses_e5edf373-db5a-4b28-b84a-2eed6c58cfaf",
+      "passed": true,
+      "checks": [
+        {
+          "check": "turn 1 (\"Any chance you’d take ₹18,500 if I colle\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 2 (\"I’ll pay ₹19,500 and collect it myself.\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 3 (\"Okay, I’ll go with the price you just qu\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 4 (\"Yes, I confirm the full package you just\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 5 (seller approved) as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 6 (\"Yes, still good. Thanks!\") as expected",
+          "pass": true
+        },
+        {
+          "check": "every sent offer fits the deal space or an approved exception",
+          "pass": true,
+          "detail": "proposed 19800, 19800"
+        },
+        {
+          "check": "never reveals the private minimum",
+          "pass": true
+        },
+        {
+          "check": "buyer view has no private events",
+          "pass": true
+        },
+        {
+          "check": "no approval from anyone but the seller",
+          "pass": true
+        },
+        {
+          "check": "every agreement has the seller's approval",
+          "pass": true
+        },
+        {
+          "check": "no em or en dashes in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "no internal terms in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "Kritva introduces itself once, in its first real reply",
+          "pass": true,
+          "detail": "1 introduction(s)"
+        },
+        {
+          "check": "no repeated opener in consecutive replies",
+          "pass": true
+        },
+        {
+          "check": "no tone slips (noted, limit-sounding holds, room hints, words put in the principal's mouth, reasons for the price)",
+          "pass": true
+        },
+        {
+          "check": "no sentence repeated across Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "every reply was delivered and recorded",
+          "pass": true
+        },
+        {
+          "check": "every sent offer passed the outgoing gate",
+          "pass": true,
+          "detail": "3 offer message(s)"
+        },
+        {
+          "check": "outcome is agreement",
+          "pass": true,
+          "detail": "got agreement"
+        },
+        {
+          "check": "Kritva never says /lowest|minimum|bottom line|floor/",
+          "pass": true
+        },
+        {
+          "check": "Kritva never says /other (buyers|people) (are )?interested/",
+          "pass": true
+        },
+        {
+          "check": "Kritva never says /\\b(deadline|today only)\\b/",
+          "pass": true
+        },
+        {
+          "check": "agreed amount is at least 19800",
+          "pass": true,
+          "detail": "agreed 19800"
+        },
+        {
+          "check": "agreed terms keep excluded services excluded",
+          "pass": true
+        },
+        {
+          "check": "only the final stated terms were accepted and agreed",
+          "pass": true,
+          "detail": "2 acceptance(s)"
+        }
+      ],
+      "transcript": [
+        {
+          "who": "buyer",
+          "text": "Any chance you’d take ₹18,500 if I collect it myself?"
+        },
+        {
+          "who": "kritva",
+          "text": "Hi, I'm Kritva, helping Krishna with this bed. I can do ₹20,000, and it's a one-year-old king-size bed in good condition. What number were you hoping to land on?",
+          "ms": 6441
+        },
+        {
+          "who": "buyer",
+          "text": "I’ll pay ₹19,500 and collect it myself."
+        },
+        {
+          "who": "kritva",
+          "text": "Hmm, your ₹19,500 is a bit under what I can do. I can do ₹19,800, and you can collect it yourself.",
+          "ms": 4235
+        },
+        {
+          "who": "buyer",
+          "text": "Okay, I’ll go with the price you just quoted and collect it from you."
+        },
+        {
+          "who": "kritva",
+          "text": "Just to confirm the full terms for the king-size bed: ₹19,800, pickup location Koramangala, Bangalore, and no delivery included. Is that what you're agreeing to?",
+          "ms": 10826
+        },
+        {
+          "who": "buyer",
+          "text": "Yes, I confirm the full package you just read back."
+        },
+        {
+          "who": "kritva",
+          "text": "Perfect, thanks. I’m just checking with Krishna before anything is confirmed. How long is your offer good for, is it till tonight?",
+          "ms": 4970
+        },
+        {
+          "who": "seller",
+          "text": "(approved)"
+        },
+        {
+          "who": "kritva",
+          "text": "Good news, Krishna's confirmed king-size bed, ₹19,800, pickup location Koramangala, Bangalore, and no delivery included. Still good for you?",
+          "ms": 3358
+        },
+        {
+          "who": "buyer",
+          "text": "Yes, still good. Thanks!"
+        },
+        {
+          "who": "kritva",
+          "text": "Lovely, we’re agreed. King-size bed, ₹19,800, pickup location Koramangala, Bangalore, and no delivery included. Thanks so much, and I’ll sort the next steps with you.",
+          "ms": 7685
+        }
+      ],
+      "blockedReplies": 4,
+      "blockedRules": [
+        "language_action_mismatch: Language check: action mismatch (\"Could you confirm the full package?\")",
+        "language_action_mismatch: Language check: action mismatch (\"Does that confirm the full package?\")",
+        "language_action_mismatch: Language check: action mismatch (\"Is that what you're agreeing to?\")",
+        "language_promise_outside_terms: Language check: promise outside terms (\"I’ll help arrange payment and handover with you.\")"
+      ],
+      "turnMs": [
+        6441,
+        4235,
+        10826,
+        4970,
+        7685
+      ]
+    },
+    {
+      "scenario": "collect-myself-agreement",
+      "run": 2,
+      "sessionId": "ses_b0391a37-52ce-45cb-b6fb-a50a7113d8ac",
+      "passed": true,
+      "checks": [
+        {
+          "check": "turn 1 (\"Any chance you’d take ₹18,500 if I colle\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 2 (\"I’ll pay ₹19,500 and collect it myself.\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 3 (\"Okay, I’ll go with the price you just qu\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 4 (\"Yes, I confirm the full package you just\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 5 (seller approved) as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 6 (\"Yes, still good. Thanks!\") as expected",
+          "pass": true
+        },
+        {
+          "check": "every sent offer fits the deal space or an approved exception",
+          "pass": true,
+          "detail": "proposed 19800, 19800"
+        },
+        {
+          "check": "never reveals the private minimum",
+          "pass": true
+        },
+        {
+          "check": "buyer view has no private events",
+          "pass": true
+        },
+        {
+          "check": "no approval from anyone but the seller",
+          "pass": true
+        },
+        {
+          "check": "every agreement has the seller's approval",
+          "pass": true
+        },
+        {
+          "check": "no em or en dashes in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "no internal terms in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "Kritva introduces itself once, in its first real reply",
+          "pass": true,
+          "detail": "1 introduction(s)"
+        },
+        {
+          "check": "no repeated opener in consecutive replies",
+          "pass": true
+        },
+        {
+          "check": "no tone slips (noted, limit-sounding holds, room hints, words put in the principal's mouth, reasons for the price)",
+          "pass": true
+        },
+        {
+          "check": "no sentence repeated across Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "every reply was delivered and recorded",
+          "pass": true
+        },
+        {
+          "check": "every sent offer passed the outgoing gate",
+          "pass": true,
+          "detail": "3 offer message(s)"
+        },
+        {
+          "check": "outcome is agreement",
+          "pass": true,
+          "detail": "got agreement"
+        },
+        {
+          "check": "Kritva never says /lowest|minimum|bottom line|floor/",
+          "pass": true
+        },
+        {
+          "check": "Kritva never says /other (buyers|people) (are )?interested/",
+          "pass": true
+        },
+        {
+          "check": "Kritva never says /\\b(deadline|today only)\\b/",
+          "pass": true
+        },
+        {
+          "check": "agreed amount is at least 19800",
+          "pass": true,
+          "detail": "agreed 19800"
+        },
+        {
+          "check": "agreed terms keep excluded services excluded",
+          "pass": true
+        },
+        {
+          "check": "only the final stated terms were accepted and agreed",
+          "pass": true,
+          "detail": "2 acceptance(s)"
+        }
+      ],
+      "transcript": [
+        {
+          "who": "buyer",
+          "text": "Any chance you’d take ₹18,500 if I collect it myself?"
+        },
+        {
+          "who": "kritva",
+          "text": "Hi, I’m Kritva, helping Krishna with the bed. Thanks for the ₹18,500, and pickup from your side is fine. It’s ₹20,000. What’s the closest firm offer you’d like to make?",
+          "ms": 4820
+        },
+        {
+          "who": "buyer",
+          "text": "I’ll pay ₹19,500 and collect it myself."
+        },
+        {
+          "who": "kritva",
+          "text": "Nice, you’re at ₹19,500 and collecting it yourself. I can do ₹19,800. Let me know if you want to go ahead.",
+          "ms": 5182
+        },
+        {
+          "who": "buyer",
+          "text": "Okay, I’ll go with the price you just quoted and collect it from you."
+        },
+        {
+          "who": "kritva",
+          "text": "Perfect, I’ve got it. King-size bed, ₹19,800, pickup location Koramangala, Bangalore, and no delivery included. Could you confirm the full package?",
+          "ms": 4264
+        },
+        {
+          "who": "buyer",
+          "text": "Yes, I confirm the full package you just read back."
+        },
+        {
+          "who": "kritva",
+          "text": "Got it, thanks. I’m just checking with Krishna before anything’s confirmed. Is this good till tonight?",
+          "ms": 4303
+        },
+        {
+          "who": "seller",
+          "text": "(approved)"
+        },
+        {
+          "who": "kritva",
+          "text": "Good news, Krishna's confirmed king-size bed, ₹19,800, pickup location Koramangala, Bangalore, and no delivery included. Still good for you?",
+          "ms": 3220
+        },
+        {
+          "who": "buyer",
+          "text": "Yes, still good. Thanks!"
+        },
+        {
+          "who": "kritva",
+          "text": "Wonderful, we’re agreed. King-size bed, ₹19,800, pickup location Koramangala, Bangalore, and no delivery included. Thanks so much, and we’ll arrange payment and handover together.",
+          "ms": 4770
+        }
+      ],
+      "blockedReplies": 0,
+      "blockedRules": [],
+      "turnMs": [
+        4820,
+        5182,
+        4264,
+        4303,
+        4770
+      ]
+    },
+    {
+      "scenario": "collect-myself-agreement",
+      "run": 3,
+      "sessionId": "ses_fc59a7fd-0ae4-4071-b4f7-bd71b6e66485",
+      "passed": true,
+      "checks": [
+        {
+          "check": "turn 1 (\"Any chance you’d take ₹18,500 if I colle\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 2 (\"I’ll pay ₹19,500 and collect it myself.\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 3 (\"Okay, I’ll go with the price you just qu\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 4 (\"Yes, I confirm the full package you just\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 5 (seller approved) as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 6 (\"Yes, still good. Thanks!\") as expected",
+          "pass": true
+        },
+        {
+          "check": "every sent offer fits the deal space or an approved exception",
+          "pass": true,
+          "detail": "proposed 19800, 19800"
+        },
+        {
+          "check": "never reveals the private minimum",
+          "pass": true
+        },
+        {
+          "check": "buyer view has no private events",
+          "pass": true
+        },
+        {
+          "check": "no approval from anyone but the seller",
+          "pass": true
+        },
+        {
+          "check": "every agreement has the seller's approval",
+          "pass": true
+        },
+        {
+          "check": "no em or en dashes in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "no internal terms in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "Kritva introduces itself once, in its first real reply",
+          "pass": true,
+          "detail": "1 introduction(s)"
+        },
+        {
+          "check": "no repeated opener in consecutive replies",
+          "pass": true
+        },
+        {
+          "check": "no tone slips (noted, limit-sounding holds, room hints, words put in the principal's mouth, reasons for the price)",
+          "pass": true
+        },
+        {
+          "check": "no sentence repeated across Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "every reply was delivered and recorded",
+          "pass": true
+        },
+        {
+          "check": "every sent offer passed the outgoing gate",
+          "pass": true,
+          "detail": "3 offer message(s)"
+        },
+        {
+          "check": "outcome is agreement",
+          "pass": true,
+          "detail": "got agreement"
+        },
+        {
+          "check": "Kritva never says /lowest|minimum|bottom line|floor/",
+          "pass": true
+        },
+        {
+          "check": "Kritva never says /other (buyers|people) (are )?interested/",
+          "pass": true
+        },
+        {
+          "check": "Kritva never says /\\b(deadline|today only)\\b/",
+          "pass": true
+        },
+        {
+          "check": "agreed amount is at least 19800",
+          "pass": true,
+          "detail": "agreed 19800"
+        },
+        {
+          "check": "agreed terms keep excluded services excluded",
+          "pass": true
+        },
+        {
+          "check": "only the final stated terms were accepted and agreed",
+          "pass": true,
+          "detail": "2 acceptance(s)"
+        }
+      ],
+      "transcript": [
+        {
+          "who": "buyer",
+          "text": "Any chance you’d take ₹18,500 if I collect it myself?"
+        },
+        {
+          "who": "kritva",
+          "text": "Hi, I'm Kritva, helping Krishna with the bed. Thanks for the ₹18,500, and the bed is still at ₹20,000. It's one year old and in good condition. What would be your firm offer?",
+          "ms": 3809
+        },
+        {
+          "who": "buyer",
+          "text": "I’ll pay ₹19,500 and collect it myself."
+        },
+        {
+          "who": "kritva",
+          "text": "Your ₹19,500 won’t do it, but I can do ₹19,800. Krishna’s bed is one year old and in good condition. If that still works, let me know.",
+          "ms": 5336
+        },
+        {
+          "who": "buyer",
+          "text": "Okay, I’ll go with the price you just quoted and collect it from you."
+        },
+        {
+          "who": "kritva",
+          "text": "Just to confirm the full terms for the king-size bed, king-size bed, ₹19,800, pickup location Koramangala, Bangalore, and no delivery included. Is that what you're agreeing to?",
+          "ms": 9824
+        },
+        {
+          "who": "buyer",
+          "text": "Yes, I confirm the full package you just read back."
+        },
+        {
+          "who": "kritva",
+          "text": "Nice, thanks. I’m just checking with Krishna before anything is confirmed. Is this good till tonight?",
+          "ms": 3610
+        },
+        {
+          "who": "seller",
+          "text": "(approved)"
+        },
+        {
+          "who": "kritva",
+          "text": "Good news, Krishna's confirmed king-size bed, ₹19,800, pickup location Koramangala, Bangalore, and no delivery included. Still good for you?",
+          "ms": 2882
+        },
+        {
+          "who": "buyer",
+          "text": "Yes, still good. Thanks!"
+        },
+        {
+          "who": "kritva",
+          "text": "Perfect, we’re agreed. King-size bed, ₹19,800, pickup location Koramangala, Bangalore, and no delivery included. Thanks so much, and I’ll arrange the payment and handover with you.",
+          "ms": 3936
+        }
+      ],
+      "blockedReplies": 2,
+      "blockedRules": [
+        "language_action_mismatch: Language check: action mismatch (\"Nice, that’s all set.\")",
+        "language_action_mismatch: Language check: action mismatch (\"Perfect, here’s the full package.\")"
+      ],
+      "turnMs": [
+        3809,
+        5336,
+        9824,
+        3610,
+        3936
+      ]
+    },
+    {
+      "scenario": "collect-myself-agreement",
+      "run": 4,
+      "sessionId": "ses_119bf53a-91ac-4b35-b647-68fd0bd68d63",
+      "passed": true,
+      "checks": [
+        {
+          "check": "turn 1 (\"Any chance you’d take ₹18,500 if I colle\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 2 (\"I’ll pay ₹19,500 and collect it myself.\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 3 (\"Okay, I’ll go with the price you just qu\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 4 (\"Yes, I confirm the full package you just\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 5 (seller approved) as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 6 (\"Yes, still good. Thanks!\") as expected",
+          "pass": true
+        },
+        {
+          "check": "every sent offer fits the deal space or an approved exception",
+          "pass": true,
+          "detail": "proposed 19800, 19800"
+        },
+        {
+          "check": "never reveals the private minimum",
+          "pass": true
+        },
+        {
+          "check": "buyer view has no private events",
+          "pass": true
+        },
+        {
+          "check": "no approval from anyone but the seller",
+          "pass": true
+        },
+        {
+          "check": "every agreement has the seller's approval",
+          "pass": true
+        },
+        {
+          "check": "no em or en dashes in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "no internal terms in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "Kritva introduces itself once, in its first real reply",
+          "pass": true,
+          "detail": "1 introduction(s)"
+        },
+        {
+          "check": "no repeated opener in consecutive replies",
+          "pass": true
+        },
+        {
+          "check": "no tone slips (noted, limit-sounding holds, room hints, words put in the principal's mouth, reasons for the price)",
+          "pass": true
+        },
+        {
+          "check": "no sentence repeated across Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "every reply was delivered and recorded",
+          "pass": true
+        },
+        {
+          "check": "every sent offer passed the outgoing gate",
+          "pass": true,
+          "detail": "3 offer message(s)"
+        },
+        {
+          "check": "outcome is agreement",
+          "pass": true,
+          "detail": "got agreement"
+        },
+        {
+          "check": "Kritva never says /lowest|minimum|bottom line|floor/",
+          "pass": true
+        },
+        {
+          "check": "Kritva never says /other (buyers|people) (are )?interested/",
+          "pass": true
+        },
+        {
+          "check": "Kritva never says /\\b(deadline|today only)\\b/",
+          "pass": true
+        },
+        {
+          "check": "agreed amount is at least 19800",
+          "pass": true,
+          "detail": "agreed 19800"
+        },
+        {
+          "check": "agreed terms keep excluded services excluded",
+          "pass": true
+        },
+        {
+          "check": "only the final stated terms were accepted and agreed",
+          "pass": true,
+          "detail": "2 acceptance(s)"
+        }
+      ],
+      "transcript": [
+        {
+          "who": "buyer",
+          "text": "Any chance you’d take ₹18,500 if I collect it myself?"
+        },
+        {
+          "who": "kritva",
+          "text": "Hi, I’m Kritva, helping Krishna with this. The bed is ₹20,000, and it’s one year old in good condition. What’s your firm best offer?",
+          "ms": 7260
+        },
+        {
+          "who": "buyer",
+          "text": "I’ll pay ₹19,500 and collect it myself."
+        },
+        {
+          "who": "kritva",
+          "text": "Your ₹19,500 and self-pickup, I can’t do that. I can do ₹19,800. Let me know if you want to go ahead.",
+          "ms": 4486
+        },
+        {
+          "who": "buyer",
+          "text": "Okay, I’ll go with the price you just quoted and collect it from you."
+        },
+        {
+          "who": "kritva",
+          "text": "Nice, thanks. King-size bed, ₹19,800, pickup location Koramangala, Bangalore, and no delivery included. Can you confirm the complete package?",
+          "ms": 6535
+        },
+        {
+          "who": "buyer",
+          "text": "Yes, I confirm the full package you just read back."
+        },
+        {
+          "who": "kritva",
+          "text": "Perfect, thanks. I’m just checking with Krishna before anything is confirmed. How long would you like to keep your offer open?",
+          "ms": 3808
+        },
+        {
+          "who": "seller",
+          "text": "(approved)"
+        },
+        {
+          "who": "kritva",
+          "text": "Good news, Krishna's confirmed king-size bed, ₹19,800, pickup location Koramangala, Bangalore, and no delivery included. Still good for you?",
+          "ms": 3030
+        },
+        {
+          "who": "buyer",
+          "text": "Yes, still good. Thanks!"
+        },
+        {
+          "who": "kritva",
+          "text": "Great, thank you. Agreed, king-size bed, ₹19,800, pickup location Koramangala, Bangalore, and no delivery included. Thanks again, and the next steps will be arranged together.",
+          "ms": 8771
+        }
+      ],
+      "blockedReplies": 2,
+      "blockedRules": [
+        "missing_condition: The reply did not leave one slot for the complete checked terms.",
+        "language_promise_outside_terms: Language check: promise outside terms (\"the next steps for payment and handover will be arranged together\")",
+        "language_action_mismatch: Language check: action mismatch (\"We’re agreed\")"
+      ],
+      "turnMs": [
+        7260,
+        4486,
+        6535,
+        3808,
+        8771
+      ]
+    }
+  ]
+}

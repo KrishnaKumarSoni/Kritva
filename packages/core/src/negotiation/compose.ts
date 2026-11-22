@@ -145,7 +145,12 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
   if (input.publicPrincipalName) must.push(`${input.publicPrincipalName} is the person you represent, not the person you are talking to: refer to ${input.publicPrincipalName} by name, never as "he" or "she", and never address them by that name.`);
   else must.push(`Refer to ${String(payload.who_you_represent)} without "he" or "she".`);
   // Putting the price in the principal's mouth ("<name> can do X", "<name> is keeping it") invents what they said.
-  must.push(`The price and your offers are yours to state ("I can do <amount>", "it's <amount>"): never say what ${String(payload.who_you_represent)} can, can't, is asking, is keeping or has done with the price. Mention ${String(payload.who_you_represent)} only to say who you're helping, that you're checking with them, or what the brief says they decided.`);
+  must.push(`The price and your offers are yours to state ("I can do <amount>", "it's <amount>"): never say what ${String(payload.who_you_represent)} can, can't, is asking, is keeping or has done with the price, and never say a figure does or doesn't work for ${String(payload.who_you_represent)}. Mention ${String(payload.who_you_represent)} only to say who you're helping, that you're checking with them, or what the brief says they decided.`);
+  // On first contact the price is news: a reply that only turns their figure down leaves them guessing.
+  const firstPrice = payload.price as { current: string } | null;
+  if (firstPrice && !priceHeardBefore(input) && ["answer_enquiry", "price_pressure", "explain_price", "acknowledge_budget", "compare_terms", "explore_objection", "hold"].includes(plan.move)) {
+    must.push(`They have not heard ${input.view.principalSide === "pays" ? "your current offer" : "the price"} yet: say it (${firstPrice.current}) in a friendly sentence.`);
+  }
   const theirPosition = payload.counterparty_stated_budget ?? payload.enquired_amount;
   if (theirPosition && plan.move === "counter") must.push(`They mentioned ${String(theirPosition)}, which is below what works. Say it back warmly as theirs (never compare it with yours) and show you want to find a price that works for both, then put your amount to them as a step toward them. Never accept or agree to their figure, and never call your amount your best, lowest or final price.`);
   if (plan.move === "request_approval") must.push(`React warmly, then say plainly in a short line that you're checking with ${String(payload.who_you_represent)} before anything is confirmed, like asking them for a moment. Never say it works, is fine or is agreed.`);
@@ -316,6 +321,15 @@ function languageName(code: string | null | undefined): string | null {
   } catch {
     return null;
   }
+}
+
+/** Whether any earlier reply named the current price. */
+function priceHeardBefore(input: ComposeInput): boolean {
+  const n = input.view.negotiable;
+  const term = n ? input.publicTerms.find((t) => t.termId === n.termId) : undefined;
+  if (!term || !("amount" in term.value)) return false;
+  const amount = term.value.amount as number;
+  return input.conversation.some((m) => m.speaker === "agent" && findAmounts(m.text).includes(amount));
 }
 
 /**
