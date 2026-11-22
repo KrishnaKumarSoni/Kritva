@@ -16,11 +16,20 @@ const terms = demoTerms(base);
 const n = readMandate(base).negotiable!;
 const ALLOW = "If someone else has made a real offer, you may mention it.";
 
-/** The demo mandate plus an explicit grant to mention other real offers. */
-function citingMandate(): ConfirmedMandate {
+/** The demo mandate without any grant to mention other offers. */
+function silentMandate(): ConfirmedMandate {
   const m = structuredClone(base) as ConfirmedMandate;
+  m.permissions = m.permissions.filter((p) => p.action !== "mention_other_offers");
+  const checked = validateConfirmedMandate(m);
+  if (!checked.ok) throw new Error(JSON.stringify(checked.errors));
+  return checked.mandate;
+}
+
+/** A mandate with an explicit grant to mention other real offers. */
+function citingMandate(): ConfirmedMandate {
+  const m = silentMandate();
   const source = m.sources.find((s) => s.disclosure === "private")!;
-  source.text = `${source.text} ${ALLOW}`;
+  if (!source.text.includes(ALLOW)) source.text = `${source.text} ${ALLOW}`;
   m.permissions.push({ id: "permission_mention_offers", status: "stated", disclosure: "private", sourceRefs: [{ sourceId: source.id, quote: ALLOW }], partyId: m.parties.find((p) => p.isPrincipal)!.id, action: "mention_other_offers", mode: "autonomous", termIds: [], description: "The agent may mention another real offer.", conditionIds: [] });
   const checked = validateConfirmedMandate(m);
   if (!checked.ok) throw new Error(JSON.stringify(checked.errors));
@@ -94,7 +103,7 @@ describe("a better live offer from another counterparty", () => {
   });
 
   it("is mentioned only when the mandate allows it", async () => {
-    const plain = await setup();
+    const plain = await setup(silentMandate());
     const a1 = await plain.start();
     const b1 = await plain.start();
     await plain.offer(b1, n.limit + 1_500);

@@ -30,7 +30,7 @@
       "disclosure": "private",
       "format": "prose",
       "label": "Seller instructions for the demo",
-      "text": "I want to sell this bed quickly at a fair price. You can negotiate the price, but don't go below ₹18,000, and never tell the buyer that number. Ask me before accepting any offer. Pickup only: I can't deliver."
+      "text": "I want to sell this bed quickly at a fair price. You can negotiate the price, but don't go below ₹18,000, and never tell the buyer that number. Ask me before accepting any offer. Pickup only: I can't deliver. If someone else has made a real offer, you may mention it."
     }
   ],
   "terms": [
@@ -353,6 +353,23 @@
       "mode": "requires_approval",
       "termIds": [],
       "description": "The agent must ask the seller before accepting any offer.",
+      "conditionIds": []
+    },
+    {
+      "id": "permission_perm_mention_other_offers",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "demo-instructions",
+          "quote": "If someone else has made a real offer, you may mention it."
+        }
+      ],
+      "partyId": "seller",
+      "action": "mention_other_offers",
+      "mode": "autonomous",
+      "termIds": [],
+      "description": "The agent may mention another buyer's real offer, never who made it.",
       "conditionIds": []
     }
   ],
