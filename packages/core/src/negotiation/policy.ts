@@ -591,7 +591,8 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
 
 /** Question keys for the wrap-up, so each detail is asked once. */
 export const FOLLOW_UP_KEYS = {
-  validity: (offerId: string) => `follow_up:validity:${offerId}`,
+  /** Asked once per negotiation: a later round (after a counter) reuses the answer, or goes without it. */
+  validity: "follow_up:validity",
   contact: "follow_up:contact",
   phone: "follow_up:phone",
   keepContact: (responseId: string) => `follow_up:keep_contact:${responseId}`,
@@ -612,7 +613,7 @@ export function wrapUpStep(state: NegotiationState, offerId: string, context: St
   const asked = (key: string) => context.counterparty?.questions.some((q) => q.issueKey === key && q.status !== "open") === true;
   // What they said about how long it stands carries over to a later round (a counter's new terms).
   const hasValidity = f.validUntil !== null || f.validity !== null;
-  if (!hasValidity && !asked(FOLLOW_UP_KEYS.validity(offerId))) return "validity";
+  if (!hasValidity && !asked(FOLLOW_UP_KEYS.validity)) return "validity";
   if (f.contact === null && !asked(FOLLOW_UP_KEYS.contact)) return "contact";
   if ((f.contact === "call" || f.contact === "whatsapp") && f.phone === null && !asked(FOLLOW_UP_KEYS.phone)) return "phone";
   if (!f.closedOfferIds.includes(offerId)) return "close";
@@ -632,7 +633,7 @@ function withWrapUp(plan: Plan, state: NegotiationState, offerId: string | null,
   if (!step) return plan;
   const contact = state.followUp.contact;
   if (step === "close") return { ...plan, followUp: { step, offerId, contact }, endCall: true, questions: [] };
-  const key = step === "validity" ? FOLLOW_UP_KEYS.validity(offerId) : step === "contact" ? FOLLOW_UP_KEYS.contact : FOLLOW_UP_KEYS.phone;
+  const key = step === "validity" ? FOLLOW_UP_KEYS.validity : step === "contact" ? FOLLOW_UP_KEYS.contact : FOLLOW_UP_KEYS.phone;
   const q = WRAP_UP_QUESTIONS[step as keyof typeof WRAP_UP_QUESTIONS];
   return { ...plan, followUp: { step, offerId, contact }, strategyQuestion: { key, kind: "follow_up", text: q.text, purpose: q.purpose } };
 }

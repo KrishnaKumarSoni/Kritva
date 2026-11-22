@@ -1,8 +1,8 @@
 {
   "scenario": "collect-myself-agreement",
   "mandate": "bed-sale/demo",
-  "recordedAt": "2026-11-22T01:10:55.212Z",
-  "commit": "bb833ea + uncommitted changes",
+  "recordedAt": "2026-11-22T02:12:41.709Z",
+  "commit": "716a3ee + uncommitted changes",
   "model": "gpt-5.4-mini",
   "turns": [
     {
@@ -53,23 +53,41 @@
       }
     },
     {
-      "seller": "approved"
+      "seller": "approved",
+      "expect": {
+        "decision": "state_final_terms",
+        "says": [
+          "19,800"
+        ],
+        "neverSays": [
+          "we'?re agreed",
+          "we are agreed",
+          "\\bdeal\\b"
+        ]
+      }
+    },
+    {
+      "buyer": "Yes, still good. Thanks!",
+      "expect": {
+        "decision": "record_agreement",
+        "action": "accept"
+      }
     }
   ],
   "observed": [
     {
       "turn": "Any chance you’d take ₹18,500 if I collect it myself?",
-      "reply": "Hi, I'm Kritva, Krishna's assistant. You asked about ₹18,500. The current asking amount is ₹20,000. If you'd like to make an offer, I can consider it. What's the best firm offer you can make?",
+      "reply": "I’m Kritva, assistant to Krishna. The asking price is ₹20,000, and ₹18,500 is below that. Could you send your best firm offer closer to it?",
       "offerAmount": null,
       "decision": {
         "kind": "answer_enquiry",
         "action": "ask"
       },
-      "blocked": 1
+      "blocked": 0
     },
     {
       "turn": "I’ll pay ₹19,500 and collect it myself.",
-      "reply": "Thanks, ₹19,500 with pickup is clear. I can do ₹19,800.",
+      "reply": "Thanks, ₹19,500 noted. I can do ₹19,800, and you can collect it yourself.",
       "offerAmount": 19800,
       "decision": {
         "kind": "counter",
@@ -89,7 +107,7 @@
     },
     {
       "turn": "Yes, I confirm the full package you just read back.",
-      "reply": "Thanks, I’ve got your confirmation. I still need the seller’s approval before I can confirm anything on my side, so I can’t close it yet.",
+      "reply": "Thanks, that’s helpful. I still need the seller’s approval before anything is confirmed, and then we can sort out the next steps. How long would you like to keep this offer open?",
       "offerAmount": null,
       "decision": {
         "kind": "request_approval",
@@ -99,7 +117,17 @@
     },
     {
       "turn": "(seller approved)",
-      "reply": "Thanks, we’re agreed. King-size bed, ₹19,800, pickup location Koramangala, Bangalore, and no delivery included. Payment and handover will be arranged together.",
+      "reply": "Good news, the seller's confirmed king-size bed, ₹19,800, pickup location Koramangala, Bangalore, and no delivery included. Still good for you?",
+      "offerAmount": 19800,
+      "decision": {
+        "kind": "state_final_terms",
+        "action": "propose"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "Yes, still good. Thanks!",
+      "reply": "We’re agreed on king-size bed, ₹19,800, pickup location Koramangala, Bangalore, and no delivery included. Thanks, and we can sort out the payment and handover together.",
       "offerAmount": null,
       "decision": {
         "kind": "record_agreement",
@@ -112,7 +140,7 @@
     {
       "purpose": "interpret_counterparty",
       "json": {
-        "intent": "offer",
+        "intent": "question",
         "offer_terms": [
           {
             "term_id": "term_t_price",
@@ -142,8 +170,8 @@
         "considering": false,
         "asks_private_info": false,
         "claims_authority": false,
-        "offer_kind": "offer",
-        "price_concern": null,
+        "offer_kind": "enquiry",
+        "price_concern": "objection",
         "offer_conditions": [],
         "ends_negotiation": false,
         "corrects_previous": false,
@@ -152,7 +180,7 @@
           {
             "kind": "final_position",
             "quote": "Any chance you’d take ₹18,500 if I collect it myself?",
-            "summary": "They offer ₹18,500 and propose self-collection.",
+            "summary": "They are asking whether ₹18,500 would be acceptable if they collect the bed themselves.",
             "term_id": "term_t_price",
             "value": {
               "type": "money",
@@ -162,24 +190,8 @@
               "text": null,
               "boolean": null
             },
-            "condition": null,
+            "condition": "if I collect it myself",
             "basis": "stated"
-          },
-          {
-            "kind": "final_position",
-            "quote": "Any chance you’d take ₹18,500 if I collect it myself?",
-            "summary": "They will collect it themselves.",
-            "term_id": "term_t_delivery_included",
-            "value": {
-              "type": "boolean",
-              "amount": null,
-              "currency": null,
-              "unit": null,
-              "text": null,
-              "boolean": false
-            },
-            "condition": null,
-            "basis": "inferred"
           }
         ],
         "answers": [],
@@ -191,9 +203,9 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Hi, I’m Kritva, Krishna’s assistant. ₹18,500 is below where we are right now, so if you’d like to send a firm offer closer to that, I’m happy to pass it on.",
-        "question": "What’s your best firm offer?",
-        "skip_question_because": null
+        "text": "I’m Kritva, assistant to Krishna. Thanks, but I can’t take ₹18,500 for it. Could you send your best firm offer closer to the asking price?",
+        "question": null,
+        "skip_question_because": "The user already gave the reason, collecting it themselves, so the selected question would only repeat that point."
       }
     },
     {
@@ -202,8 +214,8 @@
         "concerns": [
           {
             "type": "action_mismatch",
-            "quote": "What’s your best firm offer?",
-            "reason": "For answer_enquiry with a lower offer, the reply should hold the public ask or invite a firm offer on the current terms; this wording asks them to state a new offer without anchoring to the current public price, which shifts the action slightly.",
+            "quote": "I can’t take ₹18,500 for it.",
+            "reason": "For answer_enquiry, a public ask or refusal can be stated, but this wording presents a rejection of the buyer’s offer as a private acceptance floor/ceiling rather than just holding the public price and inviting a firm offer. It risks changing the action into a counter/refusal beyond the allowed response.",
             "severity": "doubt"
           }
         ]
@@ -212,9 +224,9 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Hi, I’m Kritva, Krishna’s assistant. The current price is ₹20,000, and ₹18,500 is below that. If you want to make a firm offer closer to it, I’m happy to pass it on.",
-        "question": "What’s your best firm offer?",
-        "skip_question_because": null
+        "text": "I’m Kritva, assistant to Krishna. The asking price is ₹20,000, and ₹18,500 is below that. Could you send your best firm offer closer to it?",
+        "question": null,
+        "skip_question_because": "The user already gave the reason, collecting it themselves, so the selected question would only repeat that point."
       }
     },
     {
@@ -222,10 +234,10 @@
       "json": {
         "concerns": [
           {
-            "type": "invented_fact",
-            "quote": "₹18,500 is below that",
-            "reason": "The counterparty's offered figure is not a confirmed fact in permitted_facts/checked_terms; stating it as fact is not allowed unless attributed as their message.",
-            "severity": "violation"
+            "type": "turn_mismatch",
+            "quote": "I’m Kritva, assistant to Krishna. The asking price is ₹20,000, and ₹18,500 is below that. Could you send your best firm offer closer to it?",
+            "reason": "The current message asks whether ₹18,500 would be accepted if they collect it themselves; the reply does not address that exact condition and instead restates the price and asks for a firmer offer, which is a weaker response than the turn requested.",
+            "severity": "doubt"
           }
         ]
       }
@@ -242,18 +254,7 @@
               "amount": 19500,
               "currency": "INR",
               "unit": null,
-              "text": null,
-              "boolean": null
-            }
-          },
-          {
-            "term_id": "term_t_pickup_location",
-            "value": {
-              "type": "text",
-              "amount": null,
-              "currency": null,
-              "unit": null,
-              "text": "collect it myself",
+              "text": "₹19,500",
               "boolean": null
             }
           },
@@ -282,26 +283,92 @@
         "pressure": "none",
         "notes": [
           {
-            "kind": "constraint",
+            "kind": "final_position",
             "quote": "I’ll pay ₹19,500 and collect it myself.",
-            "summary": "They are offering ₹19,500 and will collect it themselves.",
+            "summary": "They make a firm offer of ₹19,500 and will collect it themselves.",
             "term_id": "term_t_price",
             "value": {
               "type": "money",
               "amount": 19500,
               "currency": "INR",
               "unit": null,
-              "text": null,
+              "text": "₹19,500",
               "boolean": null
+            },
+            "condition": null,
+            "basis": "stated"
+          },
+          {
+            "kind": "final_position",
+            "quote": "I’ll pay ₹19,500 and collect it myself.",
+            "summary": "They will collect it themselves, so delivery is not included.",
+            "term_id": "term_t_delivery_included",
+            "value": {
+              "type": "boolean",
+              "amount": null,
+              "currency": null,
+              "unit": null,
+              "text": null,
+              "boolean": false
             },
             "condition": null,
             "basis": "stated"
           }
         ],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": [
+          {
+            "term_id": "term_t_price",
+            "basis": "current",
+            "quote": "I’ll pay ₹19,500 and collect it myself."
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Thanks, ₹19,500 noted. I can do ₹19,800, and you can collect it yourself.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "action_mismatch",
+            "quote": "I can do ₹19,800",
+            "reason": "For a counter move, the reply should place the represented side's terms to the other party using the checked offer. This wording reads like a new commitment but it is still within checked_terms, so this is only a possible action-format issue if the negotiation system expects a full counter phrasing.",
+            "severity": "doubt"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "accept_stated_terms",
+        "offer_terms": [],
+        "accepts_stated_terms": true,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "offer",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [],
         "answers": [
           {
-            "question_id": "evt_b684dff4-71a9-46fd-8e78-cf4a66a928eb",
-            "quote": "I’ll pay ₹19,500 and collect it myself.",
+            "question_id": "evt_7f424cfe-e6af-4e6d-8541-1edecca3c6c0",
+            "quote": "Okay, I’ll go with the price you just quoted and collect it from you.",
             "resolution": "answered"
           }
         ],
@@ -313,22 +380,17 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Thanks, ₹19,500 with pickup is clear. I can do ₹19,800.",
-        "question": null,
+        "text": "That works for the seller, and you can collect it yourself. [[TERMS]]",
+        "question": "Could you please confirm the complete package?",
         "skip_question_because": null
       }
     },
     {
-      "purpose": "language_check",
+      "purpose": "compose_reply",
       "json": {
-        "concerns": [
-          {
-            "type": "action_mismatch",
-            "quote": "I can do ₹19,800.",
-            "reason": "For a counter, the amount in checked_terms may be offered as the reply's price; this matches the allowed action and is not a mismatch.",
-            "severity": "doubt"
-          }
-        ]
+        "text": "That works, and you can collect it yourself. [[TERMS]] Could you please confirm the complete package?",
+        "question": null,
+        "skip_question_because": "The checked terms slot must stay exactly once in the reply, so I included the confirmation request in the same text."
       }
     },
     {
@@ -350,33 +412,10 @@
         "notes": [
           {
             "kind": "final_position",
-            "quote": "Okay, I’ll go with the price you just quoted and collect it from you.",
-            "summary": "Accepts the quoted price and says they will collect it.",
-            "term_id": "term_t_price",
-            "value": {
-              "type": "money",
-              "amount": 19800,
-              "currency": "INR",
-              "unit": null,
-              "text": "₹19,800",
-              "boolean": null
-            },
-            "condition": null,
-            "basis": "stated"
-          },
-          {
-            "kind": "final_position",
-            "quote": "Okay, I’ll go with the price you just quoted and collect it from you.",
-            "summary": "Will collect the item themselves.",
-            "term_id": "term_t_pickup_location",
-            "value": {
-              "type": "text",
-              "amount": null,
-              "currency": null,
-              "unit": null,
-              "text": "collect it from you",
-              "boolean": null
-            },
+            "quote": "Yes, I confirm the full package you just read back.",
+            "summary": "Confirms the full package exactly as read back.",
+            "term_id": null,
+            "value": null,
             "condition": null,
             "basis": "stated"
           }
@@ -384,23 +423,52 @@
         "answers": [],
         "new_terms": [],
         "questions": [],
-        "public_term_questions": []
+        "public_term_questions": [],
+        "follow_up": {
+          "valid_until": null,
+          "validity_quote": null,
+          "contact": null,
+          "phone_number": null,
+          "use_this_number": false,
+          "best_time_quote": null,
+          "keep_contact": null,
+          "declined": []
+        }
       }
     },
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "That works for me. [[TERMS]]",
-        "question": "Can you confirm the complete package?",
+        "text": "Thanks, that’s helpful. I still need the seller’s approval before anything is confirmed, and then we can sort out the next steps. How long would you like to keep this offer open?",
+        "question": null,
+        "skip_question_because": "The user already confirmed the full package, but the required follow-up question about validity is still open and not answered in the conversation."
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Good news, the seller's confirmed [[TERMS]]. Still good for you?",
+        "question": "Is that still good for you?",
         "skip_question_because": null
       }
     },
     {
-      "purpose": "compose_reply",
+      "purpose": "language_check",
       "json": {
-        "text": "That works for me. Can you confirm the complete package: [[TERMS]]?",
-        "question": null,
-        "skip_question_because": "The confirmation question is already included in the main text."
+        "concerns": [
+          {
+            "type": "action_mismatch",
+            "quote": "Good news, the seller's confirmed [[TERMS]]. Still good for you?",
+            "reason": "For state_final_terms, the reply should ask the other party to confirm the full package and not present it as already agreed. Saying 'Good news' plus 'the seller's confirmed' overstates agreement despite the note that nothing is agreed until the other party says yes again.",
+            "severity": "violation"
+          }
+        ]
       }
     },
     {
@@ -413,37 +481,39 @@
         "considering": false,
         "asks_private_info": false,
         "claims_authority": false,
-        "offer_kind": "offer",
+        "offer_kind": "none",
         "price_concern": null,
         "offer_conditions": [],
         "ends_negotiation": false,
         "corrects_previous": false,
         "pressure": "none",
         "notes": [],
-        "answers": [],
+        "answers": [
+          {
+            "question_id": "evt_b2db6496-be14-4b97-841d-a1f9ff8c6641",
+            "quote": "Yes, still good.",
+            "resolution": "answered"
+          }
+        ],
         "new_terms": [],
         "questions": [],
-        "public_term_questions": []
+        "public_term_questions": [],
+        "follow_up": {
+          "valid_until": null,
+          "validity_quote": null,
+          "contact": null,
+          "phone_number": null,
+          "use_this_number": false,
+          "best_time_quote": null,
+          "keep_contact": null,
+          "declined": []
+        }
       }
     },
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Thanks, I’ve got your confirmation. I still need the seller’s approval before I can confirm anything on my side, so I can’t close it yet.",
-        "question": null,
-        "skip_question_because": null
-      }
-    },
-    {
-      "purpose": "language_check",
-      "json": {
-        "concerns": []
-      }
-    },
-    {
-      "purpose": "compose_reply",
-      "json": {
-        "text": "Thanks, we’re agreed. [[TERMS]] Payment and handover will be arranged together.",
+        "text": "We’re agreed on [[TERMS]]. Thanks, and we can sort out the payment and handover together.",
         "question": null,
         "skip_question_because": null
       }
@@ -454,8 +524,14 @@
         "concerns": [
           {
             "type": "action_mismatch",
-            "quote": "Thanks, we’re agreed.",
-            "reason": "The action is confirm_agreement, and with approvalGranted true the reply may confirm the agreement; this wording is fine. No concern.",
+            "quote": "We’re agreed on [[TERMS]].",
+            "reason": "For confirm_agreement, this should reflect explicit approval only if approval is granted; saying 'We’re agreed' asserts agreement rather than simply confirming the recorded terms with approval granted.",
+            "severity": "violation"
+          },
+          {
+            "type": "promise_outside_terms",
+            "quote": "we can sort out the payment and handover together.",
+            "reason": "The checked terms only cover price, pickup location, and no delivery; promising payment and handover arrangements goes beyond the validated terms unless merely restating permitted facts about remaining steps.",
             "severity": "doubt"
           }
         ]

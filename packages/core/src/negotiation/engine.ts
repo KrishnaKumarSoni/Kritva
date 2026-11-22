@@ -21,7 +21,7 @@ import { prepareQuestions } from "../counterparty/questions.ts";
 import { gateTerms, gateWording, type GateResult } from "../governance/gate.ts";
 import { normalizeForQuoteMatch, quoteAppearsIn } from "../schema/quotes.ts";
 import { languageCheck } from "../governance/language-check.ts";
-import { decide, keepContactQuestion, wrapUpStep, type DealInput, type Interpretation, type Plan, type StrategyContext } from "./policy.ts";
+import { decide, FOLLOW_UP_KEYS, keepContactQuestion, wrapUpStep, type DealInput, type Interpretation, type Plan, type StrategyContext } from "./policy.ts";
 import { checkReply, findAmounts, type ReplyViolation } from "./reply-check.ts";
 import { approvedFor, projectState, publicDealTerms, type NegotiationState } from "./state.ts";
 import { MINIMAL_GUIDANCE, type StrategyGuidance } from "../strategy/guidance.ts";
@@ -510,7 +510,7 @@ export class NegotiationEngine {
     holding.recap = terms;
     const after = projectState(await this.#record.context(ctx.sessionId));
     if (wrapUpStep(after, offerId, context) === "validity") {
-      const question = { key: `follow_up:validity:${offerId}`, kind: "follow_up" as const, text: "How long does your offer stand?", purpose: "Find out how long their offer stands, for example whether it is good till tonight. Ask only this. Never suggest it is agreed." };
+      const question = { key: FOLLOW_UP_KEYS.validity, kind: "follow_up" as const, text: "How long does your offer stand?", purpose: "Find out how long their offer stands, for example whether it is good till tonight. Ask only this. Never suggest it is agreed." };
       holding.followUp = { step: "validity", offerId, contact: after.followUp.contact };
       holding.ask = context.counterparty ? await this.#strategyQuestion(writes, context.counterparty as CounterpartyModel, question, ctx.inboundId, ctx.agent) : null;
     }
@@ -759,7 +759,8 @@ export class NegotiationEngine {
       insertedTerms = clean(lead ? `${lead}, ${terms}` : terms);
       // A comma continues the sentence; any other words after the terms start a new, capitalised one.
       const rest = after.trimStart();
-      const ending = !rest || /^[.!?,;:]/.test(rest) ? after : `. ${rest.charAt(0).toUpperCase()}${rest.slice(1)}`;
+      // "... [[TERMS]] instead." keeps a short trailing word in the same sentence rather than starting a new one with it.
+      const ending = !rest || /^[.!?,;:]/.test(rest) || /^(?:instead|then|too|as well)\b/i.test(rest) ? after : `. ${rest.charAt(0).toUpperCase()}${rest.slice(1)}`;
       draft = clean(before + insertedTerms + ending);
       if (!/[.!?]["'”’)]?$/.test(draft)) draft = `${draft}.`;
     } else if (exactTerms || framing.length !== 1) {

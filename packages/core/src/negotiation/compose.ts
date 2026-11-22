@@ -219,7 +219,7 @@ function followUpRequirements(input: ComposeInput, payload: Record<string, unkno
         : `Say first, warmly, that ${who} has confirmed ${EXACT_TERMS_SLOT} (for example "Good news, ${who}'s confirmed ${EXACT_TERMS_SLOT}. Still good for you?"), then ask whether it's still good for them. Do not say you are agreed: it is agreed only when they say yes.`);
       break;
     case "countered":
-      must.push(`Say ${who} can do ${EXACT_TERMS_SLOT} instead (for example "${who} can do ${EXACT_TERMS_SLOT}. Would that work?"), then ask whether that would work. Do not say you are agreed, and do not mention their earlier offer's amount.`);
+      must.push(`Say ${who} came back with new terms (for example "${who} can do ${EXACT_TERMS_SLOT}. Would that work for you?"), then ask whether that would work. Do not say you are agreed, and do not mention their earlier offer's amount.`);
       break;
     case "declined":
       must.push(`Say kindly that ${who} can't do those terms (for example "Sorry, ${who} can't do that one"). Make no other offer and mention no amount.`);

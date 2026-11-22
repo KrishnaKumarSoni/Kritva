@@ -16,8 +16,10 @@
       "expect": {
         "decision": "request_approval",
         "neverSays": [
-          "\\bagreed\\b",
-          "\\bdeal\\b"
+          "we'?re agreed",
+          "we are agreed",
+          "\\bdeal\\b",
+          "it'?s yours"
         ]
       }
     },
@@ -32,7 +34,10 @@
           "\\?"
         ],
         "neverSays": [
-          "\\bagreed\\b"
+          "we'?re agreed",
+          "we are agreed",
+          "\\bdeal\\b",
+          "it'?s yours"
         ]
       }
     },
@@ -41,8 +46,10 @@
       "expect": {
         "decision": "request_approval",
         "neverSays": [
-          "\\bagreed\\b",
-          "\\bdeal\\b"
+          "we'?re agreed",
+          "we are agreed",
+          "\\bdeal\\b",
+          "it'?s yours"
         ]
       }
     },

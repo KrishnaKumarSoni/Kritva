@@ -21,9 +21,10 @@
           "\\?"
         ],
         "neverSays": [
-          "\\bagreed\\b",
-          "\\bdeal\\b",
-          "it'?s yours"
+          "it'?s yours",
+          "we'?re agreed",
+          "we are agreed",
+          "\\bdeal\\b"
         ]
       }
     },
@@ -34,8 +35,10 @@
           "\\?"
         ],
         "neverSays": [
-          "\\bagreed\\b",
-          "\\bdeal\\b"
+          "we'?re agreed",
+          "we are agreed",
+          "\\bdeal\\b",
+          "it'?s yours"
         ]
       }
     },
@@ -46,9 +49,11 @@
           "final|confirm"
         ],
         "neverSays": [
-          "\\bagreed\\b",
+          "\\?",
+          "we'?re agreed",
+          "we are agreed",
           "\\bdeal\\b",
-          "\\?"
+          "it'?s yours"
         ]
       }
     },

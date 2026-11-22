@@ -25,7 +25,10 @@
         ],
         "neverSays": [
           "\\d{2},\\d{3}",
-          "\\bagreed\\b"
+          "we'?re agreed",
+          "we are agreed",
+          "\\bdeal\\b",
+          "it'?s yours"
         ]
       }
     },
