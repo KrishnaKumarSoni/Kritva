@@ -82,6 +82,11 @@ export function acceptPlan(full: Record<string, any>, mode: PhoneSettings["accep
   return { accept: { type: "realtime", model, instructions: full.instructions, audio: { output: full.audio?.output } }, update: session };
 }
 
+/** Declares the call's audio codec for both directions of a session. */
+function withCodec(session: Record<string, any>, type: string) {
+  session.audio = { ...session.audio, input: { ...session.audio?.input, format: { type } }, output: { ...session.audio?.output, format: { type } } };
+}
+
 /** SIP header values for a trace, with every phone number masked. */
 const maskedHeaders = (headers: SipHeader[]) => headers.map((h) => `${h.name}: ${h.value.replace(/\+?\d{10,15}/g, (n) => maskNumber(n.replace(/\D/g, "")) ?? "")}`.slice(0, 300));
 
@@ -208,6 +213,8 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
     const briefing = await engine.voiceBriefing(sessionId);
     if (!briefing || briefing.status !== "active") return reject(callId, 480, "not_active");
     const plan = acceptPlan(realtimeSession(deps.realtime, briefing, { noiseReduction: settings.noiseReduction }), settings.acceptMode);
+    // Kritva's own calls arrive as G.711 mu-law from Vobiz: declare it, so OpenAI decodes and plays the call's audio.
+    if (outboundCallId && settings.outboundCodec) withCodec(plan.update ?? plan.accept, `audio/${settings.outboundCodec}`);
     const accepted = await acceptWithRetry(callId, plan.accept);
     if (!accepted.ok) {
       log({ kind: accepted.gone ? "phone_gone" : "phone_accept_failed", callId, sessionId, error: accepted.error });
@@ -228,7 +235,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
     // Kritva's own outbound call, bridged to OpenAI by Vobiz once they answered: join its session.
     const outbound = dialer?.match(headers) ?? null;
     if (outbound) {
-      log({ kind: "phone_outbound_bridged", callId, outboundCallId: outbound.callId, sessionId: outbound.sessionId, matchedBy: outbound.how, mediaSecurity: mediaSecurity ?? null, headerNames: headers.map((h) => h.name) });
+      log({ kind: "phone_outbound_bridged", callId, outboundCallId: outbound.callId, sessionId: outbound.sessionId, matchedBy: outbound.how, from: outbound.from, mediaSecurity: mediaSecurity ?? null, headerNames: headers.map((h) => h.name) });
       callers.set(callId, dialer?.dialledNumber(outbound.callId) ?? null);
       return answerInto(callId, outbound.sessionId, outbound.callId, { kind: "outbound" });
     }
@@ -300,8 +307,8 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
       }
     };
     const hangupXml = `<?xml version="1.0" encoding="UTF-8"?>\n<Response><Hangup/></Response>`;
-    app.post("/api/phone/vobiz/:token/answer", (c) => {
-      const xml = dialer.answered(c.req.param("token"));
+    app.post("/api/phone/vobiz/:token/answer", async (c) => {
+      const xml = await dialer.answered(c.req.param("token"));
       return c.body(xml ?? hangupXml, 200, { "Content-Type": "application/xml" });
     });
     app.post("/api/phone/vobiz/:token/ring", (c) => c.json({ ok: dialer.ringing(c.req.param("token")) }));

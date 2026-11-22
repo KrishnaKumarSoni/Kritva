@@ -116,6 +116,8 @@ Phone calls are on when `OPENAI_API_KEY` is set with realtime voice on (`KRITVA_
 | `VOBIZ_TRUNK_ID` | (none) | Only for `scripts/vobiz-trunk.ts` (section 9.2). |
 | `KRITVA_PHONE_CALLER_ID` | (none) | Outbound: Kritva's Vobiz number, the caller ID. |
 | `KRITVA_PUBLIC_URL` | (none) | Outbound: the public `https://` base URL Vobiz calls back (the tunnel or the deployed host). |
+| `KRITVA_PHONE_BRIDGE` | `number` | Outbound: how an answered call reaches OpenAI. `number` forwards it to Kritva's own Vobiz number (through the inbound trunk); `sip` dials OpenAI's SIP address directly, tagged. Both were silent on 2026-11-22 (section 15.4). |
+| `KRITVA_PHONE_OUTBOUND_CODEC` | (none) | Outbound: declare `pcmu` or `pcma` to OpenAI for calls Kritva placed. Declaring PCMU did not help on 2026-11-22. |
 | `KRITVA_PHONE_OUTBOUND_ALLOW` | (none) | Outbound: the only numbers Kritva may call, comma-separated, or `*`. Empty means nothing can be dialled. |
 
 The realtime settings (`KRITVA_REALTIME_*`, `KRITVA_VOICE_LANGUAGES`) apply to phone calls too.
@@ -262,7 +264,7 @@ Run them with the rest of the server tests: `npx vitest run --testTimeout=30000`
 
 ## 15. Outbound calls (Kritva dials the counterparty)
 
-For negotiations where the principal gives Kritva numbers to call (the multiple-counterparties work decides how those are organised). Built on 2026-11-22. **The first live call connected but was silent both ways because of Vobiz's NAT on the bridge (section 15.4).**
+For negotiations where the principal gives Kritva numbers to call (the multiple-counterparties work decides how those are organised). Built on 2026-11-22. **Live calls connect end to end but are silent: audio does not cross the second leg Vobiz's dialling servers place (section 15.4).**
 
 ### 15.1 How a call works
 
@@ -305,9 +307,20 @@ What did not: **no audio either way**. OpenAI never heard the person (no `input_
 
 Since then, Vobiz's hang-up callback ends Kritva's side of a bridged call at once (before, the silence timer ended it after 81 s).
 
-Ways forward, none tried yet:
-- **Vobiz support**: ask them to advertise the public address (`18.96.230.113`) for `<Dial><User>` calls to an external SIP URI, as their inbound trunk media servers do. Call IDs: Vobiz `d5befe4d-fd03-4e4d-82ae-b966cc0653d4`, OpenAI `rtc_u7_Emrq1p3oNJbm5taiW7wqFAb3tEFOXjwO`, 2026-11-22 02:43 UTC.
-- **Bridge through Kritva's own number**: `<Dial><Number>` to Kritva's Vobiz number, so the second leg comes in through the inbound trunk, whose audio path works. It costs extra legs per minute, and the tag would not survive, so concurrent calls would rely on the "one call waiting" match.
+Two more live attempts the same day, both connected end to end and both silent:
+
+| Attempt | What reached OpenAI | Vobiz's record of the legs |
+|---|---|---|
+| 1. `<Dial><User>` to OpenAI's SIP address | from a NAT'd dialling server (`10.1.35.193`) | phone leg PCMU, 0.5% loss; SIP leg PCMU |
+| 2. `<Dial><Number>` to Kritva's own number (`KRITVA_PHONE_BRIDGE=number`) | through the inbound trunk, from a public media server (`18.96.232.170`), matched as the one waiting call | phone leg PCMU, 0.6% loss; **forwarding leg PCMU, 100% loss**; inbound leg PCMU, 15% loss |
+| 3. As 2, declaring `audio/pcmu` to OpenAI (`KRITVA_PHONE_OUTBOUND_CODEC`) | the same, `session.updated` with no error | the same pattern |
+
+In every case OpenAI saw no audio from the far end (no `input_audio_buffer.*`) and never started playing (no `output_audio_buffer.*`), although the response was generated. The working inbound call, by contrast, came straight from a caller's network (PCMA) through the inbound trunk. **Conclusion: audio does not cross the second leg that Vobiz's dialling servers place with `<Dial>`** (100% loss on the forwarding leg), whatever its target. Kritva cannot fix that; Vobiz can.
+
+Ways forward:
+- **Vobiz support**, with these calls: Vobiz call `d5befe4d-fd03-4e4d-82ae-b966cc0653d4` (02:43 UTC, SIP bridge) and `c048c153-6f36-4dba-832a-a9677ae0e4e5` (03:00 UTC, forward to own number, 100% loss on the forwarding leg).
+- **Stream the audio through Kritva's server** (Vobiz's `<Stream>` verb to a WebSocket, relayed to OpenAI's realtime WebSocket in G.711 mu-law). It avoids the `<Dial>` bridge entirely but is a larger build: the server carries the audio, and delivery must come from the stream's playback marks instead of OpenAI's playback events.
 - **OpenAI's Live API** dials out itself through a SIP trunk, but needs `gpt-live-1` and a different call controller.
+- For a demo today, multiple counterparties work over **inbound** phone calls (counterparties call Kritva's number), browser voice and chat.
 
 Still open: the greeting. The engine's opening line is written for a call the counterparty started; the outbound opener (`engine.greet({ ..., outbound: true })`) comes with the multiple-counterparties work.
