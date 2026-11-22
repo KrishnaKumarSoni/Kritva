@@ -182,7 +182,8 @@ export class NegotiationEngine {
       // (offer, acceptance, approval, agreement), resume it; otherwise return what was recorded.
       const after = (await this.#record.read(sessionId, { viewer: "operator" })).filter((e) => e.seq > inbound.event.seq);
       // A turn whose message could not be read (recorded as a failed read) is resumed too.
-      const resumable = after.every((e) => e.type === "offer_extracted" || e.type === "decision" || e.type === "question_prepared" || (e.type === "counterparty_noted" && (e.payload as { failed: boolean }).failed));
+      // Records of the reading and the decision commit nothing; anything sent, offered or agreed does.
+      const resumable = after.every((e) => ["offer_extracted", "decision", "question_prepared", "counterparty_noted", "question_answered", "proposal_checked", "term_requested", "reply_blocked"].includes(e.type));
       if (!resumable || after.some((e) => e.type === "message")) return this.#replay(sessionId, inbound.event, started);
       existingOfferId = after.find((e) => e.type === "offer_extracted")?.id ?? null;
     } else {
@@ -251,7 +252,14 @@ export class NegotiationEngine {
         }
         // Requests the mandate does not cover are recorded as the counterparty's, never as the principal's terms.
         const requestedIds: string[] = [];
+        const alreadyRequested = (await this.#record.read(sessionId, { viewer: "operator" })).filter((e) => e.type === "term_requested" && (e.payload as { sourceMessageId: string }).sourceMessageId === inbound.event.id);
         for (const t of interp.newTerms) {
+          const previous = alreadyRequested.find((e) => (e.payload as { name: string }).name === t.name);
+          if (previous) {
+            requestedIds.push(previous.id);
+            related.push(previous.id);
+            continue;
+          }
           const requested = await writes.put(
             { id: newEventId(), type: "term_requested", channel: null, payload: { sourceMessageId: inbound.event.id, byPartyId: counterpartyId, name: t.name, description: t.description, value: t.value } },
             agent,
@@ -485,13 +493,16 @@ export class NegotiationEngine {
     const items = (input.interp.notes ?? [])
       .filter((n) => kinds.has(n.kind) && quoteAppearsIn(input.text, n.quote))
       .map((n) => ({ kind: n.kind as never, quote: n.quote, summary: n.summary, termId: n.termId, value: n.value, condition: n.condition, basis: n.basis }));
-    if (items.length > 0 || input.failed) {
+    // A resumed turn (its first attempt was cut off) keeps the reading it already recorded.
+    const earlier = (await this.#record.context(input.sessionId)).events.filter((e) => (e.payload as { sourceMessageId?: string }).sourceMessageId === input.inboundId);
+    const noted = earlier.some((e) => e.type === "counterparty_noted" && !(e.payload as { failed: boolean }).failed);
+    if ((items.length > 0 || input.failed) && !noted) {
       await writes.put({ id: newEventId(), type: "counterparty_noted", channel: null, payload: { sourceMessageId: input.inboundId, failed: input.failed, items } }, input.agent);
     }
     const before = projectCounterparty(await this.#record.context(input.sessionId), null);
     for (const a of input.interp.answers ?? []) {
       const q = before.questions.find((x) => x.id === a.questionId && (x.status === "asked" || x.status === "partial"));
-      if (!q) continue;
+      if (!q || earlier.some((e) => e.type === "question_answered" && (e.payload as { questionId: string }).questionId === q.id)) continue;
       await writes.put(
         { id: newEventId(), type: "question_answered", channel: null, payload: { questionId: q.id, sourceMessageId: input.inboundId, quote: a.quote && quoteAppearsIn(input.text, a.quote) ? a.quote : null, resolution: a.resolution } },
         input.agent,

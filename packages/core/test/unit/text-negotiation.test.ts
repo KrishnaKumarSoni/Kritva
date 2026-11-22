@@ -976,5 +976,25 @@ describe("A budget below the price keeps the negotiation moving (reported chat, 
     const turn = await say(text, { intent: "question", public_term_questions: [{ term_id: "term_price", basis: "current", quote: text }] });
     expect(turn.events.find((e) => e.type === "offer_extracted")?.payload).toMatchObject({ terms: [{ termId: "term_price", value: { amount: mine } }] });
   });
+
+  it('"Is that your final rate?" tells the writer never to answer yes or no, whichever move answers it', async () => {
+    const { say, llm } = await setup(listingOnlyDeliveryMandate(18_000));
+    const text = "Is that your final rate?";
+    await say(text, { intent: "question", pressure: "final_offer", public_term_questions: [{ term_id: "term_price", basis: "current", quote: text }] });
+    const brief = JSON.parse(llm.seen.findLast((r) => r.purpose === "compose_reply")!.messages[0]!.content);
+    expect(brief.must.join(" ")).toMatch(/Do not answer yes or no/);
+  });
+
+  it("a turn cut off after its reading was recorded (a server restart) resumes on retry and sends a reply, without noting it twice", async () => {
+    const { say, record, sessionId, state, events } = await setup(listingOnlyDeliveryMandate(18_000));
+    const buyer = (await state()).view.counterpartyId;
+    const text = "Max I can pay is 17500.";
+    await record.append(sessionId, { id: "msg_cut1", type: "message", channel: "text", payload: { direction: "inbound", speakerPartyId: buyer, text, utteranceId: null, offerIds: [] } }, { kind: "counterparty", partyId: buyer });
+    await record.append(sessionId, { id: "noted_cut1", type: "counterparty_noted", channel: null, payload: { sourceMessageId: "msg_cut1", failed: false, items: [{ kind: "budget", quote: text, summary: "Stated budget.", termId: "term_price", value: { type: "money", amount: 17_500, currency: "INR" }, condition: null, basis: "stated" }] } }, { kind: "agent", partyId: (await state()).view.principalId });
+    const retried = await say(text, { notes: [{ kind: "budget", quote: text, summary: "Stated budget.", term_id: "term_price", value: v("money", { amount: 17_500 }), condition: null, basis: "stated" }] }, { messageId: "msg_cut1" });
+    expect(retried.reply).not.toBeNull();
+    expect((await events()).filter((e) => e.type === "counterparty_noted" && (e.payload as { sourceMessageId: string }).sourceMessageId === "msg_cut1")).toHaveLength(1);
+    expect((await events()).filter((e) => e.type === "message" && (e.payload as { direction: string }).direction === "inbound")).toHaveLength(1);
+  });
 });
 

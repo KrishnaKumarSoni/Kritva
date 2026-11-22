@@ -194,7 +194,7 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
     : "This is a chat. Write in warm, complete sentences that respond to what they said; one to three sentences. Promise nothing the brief does not say: no checking with anyone, holding or coming back to them unless the brief says so.");
   if (plan.notice && notice[plan.notice]) must.unshift(notice[plan.notice]!);
   // "Is that your final price?" is answered with the current terms, never a yes or no: either would mislead.
-  if (plan.move === "price_pressure" && input.theirMessage && /\bfinal\b|\bbest you can\b|\blast price\b/i.test(input.theirMessage)) must.push("They asked whether this is your final price. Do not answer yes or no and do not call it final: say it is the current price and ask what they can do.");
+  if (["price_pressure", "answer_public_terms", "answer", "hold", "counter", "answer_enquiry", "explain_price", "compare_terms"].includes(plan.move) && input.theirMessage && /\bfinal\b|\bbest you can\b|\blast price\b/i.test(input.theirMessage)) must.push("They asked whether this is your final price. Do not answer yes or no and do not call it final: say it is the current price.");
   if (plan.move === "hold" || plan.move === "price_pressure") must.push("Hold by stating the amount positively (\"The price is ...\"). Never say you can't go lower, can't move or can't change it \"right now\": that hints at a limit.");
   if (plan.move === "end_negotiation") {
     must.push(plan.end?.requestedBy === "principal"
