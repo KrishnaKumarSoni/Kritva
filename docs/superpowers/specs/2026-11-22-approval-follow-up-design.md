@@ -171,3 +171,25 @@ The buyer side already shows the call transcript in the chat and turns typing of
 
 - Unit tests for the policy (wrap-up order, each detail asked once, close and end-call, the decision table, expiry wording), the record rules (acceptance after approval, countered), the state projection (follow-up details), the server routes (decision API, Vobiz webhooks with a fake Vobiz, follow-up scheduler, retry and lapse), and the voice end-call.
 - Live scenarios, one per behaviour: wrap-up in chat, approve then yes, approve after expiry, counter then a new approval, decline with keep-contact, a changed term on the follow-up, and lapse. (Two buyers on one item is tested by the multi-party work.) Scenarios 12, 13 and 27 are updated for the yes after approval. A full eval run shows no regressions.
+
+## 13. As built (2026-11-22)
+
+**Turning on Vobiz call-backs.** Phone calls must be on (docs/Kritva_Phone_Calls.md). Then set, in `.env`:
+
+| Variable | Value |
+|---|---|
+| `VOBIZ_AUTH_ID`, `VOBIZ_AUTH_TOKEN` | Already set for the trunk. |
+| `KRITVA_FOLLOW_UP_FROM` | Kritva's Vobiz number, the caller ID the buyer sees (for example `+91 80 7123 4567`). |
+| `KRITVA_PUBLIC_URL` | The https tunnel to this server (the same one OpenAI's webhook uses). |
+| `KRITVA_FOLLOW_UP_SIP_URI` | Optional. Defaults to OpenAI's SIP address with `;transport=tls`. If the bridge to OpenAI fails on the first live test, set it to `sip:<Kritva's Vobiz number>@<the trunk's domain>` so the call re-enters through the incoming trunk. |
+| `KRITVA_FOLLOW_UP_RETRY_MINUTES` | Optional, default 15. |
+
+The server prints `Call-backs: on (Vobiz).` at start. Without them, every follow-up goes to the buyer's chat, so the demo still works.
+
+**What a live test needs to confirm:** that Vobiz bridges the answered call to OpenAI over TLS and SRTP, and which header carries `KritvaFollowUp` (the server also matches the one call-back answered in the last 30 seconds).
+
+**Left for later** (agreed with the user: a five-minute demo first):
+- The chat follow-up has no reminder or lapse. Only call-backs retry once and lapse.
+- Call-backs in flight are kept in memory, so a server restart loses them.
+- Several buyers on one item is the multi-party session's work (section 8).
+- Incoming phone calls are not recorded. Browser calls and call-backs are.
