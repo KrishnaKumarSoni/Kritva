@@ -29,6 +29,23 @@ export interface Dialer {
   call(input: { sessionId: string; to: string; clientRequestId?: string }): Promise<{ ok: true; call: CallView } | { ok: false; code: string; message: string }>;
   listForSession(sessionId: string): CallView[] | Promise<CallView[]>;
   hangup(callId: string): Promise<unknown>;
+  /** Whether a number can be called from here (valid and allowed), without calling it. */
+  canDial?(to: string): { ok: true } | { ok: false; code: string; message: string };
+}
+
+/**
+ * Who the "call everyone" campaign reaches next. Each listed counterparty is reached once: someone
+ * with no negotiation yet gets a call (or a private link without a number), and someone who only
+ * got a link and hasn't said anything gets one call in that negotiation. Anyone who has talked,
+ * was already called, or whose negotiation ended is left alone.
+ */
+export interface CampaignPlan {
+  call: Array<{ entryId: string; name: string; sessionId: string | null }>;
+  link: Array<{ entryId: string; name: string }>;
+  /** Have a number Kritva can't call from this server, with why. */
+  blocked: Array<{ entryId: string; name: string; code: string; message: string }>;
+  /** Already reached once. */
+  reached: number;
 }
 
 /** When a deal went elsewhere: stop any call to that counterparty that has not been answered yet. */
@@ -106,6 +123,45 @@ export function registerGroupRoutes(app: Hono, deps: GroupRouteDeps): void {
     };
   };
 
+  const campaignPlan = async (mandateId: string): Promise<CampaignPlan> => {
+    const plan: CampaignPlan = { call: [], link: [], blocked: [], reached: 0 };
+    const group = groups.latestFor(mandateId);
+    const entries = library.counterparties(mandateId);
+    if (group?.concluded) return { ...plan, reached: entries.length };
+    const open = new Set(group ? await groups.openSessions(group) : []);
+    const dialCheck = (phone: string) => (dialer?.canDial ? dialer.canDial(phone) : ({ ok: true } as const));
+    for (const e of entries) {
+      const member = group?.members.filter((m) => m.entryId === e.id).at(-1) ?? null;
+      if (!member) {
+        if (!e.phone || !dialer) plan.link.push({ entryId: e.id, name: e.name });
+        else {
+          const ok = dialCheck(e.phone);
+          if (ok.ok) plan.call.push({ entryId: e.id, name: e.name, sessionId: null });
+          else plan.blocked.push({ entryId: e.id, name: e.name, code: ok.code, message: ok.message });
+        }
+        continue;
+      }
+      // Already in a negotiation: one call only for someone who got a link and hasn't said anything.
+      const linkOnly = e.phone && dialer && member.via !== "phone" && open.has(member.sessionId) && (await dialer.listForSession(member.sessionId)).length === 0;
+      const spoke = linkOnly ? (await record.context(member.sessionId)).events.some((ev) => ev.type === "message" && (ev.payload as { direction?: string }).direction === "inbound") : true;
+      if (linkOnly && !spoke) {
+        const ok = dialCheck(e.phone!);
+        if (ok.ok) plan.call.push({ entryId: e.id, name: e.name, sessionId: member.sessionId });
+        else plan.blocked.push({ entryId: e.id, name: e.name, code: ok.code, message: ok.message });
+      } else plan.reached += 1;
+    }
+    return plan;
+  };
+
+  // One campaign start (or single call) per mandate at a time, so a double click or a second tab
+  // can't reach anyone twice.
+  const running = new Map<string, Promise<unknown>>();
+  const oneAtATime = <T>(mandateId: string, run: () => Promise<T>): Promise<T> => {
+    const next = (running.get(mandateId) ?? Promise.resolve()).then(run, run);
+    running.set(mandateId, next.catch(() => undefined));
+    return next;
+  };
+
   app.get("/api/operator/library/:id/counterparties", async (c) => {
     const id = c.req.param("id");
     if (!found(id)) return c.json({ error: "not_found" }, 404);
@@ -135,31 +191,42 @@ export function registerGroupRoutes(app: Hono, deps: GroupRouteDeps): void {
     return c.json(await listView(id));
   });
 
-  /** Starts a negotiation for every listed counterparty that has none open, up to the cap. */
+  /**
+   * The campaign: reaches every listed counterparty not reached yet, once (see CampaignPlan). Kritva
+   * calls everyone with a number it may call; the others get a private link. Runs one at a time per
+   * mandate, so pressing it twice reaches nobody twice.
+   */
   app.post("/api/operator/library/:id/start", async (c) => {
     const id = c.req.param("id");
     const detail = found(id);
     if (!detail) return c.json({ error: "not_found" }, 404);
     const active = library.active(id);
     if (!active || detail.state !== "live") return c.json({ error: "not_live", message: "Make this mandate live before starting negotiations." }, 409);
-    const started: Array<{ entryId: string; sessionId: string }> = [];
-    const refused: Array<{ entryId: string; message: string }> = [];
-    const calls: Array<{ entryId: string; ok: boolean; message: string | null }> = [];
-    for (const entry of library.counterparties(id)) {
-      if (await openSessionFor(groups, id, entry.id)) continue;
-      const r = await startNegotiation(groups, record, { mandate: active.mandate, source: { mandateId: id, revision: active.revision }, entryId: entry.id, via: entry.phone && dialer ? "phone" : "link" });
-      if (!r.ok) {
-        refused.push({ entryId: entry.id, message: r.message });
-        continue;
+    if (groups.latestFor(id)?.concluded) return c.json({ error: "deal_concluded", message: "This deal is already agreed." }, 409);
+    const result = await oneAtATime(id, async () => {
+      const plan = await campaignPlan(id);
+      const entries = new Map(library.counterparties(id).map((e) => [e.id, e]));
+      const started: Array<{ entryId: string; sessionId: string }> = [];
+      const refused: Array<{ entryId: string; message: string }> = [];
+      const calls: Array<{ entryId: string; ok: boolean; message: string | null }> = [];
+      const begin = async (entryId: string, via: JoinVia) => {
+        const r = await startNegotiation(groups, record, { mandate: active.mandate, source: { mandateId: id, revision: active.revision }, entryId, via });
+        if (!r.ok) refused.push({ entryId, message: r.message });
+        else started.push({ entryId, sessionId: r.sessionId });
+        return r.ok ? r.sessionId : null;
+      };
+      for (const target of plan.call) {
+        const sessionId = target.sessionId ?? (await begin(target.entryId, "phone"));
+        const phone = entries.get(target.entryId)?.phone;
+        if (!sessionId || !phone || !dialer) continue;
+        const placed = await dialer.call({ sessionId, to: phone, clientRequestId: `campaign-${sessionId}` });
+        calls.push({ entryId: target.entryId, ok: placed.ok, message: placed.ok ? null : placed.message });
       }
-      started.push({ entryId: entry.id, sessionId: r.sessionId });
-      // Kritva calls everyone with a number; the others get their private link.
-      if (entry.phone && dialer) {
-        const placed = await dialer.call({ sessionId: r.sessionId, to: entry.phone, clientRequestId: `start-${r.sessionId}` });
-        calls.push({ entryId: entry.id, ok: placed.ok, message: placed.ok ? null : placed.message });
-      }
-    }
-    return c.json({ started, refused, calls, ...(await listView(id)) }, started.length > 0 ? 201 : 200);
+      for (const target of plan.link) await begin(target.entryId, "link");
+      return { started, refused, calls, blocked: plan.blocked };
+    });
+    const reachedNow = result.started.length + result.calls.filter((x) => x.ok).length;
+    return c.json({ ...result, ...(await listView(id)), campaign: await campaignPlan(id) }, reachedNow > 0 ? 201 : 200);
   });
 
   /** Calls one listed counterparty (again): their open negotiation, or a new one within the cap. */
@@ -170,17 +237,24 @@ export function registerGroupRoutes(app: Hono, deps: GroupRouteDeps): void {
     if (!entry) return c.json({ error: "not_found" }, 404);
     if (!entry.phone) return c.json({ error: "no_number", message: `${entry.name} has no phone number on the list.` }, 409);
     const body = await c.req.json<{ clientRequestId?: string }>().catch(() => ({}) as { clientRequestId?: string });
-    let sessionId = await openSessionFor(groups, id, entry.id);
-    if (!sessionId) {
-      const active = library.active(id);
-      if (!active || found(id)?.state !== "live") return c.json({ error: "not_live", message: "Make this mandate live before calling." }, 409);
-      const r = await startNegotiation(groups, record, { mandate: active.mandate, source: { mandateId: id, revision: active.revision }, entryId: entry.id, via: "phone" });
-      if (!r.ok) return c.json({ error: r.error, message: r.message }, r.status);
-      sessionId = r.sessionId;
-    }
-    const placed = await dialer.call({ sessionId, to: entry.phone, clientRequestId: typeof body.clientRequestId === "string" ? body.clientRequestId.slice(0, 100) : undefined });
-    if (!placed.ok) return c.json({ error: placed.code, message: placed.message }, 409);
-    return c.json({ call: placed.call }, 202);
+    const out = await oneAtATime(id, async (): Promise<{ status: 202 | 400 | 409; json: Record<string, unknown> }> => {
+      let sessionId = await openSessionFor(groups, id, entry.id);
+      if (!sessionId) {
+        // Each counterparty is negotiated with once: a finished negotiation isn't started over.
+        if (groups.latestFor(id)?.members.some((m) => m.entryId === entry.id)) return { status: 409, json: { error: "already_negotiated", message: `Kritva has already negotiated with ${entry.name} for this deal.` } };
+        const active = library.active(id);
+        if (!active || found(id)?.state !== "live") return { status: 409, json: { error: "not_live", message: "Make this mandate live before calling." } };
+        const r = await startNegotiation(groups, record, { mandate: active.mandate, source: { mandateId: id, revision: active.revision }, entryId: entry.id, via: "phone" });
+        if (!r.ok) return { status: r.status, json: { error: r.error, message: r.message } };
+        sessionId = r.sessionId;
+      }
+      // A call already on its way or connected is that call: pressing Call again doesn't ring them twice.
+      const current = (await dialer.listForSession(sessionId)).find((x) => x.state !== "ended");
+      if (current) return { status: 202, json: { call: current } };
+      const placed = await dialer.call({ sessionId, to: entry.phone!, clientRequestId: typeof body.clientRequestId === "string" ? body.clientRequestId.slice(0, 100) : undefined });
+      return placed.ok ? { status: 202, json: { call: placed.call } } : { status: 409, json: { error: placed.code, message: placed.message } };
+    });
+    return c.json(out.json, out.status);
   });
 
   /** The deal's board: one row per counterparty, the best live offer, pending approvals and the counters. */
@@ -190,7 +264,7 @@ export function registerGroupRoutes(app: Hono, deps: GroupRouteDeps): void {
     if (!detail) return c.json({ error: "not_found" }, 404);
     const group = groups.latestFor(id);
     const entries = library.counterparties(id);
-    if (!group) return c.json({ mandateId: id, title: detail.title, state: detail.state, max: groups.maxOpen, canCall: Boolean(dialer), rows: [], waiting: entries.map((e) => ({ entryId: e.id, name: e.name })), bestSessionId: null, reservation: null, concluded: null, counters: { negotiationsRun: 0, timeMs: 0, dealsOutsideLimits: 0 } });
+    if (!group) return c.json({ mandateId: id, title: detail.title, state: detail.state, max: groups.maxOpen, canCall: Boolean(dialer), campaign: await campaignPlan(id), rows: [], waiting: entries.map((e) => ({ entryId: e.id, name: e.name })), bestSessionId: null, reservation: null, concluded: null, counters: { negotiationsRun: 0, timeMs: 0, dealsOutsideLimits: 0 } });
     const live = deps.liveCalls?.() ?? null;
     const inputs = await Promise.all(group.members.map(async (m) => {
       const ctx = await record.context(m.sessionId);
@@ -245,6 +319,7 @@ export function registerGroupRoutes(app: Hono, deps: GroupRouteDeps): void {
       state: detail.state,
       max: groups.maxOpen,
       canCall: Boolean(dialer),
+      campaign: await campaignPlan(id),
       rows,
       waiting: entries.filter((e) => !started.has(e.id)).map((e) => ({ entryId: e.id, name: e.name })),
       bestSessionId: board.bestSessionId,

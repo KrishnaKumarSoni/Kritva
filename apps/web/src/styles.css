@@ -3768,6 +3768,11 @@ input {
   margin: 0 var(--space-4) var(--space-4);
   color: var(--color-text-secondary);
   font-size: var(--text-caption);
+  text-wrap: pretty;
+}
+/* A stable, empty live region until there is something to say, so each update is announced. */
+.counterparties-note:empty {
+  margin: 0;
 }
 .counterparties-message {
   margin: 0 var(--space-4) var(--space-4);

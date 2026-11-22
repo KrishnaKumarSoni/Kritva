@@ -38,6 +38,11 @@ class FakeDialer implements Dialer {
   readonly calls: CallView[] = [];
   readonly numbers: string[] = [];
   readonly hungUp: string[] = [];
+  /** Numbers (digits only) this server isn't allowed to call. */
+  readonly blocked = new Set<string>();
+  canDial(to: string) {
+    return this.blocked.has(to.replace(/\D/g, "")) ? { ok: false as const, code: "not_allowed", message: "Calling this number isn't allowed yet." } : { ok: true as const };
+  }
   async call(input: { sessionId: string; to: string; clientRequestId?: string }) {
     this.numbers.push(input.to);
     const call: CallView = { callId: `call_${this.calls.length + 1}`, sessionId: input.sessionId, to: "91******2345", state: "ringing", outcome: null, startedAt: new Date().toISOString() };
@@ -206,6 +211,70 @@ describe("several counterparties: Kritva calls them", () => {
     expect(again.status).toBe(202);
     await hangUpPending(dialer, again.json.call.sessionId);
     expect(dialer.hungUp).toEqual([again.json.call.callId]);
+  });
+});
+
+describe("several counterparties: the call-everyone campaign reaches each person once", () => {
+  it("pressing it twice, or twice at the same moment, calls each number once", async () => {
+    const dialer = new FakeDialer();
+    const { call, mandateId } = groupSetup(5, dialer);
+    await call("POST", `/api/operator/library/${mandateId}/counterparties`, { name: "Ravi", phone: "98450 12345" });
+    await call("POST", `/api/operator/library/${mandateId}/counterparties`, { name: "Asha", phone: "98450 67890" });
+    await call("POST", `/api/operator/library/${mandateId}/counterparties`, { name: "Meera" });
+    const before = (await call("GET", `/api/operator/library/${mandateId}/board`)).json.campaign;
+    expect(before.call.map((x: { name: string }) => x.name)).toEqual(["Ravi", "Asha"]);
+    expect(before.link.map((x: { name: string }) => x.name)).toEqual(["Meera"]);
+    const [a, b] = await Promise.all([call("POST", `/api/operator/library/${mandateId}/start`), call("POST", `/api/operator/library/${mandateId}/start`)]);
+    expect(a.json.started.length + b.json.started.length).toBe(3);
+    expect(dialer.numbers.sort()).toEqual(["9845012345", "9845067890"]);
+    const again = await call("POST", `/api/operator/library/${mandateId}/start`);
+    expect(again.status).toBe(200);
+    expect(again.json.started).toEqual([]);
+    expect(again.json.calls).toEqual([]);
+    expect(dialer.numbers).toHaveLength(2);
+    expect(again.json.campaign).toMatchObject({ call: [], link: [], blocked: [], reached: 3 });
+  });
+
+  it("calls someone who only had a link and hasn't spoken, once, in that same negotiation", async () => {
+    const dialer = new FakeDialer();
+    const { call, mandateId } = groupSetup(5, dialer);
+    const entry = (await call("POST", `/api/operator/library/${mandateId}/counterparties`, { name: "Ravi" })).json.entry;
+    const [linked] = (await call("POST", `/api/operator/library/${mandateId}/start`)).json.started as Array<{ sessionId: string }>;
+    await call("PATCH", `/api/operator/library/${mandateId}/counterparties/${entry.id}`, { name: "Ravi", phone: "98450 12345" });
+    const plan = (await call("GET", `/api/operator/library/${mandateId}/board`)).json.campaign;
+    expect(plan.call).toEqual([{ entryId: entry.id, name: "Ravi", sessionId: linked!.sessionId }]);
+    const started = await call("POST", `/api/operator/library/${mandateId}/start`);
+    expect(started.json.started).toEqual([]);
+    expect(dialer.calls.map((c) => c.sessionId)).toEqual([linked!.sessionId]);
+    await call("POST", `/api/operator/library/${mandateId}/start`);
+    expect(dialer.calls).toHaveLength(1);
+  });
+
+  it("leaves alone someone who already talked, and holds back numbers this server can't call", async () => {
+    const dialer = new FakeDialer();
+    dialer.blocked.add("9845067890");
+    const { call, mandateId, say } = groupSetup(5, dialer);
+    const ravi = (await call("POST", `/api/operator/library/${mandateId}/counterparties`, { name: "Ravi" })).json.entry;
+    const [linked] = (await call("POST", `/api/operator/library/${mandateId}/start`)).json.started as Array<{ sessionId: string }>;
+    await say(linked!.sessionId, "Is it still available?");
+    await call("PATCH", `/api/operator/library/${mandateId}/counterparties/${ravi.id}`, { name: "Ravi", phone: "98450 12345" });
+    await call("POST", `/api/operator/library/${mandateId}/counterparties`, { name: "Asha", phone: "98450 67890" });
+    const plan = (await call("GET", `/api/operator/library/${mandateId}/board`)).json.campaign;
+    expect(plan).toMatchObject({ call: [], link: [], reached: 1 });
+    expect(plan.blocked).toEqual([expect.objectContaining({ name: "Asha", message: expect.stringContaining("isn't allowed") })]);
+    const started = await call("POST", `/api/operator/library/${mandateId}/start`);
+    expect(started.json.started).toEqual([]);
+    expect(dialer.numbers).toEqual([]);
+  });
+
+  it("pressing Call twice rings them once while the first call is on its way", async () => {
+    const dialer = new FakeDialer();
+    const { call, mandateId } = groupSetup(5, dialer);
+    const entry = (await call("POST", `/api/operator/library/${mandateId}/counterparties`, { name: "Ravi", phone: "98450 12345" })).json.entry;
+    const [first, second] = await Promise.all([1, 2].map((i) => call("POST", `/api/operator/library/${mandateId}/counterparties/${entry.id}/call`, { clientRequestId: `click-${i}` })));
+    expect(first.status).toBe(202);
+    expect(second.json.call.callId).toBe(first.json.call.callId);
+    expect(dialer.numbers).toHaveLength(1);
   });
 });
 

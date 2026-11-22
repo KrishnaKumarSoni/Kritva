@@ -415,7 +415,7 @@ export interface BoardRowView {
   lastActivityAt: string;
   link: string;
   /** The latest call Kritva placed to them; the number is masked. */
-  call: { callId: string; to: string; state: "dialling" | "ringing" | "answered" | "connected" | "ended"; outcome: null | "completed" | "no_answer" | "busy" | "failed" | "blocked" | "cancelled" } | null;
+  call: { callId: string; to: string; state: "queued" | "dialling" | "ringing" | "answered" | "connected" | "ended"; outcome: null | "completed" | "no_answer" | "busy" | "failed" | "blocked" | "cancelled" } | null;
   approval: {
     requestId: string;
     offerId: string;
@@ -434,12 +434,25 @@ export interface BoardView {
   max: number;
   /** Kritva can call counterparties' numbers on this server. */
   canCall: boolean;
+  /** Who "call everyone" reaches next: each listed counterparty is reached once. */
+  campaign: CampaignView;
   rows: BoardRowView[];
   waiting: Array<{ entryId: string; name: string }>;
   bestSessionId: string | null;
   reservation: { sessionId: string; name: string | null } | null;
   concluded: { sessionId: string; name: string | null } | null;
   counters: { negotiationsRun: number; timeMs: number; dealsOutsideLimits: number };
+}
+
+export interface CampaignView {
+  /** Get a call (sessionId set when it continues a negotiation they had only a link to). */
+  call: Array<{ entryId: string; name: string; sessionId: string | null }>;
+  /** Get a private link: no number, or calling is off on this server. */
+  link: Array<{ entryId: string; name: string }>;
+  /** Have a number this server may not call yet, with why. */
+  blocked: Array<{ entryId: string; name: string; code: string; message: string }>;
+  /** Already reached once. */
+  reached: number;
 }
 
 export interface CounterpartyEntryView {
@@ -597,7 +610,7 @@ export const api = {
     counterparties: (mandateId: string) => call<CounterpartyListView>("GET", `/api/operator/library/${mandateId}/counterparties`),
     addCounterparty: (mandateId: string, input: { name: string; phone: string | null }) => call<CounterpartyListView>("POST", `/api/operator/library/${mandateId}/counterparties`, input),
     removeCounterparty: (mandateId: string, entryId: string) => call<CounterpartyListView>("DELETE", `/api/operator/library/${mandateId}/counterparties/${entryId}`),
-    start: (mandateId: string) => call<CounterpartyListView & { started: Array<{ entryId: string; sessionId: string }>; refused: Array<{ entryId: string; message: string }>; calls: Array<{ entryId: string; ok: boolean; message: string | null }> }>("POST", `/api/operator/library/${mandateId}/start`),
+    start: (mandateId: string) => call<CounterpartyListView & { started: Array<{ entryId: string; sessionId: string }>; refused: Array<{ entryId: string; message: string }>; calls: Array<{ entryId: string; ok: boolean; message: string | null }>; blocked: CampaignView["blocked"]; campaign: CampaignView }>("POST", `/api/operator/library/${mandateId}/start`),
     callCounterparty: (mandateId: string, entryId: string) => call<unknown>("POST", `/api/operator/library/${mandateId}/counterparties/${entryId}/call`, { clientRequestId: crypto.randomUUID() }),
     recordTime: (mandateId: string, action: string, sessionId: string | null, ms: number) => call<unknown>("POST", `/api/operator/library/${mandateId}/time`, { action, sessionId, ms }),
   },

@@ -121,11 +121,20 @@ export class OutboundDialer {
     return result;
   }
 
-  async #place(sessionId: string, rawTo: string): Promise<CallResult> {
+  /** Whether a number can be called from this server (a real number on the allowed list), without calling it. */
+  canDial(rawTo: string): { ok: true } | { ok: false; code: OutboundError; message: string } {
     const s = this.#d.settings;
     const to = normalizeNumber(rawTo ?? "", s.countryCode);
     if (!/^\d{10,15}$/.test(to)) return fail("invalid_number", "That doesn't look like a phone number. Use the full number, for example +91 98765 43210.");
     if (!s.allow.includes("*") && !s.allow.includes(to)) return fail("not_allowed", "Calling this number isn't allowed yet. Add it to KRITVA_PHONE_OUTBOUND_ALLOW once calling it is approved.");
+    return { ok: true };
+  }
+
+  async #place(sessionId: string, rawTo: string): Promise<CallResult> {
+    const s = this.#d.settings;
+    const to = normalizeNumber(rawTo ?? "", s.countryCode);
+    const dialable = this.canDial(rawTo);
+    if (!dialable.ok) return dialable;
     const briefing = await this.#d.engine.voiceBriefing(sessionId);
     if (!briefing || briefing.status !== "active") return fail("session_not_active", "This negotiation isn't active, so Kritva can't call about it.");
 
