@@ -49,7 +49,20 @@ await new Promise((r) => (ws.onopen = r));
 ws.send(JSON.stringify({ type: "session.update", session }));
 await new Promise<void>((r) => observers.push((e) => e.type === "session.updated" && r()));
 
-const call = new RealtimeCall({ engine, record, sessionId, link, afterSeq: 0, log: (entry) => console.log("  [controller]", JSON.stringify(entry)) });
+let hungUp = false;
+const call = new RealtimeCall({
+  engine,
+  record,
+  sessionId,
+  link,
+  afterSeq: 0,
+  log: (entry) => console.log("  [controller]", JSON.stringify(entry)),
+  // Kritva decided the call is over: noted here instead of hanging up a phone line.
+  hangup: async () => {
+    hungUp = true;
+    console.log("  [hangup] Kritva ended the call");
+  },
+});
 const said: string[] = [];
 /** Times from the end of the clip's speech (before the trailing silence). */
 let clipEnd = 0;
@@ -75,7 +88,7 @@ observers.push((e) => {
 
 /** Waits until the call is idle and nothing has arrived for a while (audio still plays after generation). */
 const quiet = async (ms: number) => {
-  while (performance.now() - last < ms || !call.idle) await new Promise((r) => setTimeout(r, 200));
+  while ((performance.now() - last < ms || !call.idle) && !call.closed) await new Promise((r) => setTimeout(r, 200));
 };
 const sendClip = async (pcm: Buffer) => {
   const chunk = 4_800; // 100 ms
@@ -102,7 +115,12 @@ for (const clip of clips) {
   console.log(`  ms after speech ended: ${JSON.stringify(marks)}`);
   clipEnd = 0;
   for (const s of said.splice(0)) console.log(`  ${s}`);
+  if (hungUp || call.closed) {
+    console.log("  (the call has ended)");
+    break;
+  }
 }
+console.log(`\ncall ended by Kritva: ${hungUp ? "yes" : "no"}`);
 
 const ctx = await record.context(sessionId);
 console.log("\nrecorded messages:");

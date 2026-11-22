@@ -346,3 +346,147 @@ describe("Realtime voice: no silence during a wait (the agent decides)", () => {
     call.close();
   });
 });
+
+describe("Realtime voice: the agent knows when the call is over, and ends it gracefully", () => {
+  const endCall = (call_id = "call_end", reason = "They said goodbye.") => ({ type: "function_call", name: "end_call", call_id, arguments: JSON.stringify({ reason }) });
+  /** A finished response with an id, so its playback can be reported. */
+  const finish = (t: Awaited<ReturnType<typeof setup>>, id: string, output: Array<Record<string, unknown>>, metadata: Record<string, string> | null = null, status = "completed") => {
+    t.link.emit({ type: "response.created", response: { id, metadata } });
+    t.link.emit({ type: "response.done", response: { id, status, metadata, output } });
+  };
+  const outputs = (link: FakeLink) =>
+    link.sent.filter((e) => e.type === "conversation.item.create" && e.item?.type === "function_call_output").map((e) => ({ callId: e.item.call_id as string, ...JSON.parse(e.item.output) }));
+  const waitFor = async (check: () => Promise<boolean> | boolean, ms = 3_000) => {
+    const end = Date.now() + ms;
+    while (!(await check())) {
+      if (Date.now() > end) throw new Error("timed out");
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  };
+  async function live(t: Awaited<ReturnType<typeof setup>>, status: (() => string) | null = null, waitSensor: Partial<{ quietMs: number; sampleMs: number; overQuietMs: number }> = {}) {
+    let hangups = 0;
+    const logs: Array<Record<string, unknown>> = [];
+    const record = status
+      ? new Proxy(t.record, {
+          get(target, prop, receiver) {
+            if (prop === "context") return async (id: string) => ({ ...(await target.context(id)), status: status() });
+            const value = Reflect.get(target, prop, receiver);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        })
+      : t.record;
+    const call = new RealtimeCall({ engine: t.engine, record, sessionId: t.sessionId, link: t.link, afterSeq: 0, pollMs: 25, waitSensor, log: (e) => logs.push(e), hangup: async () => void (hangups += 1) });
+    await call.start();
+    t.done([t.spoken("x")], { kritva: "say", message_id: t.link.says()[0]?.messageId ?? "none" });
+    return { call, logs, hangups: () => hangups };
+  }
+  const theySay = (t: Awaited<ReturnType<typeof setup>>, item: string, words: string) => {
+    t.link.emit({ type: "input_audio_buffer.committed", item_id: item });
+    t.link.emit({ type: "conversation.item.input_audio_transcription.completed", item_id: item, transcript: words });
+  };
+
+  it("every call gets end_call and the plain-text guide on when a call is over", async () => {
+    const t = await setup();
+    await t.startCall();
+    const session = t.connector.sessions[0]!;
+    expect(session.tools.map((x: { name: string }) => x.name)).toEqual(["negotiate", "end_call"]);
+    expect(session.instructions).toMatch(/Ending the call/);
+    expect(session.instructions).toMatch(/Say the goodbye first, then call end_call/);
+    // An engine reply may close the call too: the agent decides after saying it.
+    await until(() => t.link.says().length === 1);
+    const say = t.link.sent.find((e) => e.type === "response.create" && e.response.metadata?.kritva === "say")!;
+    expect(say.response.tools.map((x: { name: string }) => x.name)).toEqual(["end_call"]);
+  });
+
+  it("they say goodbye: the agent's goodbye is kept and checked, and the call hangs up only once it has played", async () => {
+    const t = await setup();
+    const { call, hangups, logs } = await live(t);
+    theySay(t, "item_bye", "Okay, thanks, bye!");
+    finish(t, "resp_bye", [t.spoken("Thanks so much for your time. Take care, bye!"), endCall()]);
+    await waitFor(() => logs.some((l) => l.kind === "ending"));
+    await new Promise((r) => setTimeout(r, 200));
+    expect(hangups()).toBe(0);
+    t.link.emit({ type: "output_audio_buffer.stopped", response_id: "resp_bye" });
+    await waitFor(() => hangups() === 1);
+    expect(call.closed).toBe(true);
+    expect(logs.find((l) => l.kind === "call_ended_by_agent")?.reason).toBe("They said goodbye.");
+    expect((await t.messages()).some((m) => m.direction === "outbound" && /Take care, bye!/.test(m.text))).toBe(true);
+  });
+
+  it("they start talking before the goodbye has played: nothing hangs up, and the agent hears the call goes on", async () => {
+    const t = await setup();
+    const { call, hangups, logs } = await live(t);
+    theySay(t, "item_bye2", "Okay, bye then.");
+    finish(t, "resp_bye2", [t.spoken("Bye, take care!"), endCall("call_end2")]);
+    await waitFor(() => logs.some((l) => l.kind === "ending"));
+    t.link.emit({ type: "input_audio_buffer.speech_started" });
+    t.link.emit({ type: "output_audio_buffer.stopped", response_id: "resp_bye2" });
+    await new Promise((r) => setTimeout(r, 700));
+    expect(hangups()).toBe(0);
+    expect(call.closed).toBe(false);
+    expect(outputs(t.link).find((o) => o.callId === "call_end2")).toMatchObject({ ended: false });
+    call.close();
+  });
+
+  it("end_call with no goodbye: the agent is asked for its goodbye first, and nothing hangs up on silence", async () => {
+    const t = await setup();
+    const { call, hangups } = await live(t);
+    theySay(t, "item_bye3", "That's all, thanks.");
+    finish(t, "resp_silent", [endCall("call_end3")]);
+    await waitFor(() => outputs(t.link).some((o) => o.callId === "call_end3"));
+    expect(outputs(t.link).find((o) => o.callId === "call_end3")!.note).toMatch(/goodbye/);
+    const asked = t.link.sent.filter((e) => e.type === "response.create" && !e.response.metadata && e.response.tools?.[0]?.name === "end_call");
+    expect(asked).toHaveLength(1);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(hangups()).toBe(0);
+    call.close();
+  });
+
+  it("a goodbye that breaks a rule is corrected, and the call goes on", async () => {
+    const t = await setup();
+    const { call, hangups } = await live(t);
+    theySay(t, "item_bye4", "Fine, bye.");
+    finish(t, "resp_bad", [t.spoken("Great, ₹17,500 it is then. Bye!"), endCall("call_end4")]);
+    await waitFor(() => t.link.says().some((x) => /ignore what I just said/.test(x.text)));
+    await waitFor(() => outputs(t.link).some((o) => o.callId === "call_end4"));
+    expect(outputs(t.link).find((o) => o.callId === "call_end4")).toMatchObject({ ended: false });
+    t.link.emit({ type: "output_audio_buffer.stopped", response_id: "resp_bad" });
+    await new Promise((r) => setTimeout(r, 600));
+    expect(hangups()).toBe(0);
+    call.close();
+  });
+
+  it("an engine reply closes the call when they had already said goodbye: it hangs up once the reply has played", async () => {
+    const t = await setup();
+    const { call, hangups } = await live(t);
+    t.llm.interpretations.push({ intent: "other", ends_negotiation: true });
+    theySay(t, "item_walk", "I'm not interested anymore, bye.");
+    t.done([t.spoken("Okay."), { type: "function_call", name: "negotiate", call_id: "call_walk", arguments: JSON.stringify({ their_words: "I'm not interested anymore, bye.", language: "en" }) }]);
+    await waitFor(() => t.link.says().length === 2);
+    const reply = t.link.says()[1]!;
+    finish(t, "resp_close", [t.spoken(reply.text), endCall("call_end5", "They walked away and said goodbye.")], { kritva: "say", message_id: reply.messageId });
+    t.link.emit({ type: "output_audio_buffer.stopped", response_id: "resp_close" });
+    await waitFor(() => hangups() === 1);
+    expect(call.closed).toBe(true);
+  });
+
+  it("after the negotiation has finished, a quiet line is reported to the agent, which may say goodbye and end the call", async () => {
+    const t = await setup();
+    let status = "active";
+    const { call, hangups } = await live(t, () => status, { sampleMs: 20, overQuietMs: 80 });
+    const reports = () => t.link.sent.filter((e) => e.type === "response.create" && e.response.metadata?.situation === "over");
+    await new Promise((r) => setTimeout(r, 250));
+    expect(reports()).toHaveLength(0);
+    status = "agreed";
+    await waitFor(() => reports().length >= 1);
+    const report = reports()[0]!;
+    expect(report.response.tools.map((x: { name: string }) => x.name)).toEqual(["end_call", "stay_quiet"]);
+    expect(String(report.response.instructions)).toMatch(/the negotiation has agreed/);
+    finish(t, "resp_over", [t.spoken("Thanks again, looking forward to it. Bye!"), endCall("call_end6", "The deal is done and the line went quiet.")], { kritva: "wait", situation: "over" });
+    t.link.emit({ type: "output_audio_buffer.stopped", response_id: "resp_over" });
+    await waitFor(() => hangups() === 1);
+    // Out of band, the end_call is not in the conversation, so it gets no output.
+    expect(outputs(t.link).some((o) => o.callId === "call_end6")).toBe(false);
+    expect(call.closed).toBe(true);
+  });
+});

@@ -65,6 +65,19 @@ Silence on a call sounds like a dropped line. The agent decides how to keep the 
 
 Phone calls use the same controller.
 
+## 6b. Knowing when the call is over
+
+A call that stays open after the conversation has ended sounds odd, and one cut off mid-goodbye sounds rude. The agent decides when the call is over and ends it itself; code only carries that out gracefully. (Added 2026-11-22.)
+
+- **What the agent has:** an `end_call` tool, and `apps/server/src/voice-ending-guide.md` (plain text) in its instructions: when a call is over (they say goodbye or want to stop, or the negotiation has finished and nothing is left), when it is not (an open question or offer, a short pause, a wait for a reply or for the person represented, or doubt, where it asks if there is anything else), and how to end (one short, warm goodbye in their language that fits how the call went, adding nothing new, then `end_call` in the same turn).
+- **Where it decides:**
+  - its own conversation turns, for example when they say "okay, thanks, bye";
+  - right after saying an engine reply, if they had already said goodbye (for example "not interested anymore, bye" goes to the engine, and the agent ends the call after saying its reply);
+  - once the negotiation has finished (agreed, no agreement or ended), when the line has been quiet for 6 seconds: code reports that, with the last words on each side, and the agent says goodbye and ends, asks if there is anything else, or stays quiet (at most twice per call).
+- **What code does:** it hangs up only after the goodbye has played (`output_audio_buffer.stopped` for that response, then 0.4 s; without playback events, a generous estimate of its length). If they start speaking first, nothing is hung up and the agent is told the call goes on. An `end_call` without a goodbye gets one request for the goodbye first; a goodbye that fails a check is corrected and the call goes on. Anything still being said or decided finishes first. Then the call is hung up at OpenAI and recorded as ended by Kritva (`reason: server`), as the approval wrap-up already did.
+- **Unchanged:** the approval wrap-up and the agreement on a call-back still end the call after their last reply (the engine marks those), and on the phone the silence check and time limit stay as the safety net.
+- **Live check (2026-11-22):** in English, "how old is it?" kept the call open, and "Thanks a lot, bye" got "Thanks for your time. Bye for now." and a hang-up after it. In Hindi, after a counteroffer, "अच्छा, नमस्ते" got a warm Hindi goodbye that left the door open, then a hang-up.
+
 ## 7. Expectations (measured 2026-11-22, then estimated for the live call)
 
 Measured on 2026-11-22 with the live check (`apps/server/scripts/realtime-check.ts`), recorded Hindi, Tamil, English and Hinglish speech, the real engine and `gpt-realtime-2.1`. Times are from the end of their speech; they include about 0.3 to 0.8 s for the model to decide they finished.
@@ -102,7 +115,7 @@ Built and tested on a live call: see `docs/Kritva_Phone_Calls.md` for the design
 
 - Unit and server tests for the controller with a scripted fake realtime connection: routing, verbatim speech, checks on the model's own words, correction, engine-initiated messages, delivery mapping and errors.
 - The existing core, server and replay tests must all still pass.
-- Live checks: `node --env-file=.env apps/server/scripts/realtime-check.ts <clips-dir> <clips...>` plays recorded speech into a real call with the real engine and prints what Kritva said, what it read and the timings. A browser call was also checked end to end: the call connects through the server, the greeting plays, and its delivery is recorded when playback finishes.
+- Live checks: `node --env-file=.env apps/server/scripts/realtime-check.ts <clips-dir> <clips...>` plays recorded speech into a real call with the real engine and prints what Kritva said, what it read and the timings, and stops when Kritva ends the call. A browser call was also checked end to end: the call connects through the server, the greeting plays, and its delivery is recorded when playback finishes.
 
 ## 12. Known limits
 
