@@ -3,6 +3,7 @@ import { api, ApiError, type BuyerView, type MandateOption, type OperatorView } 
 import { Chat } from "./Chat.tsx";
 import { InsightsPanel } from "./InsightsPanel.tsx";
 import { MandatesPage } from "./MandatesPage.tsx";
+import { BoardPage } from "./BoardPage.tsx";
 import { Select } from "./Select.tsx";
 
 const POLL_MS = 2500;
@@ -33,7 +34,7 @@ export function App() {
   const reported = useRef(new Set<string>());
   const [mandates, setMandates] = useState<MandateOption[]>([]);
   const [mandateId, setMandateId] = useState<string | null>(null);
-  const [view, setView] = useState<"negotiation" | "instructions">("negotiation");
+  const [view, setView] = useState<"deals" | "negotiation" | "instructions">("negotiation");
   const [openMandate, setOpenMandate] = useState<string | null>(null);
 
   const loadMandates = useCallback(() => {
@@ -217,7 +218,7 @@ export function App() {
         </span>
         {access && (
           <nav className="view-switch" aria-label="Views">
-            {(["negotiation", "instructions"] as const).map((v) => (
+            {(["deals", "negotiation", "instructions"] as const).map((v) => (
               <button
                 key={v}
                 type="button"
@@ -225,11 +226,11 @@ export function App() {
                 aria-current={view === v ? "page" : undefined}
                 onClick={() => {
                   setView(v);
-                  if (v === "negotiation") loadMandates();
-                  else setOpenMandate(null);
+                  if (v === "negotiation" || v === "deals") loadMandates();
+                  if (v !== "negotiation") setOpenMandate(null);
                 }}
               >
-                {v === "negotiation" ? "Negotiation" : "Mandates"}
+                {v === "deals" ? "Deals" : v === "negotiation" ? "Negotiation" : "Mandates"}
               </button>
             ))}
           </nav>
@@ -258,6 +259,15 @@ export function App() {
         </div>
       </header>
 
+      {access && view === "deals" && (
+        <BoardPage
+          mandates={mandates}
+          onOpen={(id) => {
+            setSessionId(id);
+            setView("negotiation");
+          }}
+        />
+      )}
       {access && view === "instructions" && (
         <MandatesPage
           initialId={openMandate}
@@ -268,7 +278,7 @@ export function App() {
           }}
         />
       )}
-      <main className={access ? "layout" : "layout layout-single"} hidden={access && view === "instructions"}>
+      <main className={access ? "layout" : "layout layout-single"} hidden={access && view !== "negotiation"}>
         <h1 className="visually-hidden">Kritva</h1>
         <Chat
           key={sessionId ?? "none"}

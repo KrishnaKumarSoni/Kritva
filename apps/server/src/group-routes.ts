@@ -144,6 +144,7 @@ export function registerGroupRoutes(app: Hono, deps: GroupRouteDeps): void {
         score: row.score === null ? null : Math.round(row.score * 100),
         flag: row.flag,
         best: row.best,
+        contact: row.contact,
         lastActivityAt: row.lastActivityAt,
         link: `/?view=buyer#session=${row.sessionId}`,
         approval: pending
@@ -153,6 +154,8 @@ export function registerGroupRoutes(app: Hono, deps: GroupRouteDeps): void {
               mandateRevision: state.mandateRevision,
               purpose: pending.purpose,
               terms: orderTerms(view, inputs[i]!.ctx.offerTerms(pending.offerId)?.terms ?? []).map((t) => ({ name: view.terms.get(t.termId)?.name ?? t.termId, value: formatValue(t.value, deps.locale) })),
+              // An earlier request in this negotiation was for different terms: this is a new decision.
+              termsChanged: inputs[i]!.ctx.events.some((e) => e.type === "approval_requested" && e.id !== pending.requestId && (e.payload as { termsHash: string }).termsHash !== pending.termsHash),
               // Another counterparty holds the deal: this one can be approved only if that falls through.
               heldBy: group.reservation && group.reservation.sessionId !== row.sessionId ? (nameOf(group.reservation.sessionId) ?? "another counterparty") : null,
             }

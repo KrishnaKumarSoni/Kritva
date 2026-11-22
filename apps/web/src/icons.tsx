@@ -31,6 +31,18 @@ export const CheckIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="m5 12.5 4.5 4.5L19 7.5" />
   </svg>
 );
+/** Filled: it marks the active (best) state. */
+export const StarIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base({ fill: "currentColor", ...p })}>
+    <path d="M12 2.8l2.83 5.74 6.33.92-4.58 4.46 1.08 6.3L12 17.24l-5.66 2.98 1.08-6.3L2.84 9.46l6.33-.92L12 2.8z" />
+  </svg>
+);
+export const CopyIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <rect x="9" y="9" width="11" height="11" rx="2" />
+    <path d="M5 15V6a2 2 0 0 1 2-2h9" />
+  </svg>
+);
 export const ClockIcon = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}>
     <circle cx="12" cy="12" r="8" />

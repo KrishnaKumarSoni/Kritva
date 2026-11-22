@@ -314,6 +314,64 @@ export interface SessionRow {
   previousSessionId: string | null;
 }
 
+/** Several counterparties on one deal: the board for a saved mandate (docs/Kritva_Multiple_Counterparties.md). */
+export type BoardStatus = "not_started" | "talking" | "waiting_for_you" | "reserved" | "paused" | "agreed" | "closed_elsewhere" | "ended";
+
+export interface BoardRowView {
+  sessionId: string;
+  name: string | null;
+  via: "link" | "listing" | "phone" | "console";
+  channel: "none" | "chat" | "browser_call" | "phone";
+  live: boolean;
+  status: BoardStatus;
+  offer: { amount: string | null; changes: string[]; accepted: boolean; at: string } | null;
+  gap: string | null;
+  gapValue: number | null;
+  score: number | null;
+  flag: "outside_limits" | "unclear" | null;
+  best: boolean;
+  contact: "asked" | "asked_number" | "kept" | "declined" | null;
+  lastActivityAt: string;
+  link: string;
+  approval: {
+    requestId: string;
+    offerId: string;
+    mandateRevision: number;
+    purpose: "acceptance" | "exception";
+    terms: Array<{ name: string; value: string }>;
+    termsChanged: boolean;
+    heldBy: string | null;
+  } | null;
+}
+
+export interface BoardView {
+  mandateId: string;
+  title: string;
+  state: MandateState;
+  max: number;
+  rows: BoardRowView[];
+  waiting: Array<{ entryId: string; name: string }>;
+  bestSessionId: string | null;
+  reservation: { sessionId: string; name: string | null } | null;
+  concluded: { sessionId: string; name: string | null } | null;
+  counters: { negotiationsRun: number; timeMs: number; dealsOutsideLimits: number };
+}
+
+export interface CounterpartyEntryView {
+  id: string;
+  name: string;
+  phone: string | null;
+  note: string | null;
+  addedAt: string;
+  sessionId: string | null;
+  open: boolean;
+}
+
+export interface CounterpartyListView {
+  max: number;
+  entries: CounterpartyEntryView[];
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string | null;
@@ -433,4 +491,12 @@ export const api = {
   proposeDraft: (id: string, instructions: string) => call<{ draft: DraftSummary }>("POST", `/api/operator/sessions/${id}/drafts`, { instructions }),
   confirmDraft: (id: string, draftId: string, acknowledgedIssueIds: string[]) => call<unknown>("POST", `/api/operator/sessions/${id}/drafts/${draftId}/confirm`, { acknowledgedIssueIds }),
   rejectDraft: (id: string, draftId: string) => call<unknown>("POST", `/api/operator/sessions/${id}/drafts/${draftId}/reject`),
+  deals: {
+    board: (mandateId: string) => call<BoardView>("GET", `/api/operator/library/${mandateId}/board`),
+    counterparties: (mandateId: string) => call<CounterpartyListView>("GET", `/api/operator/library/${mandateId}/counterparties`),
+    addCounterparty: (mandateId: string, input: { name: string; phone: string | null }) => call<CounterpartyListView>("POST", `/api/operator/library/${mandateId}/counterparties`, input),
+    removeCounterparty: (mandateId: string, entryId: string) => call<CounterpartyListView>("DELETE", `/api/operator/library/${mandateId}/counterparties/${entryId}`),
+    start: (mandateId: string) => call<CounterpartyListView & { started: Array<{ entryId: string; sessionId: string }>; refused: Array<{ entryId: string; message: string }> }>("POST", `/api/operator/library/${mandateId}/start`),
+    recordTime: (mandateId: string, action: string, sessionId: string | null, ms: number) => call<unknown>("POST", `/api/operator/library/${mandateId}/time`, { action, sessionId, ms }),
+  },
 };
