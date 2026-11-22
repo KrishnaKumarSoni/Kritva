@@ -208,7 +208,7 @@ export function createApp(deps: AppDeps): Hono {
     }
     // The decision names the offer version and mandate revision the principal reviewed; a mismatch is refused.
     const result = await engine.respondToApproval({ sessionId: c.req.param("id"), requestId: c.req.param("requestId"), decision: body.decision, note: body.note ?? null, expected: { offerId: body.offerId, mandateRevision: body.mandateRevision } });
-    if (!result.ok) return c.json({ error: result.code, message: result.message }, result.code === "not_pending" ? 409 : 400);
+    if (!result.ok) return c.json({ error: result.code, message: result.message }, result.code === "not_pending" || result.code === "reserved_elsewhere" ? 409 : 400);
     return c.json({ reply: result.reply, state: operatorState(result.state, locale) });
   });
 

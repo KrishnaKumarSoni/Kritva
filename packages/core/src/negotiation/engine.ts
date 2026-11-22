@@ -23,7 +23,7 @@ import { gateTerms, gateWording, type GateResult } from "../governance/gate.ts";
 import { normalizeForQuoteMatch, quoteAppearsIn } from "../schema/quotes.ts";
 import { languageCheck } from "../governance/language-check.ts";
 import { bestComparableRival, decide, limitFor, type DealInput, type Interpretation, type Plan } from "./policy.ts";
-import { liveOffer } from "./board.ts";
+import { contactState, DEAL_ELSEWHERE_REASON, liveOffer } from "./board.ts";
 import { checkReply, findAmounts, type ReplyViolation } from "./reply-check.ts";
 import { approvedFor, projectState, publicDealTerms, type NegotiationState } from "./state.ts";
 import { MINIMAL_GUIDANCE, type StrategyGuidance } from "../strategy/guidance.ts";
@@ -59,6 +59,12 @@ export interface EngineOptions {
    * group. Without it, or for a session outside any group, every path is the single-counterparty one.
    */
   groups?: DealGroups | null;
+  /** Called once a group's deal concludes, after the other sessions are closed (the host closes the listing). */
+  onDealConcluded?: (event: { groupId: string; mandateId: string; sessionId: string }) => void | Promise<void>;
+  /** Called when a session is closed because the deal went to another counterparty (the host breaks into a live call). */
+  onSessionClosedElsewhere?: (sessionId: string) => void;
+  /** The caller's number for a session on a phone call, kept only if they agree (host-supplied, never from conversation content). */
+  contactFor?: (sessionId: string) => string | null;
 }
 
 export interface TurnResult {
@@ -70,7 +76,7 @@ export interface TurnResult {
 }
 export interface TurnError {
   ok: false;
-  code: "session_not_found" | "invalid_event" | "write_failed" | "not_pending" | "model_unavailable";
+  code: "session_not_found" | "invalid_event" | "write_failed" | "not_pending" | "model_unavailable" | "reserved_elsewhere";
   message: string;
 }
 
@@ -88,6 +94,11 @@ export class NegotiationEngine {
   readonly #agentModel: Model | string | undefined;
   readonly #agentModelSettings: ModelSettings | undefined;
   readonly #groups: DealGroups | null;
+  readonly #onDealConcluded: EngineOptions["onDealConcluded"];
+  readonly #onSessionClosedElsewhere: EngineOptions["onSessionClosedElsewhere"];
+  readonly #contactFor: EngineOptions["contactFor"];
+  /** Closings of the other sessions after a deal concludes (they run after the winner's turn). */
+  #closing: Promise<unknown> = Promise.resolve();
 
   constructor(options: EngineOptions) {
     this.#record = options.record;
@@ -100,6 +111,9 @@ export class NegotiationEngine {
     this.#agentModel = options.agentModel;
     this.#agentModelSettings = options.agentModelSettings;
     this.#groups = options.groups ?? null;
+    this.#onDealConcluded = options.onDealConcluded;
+    this.#onSessionClosedElsewhere = options.onSessionClosedElsewhere;
+    this.#contactFor = options.contactFor;
   }
 
   guidanceFor(caseId: string): StrategyGuidance {
@@ -197,6 +211,16 @@ export class NegotiationEngine {
       existingOfferId = after.find((e) => e.type === "offer_extracted")?.id ?? null;
     } else {
       writes.created.push(inbound.event);
+      // The deal went elsewhere and Kritva asked to keep their number: this message answers that.
+      if (before.status === "no_agreement") {
+        try {
+          const answered = await this.#contactAnswer(sessionId, inbound.event, channel, writes, started);
+          if (answered) return answered;
+        } catch (error) {
+          if (error instanceof WriteFailure) return { ok: false, code: error.code, message: error.message };
+          throw error;
+        }
+      }
     }
 
     try {
@@ -612,10 +636,13 @@ export class NegotiationEngine {
       } else {
         // An approval the principal already gave for these exact terms covers the agreement.
         const approval = approvedFor(state, accepted.termsHash);
-        await writes.put(
-          { id: newEventId(), type: "agreement_recorded", channel: null, payload: { offerId: accepted.offerId, terms: accepted.terms, termsHash: accepted.termsHash, mandateRevision: state.mandateRevision, acceptanceId: acceptance.id, approvalId: approval?.responseId ?? null } },
-          agent,
-        );
+        const agreed = await this.#recordAgreement(writes, state, { offerId: accepted.offerId, terms: accepted.terms, termsHash: accepted.termsHash, acceptanceId: acceptance.id, approvalId: approval?.responseId ?? null }, agent);
+        if (!agreed) {
+          // Another counterparty got the deal first: this one is closed like the others.
+          await writes.put({ id: newEventId(), type: "status_changed", channel: null, payload: { from: state.status, to: "no_agreement", reason: DEAL_ELSEWHERE_REASON, requestedBy: "principal" } }, agent);
+          Object.assign(plan, basePlan("closed", { kind: "end", reason: DEAL_ELSEWHERE_REASON }, null), { notice: "ended" as const });
+          return [];
+        }
         await writes.put({ id: newEventId(), type: "status_changed", channel: null, payload: { from: state.status, to: "agreed", reason: "Counterparty accepted terms the principal authorized." } }, agent);
         plan.offer = { terms: accepted.terms, basis: "final_terms" };
       }
@@ -1073,6 +1100,8 @@ export class NegotiationEngine {
       if (state.status === "paused") return { ok: false, code: "not_pending", message: "Resume the negotiation before answering approvals." };
       const pending = state.pendingApproval;
       if (!pending || pending.requestId !== input.requestId) {
+        const closedElsewhere = state.status === "no_agreement" && contactState(await this.#record.context(input.sessionId)) !== null;
+        if (closedElsewhere) return { ok: false, code: "reserved_elsewhere", message: "This deal was already agreed with another counterparty." };
         return { ok: false, code: "not_pending", message: "That approval request is no longer pending." };
       }
       // The decision applies only to the exact offer version and mandate revision the principal saw.
@@ -1083,6 +1112,14 @@ export class NegotiationEngine {
       const agent: Actor = { kind: AGENT, partyId: state.view.principalId };
       const writes = new Writer(this.#record, input.sessionId);
       const channel = input.channel ?? lastChannel(await this.#record.read(input.sessionId, { viewer: "operator" }));
+      // Several counterparties: approving an accepted package holds the deal for this one. The first
+      // approval wins; a second is refused before anything is recorded.
+      if (input.decision === "approved" && pending.purpose === "acceptance" && this.#groups) {
+        const held = this.#groups.reserve(input.sessionId, { offerId: pending.offerId, termsHash: pending.termsHash, approvalId: null });
+        if (!held.ok) return { ok: false, code: "reserved_elsewhere", message: held.code === "concluded" ? "This deal was already agreed with another counterparty." : "Another counterparty holds this deal. You can approve this one if that falls through." };
+      }
+      // A failed write never leaves the deal held for nothing.
+      const releaseOnFailure = () => this.#groups?.release(input.sessionId, "The approval could not be recorded.");
       try {
         // The decision is saved before it can affect anything.
         const response = await writes.put(
@@ -1093,10 +1130,9 @@ export class NegotiationEngine {
         const terms = ctx.offerTerms(pending.offerId)!.terms;
         let plan: Plan;
         if (input.decision === "approved" && pending.acceptanceId) {
-          await writes.put(
-            { id: newEventId(), type: "agreement_recorded", channel: null, payload: { offerId: pending.offerId, terms, termsHash: pending.termsHash, mandateRevision: state.mandateRevision, acceptanceId: pending.acceptanceId, approvalId: response.id } },
-            agent,
-          );
+          if (!(await this.#recordAgreement(writes, state, { offerId: pending.offerId, terms, termsHash: pending.termsHash, acceptanceId: pending.acceptanceId, approvalId: response.id }, agent))) {
+            return { ok: false, code: "reserved_elsewhere", message: "This deal was already agreed with another counterparty." };
+          }
           await writes.put({ id: newEventId(), type: "status_changed", channel: null, payload: { from: state.status, to: "agreed", reason: "The principal approved the accepted terms." } }, agent);
           plan = basePlan("confirm_agreement", { kind: "record_agreement", reason: "Principal approved the terms the counterparty accepted." }, { terms, basis: "final_terms" });
           plan.action = "accept";
@@ -1148,10 +1184,148 @@ export class NegotiationEngine {
           timings: { interpretMs: 0, composeMs: 0, totalMs: Math.round(performance.now() - started) },
         };
       } catch (error) {
+        releaseOnFailure();
         if (error instanceof WriteFailure) return { ok: false, code: error.code, message: error.message };
         throw error;
       }
     });
+  }
+
+  /**
+   * Every agreement is recorded here: "the deal is final" happens nowhere else. In a deal group the
+   * group's conclusion is written in the same transaction, so a deal held by (or agreed with) another
+   * counterparty refuses this agreement and nothing is saved. Returns false when refused. After a
+   * conclusion, the other sessions are closed once this turn is done. (Same signature as the approval
+   * flow's hook, so the two meet in one place.)
+   */
+  async #recordAgreement(writes: Writer, state: NegotiationState, a: { offerId: string; terms: OfferTerm[]; termsHash: string; acceptanceId: string; approvalId: string | null }, agent: Actor, claim?: () => Promise<boolean>): Promise<boolean> {
+    if (claim && !(await claim())) return false;
+    const event: NewEvent = { id: newEventId(), type: "agreement_recorded", channel: null, payload: { offerId: a.offerId, terms: a.terms, termsHash: a.termsHash, mandateRevision: state.mandateRevision, acceptanceId: a.acceptanceId, approvalId: a.approvalId } };
+    const group = this.#groups?.groupOf(state.sessionId) ?? null;
+    if (!group || !this.#groups) {
+      await writes.put(event, agent);
+      return true;
+    }
+    const result = await this.#record.append(state.sessionId, event, agent, { alsoWrite: this.#groups.concludeWrite(state.sessionId, { offerId: a.offerId, termsHash: a.termsHash }) });
+    if (!result.ok) {
+      if (result.error.code === "group_conflict") return false;
+      throw new WriteFailure(result.error.code === "write_failed" ? "write_failed" : "invalid_event", `agreement_recorded rejected: ${result.error.message}`);
+    }
+    if (result.created) writes.created.push(result.event);
+    const winner = state.sessionId;
+    // The others are closed after this turn returns (each through its own turn queue).
+    this.#closing = this.#closing.then(() => this.#closeOthers(group.groupId, group.mandateId, winner)).catch(() => undefined);
+    return true;
+  }
+
+  async #closeOthers(groupId: string, mandateId: string, winner: string): Promise<void> {
+    const group = this.#groups?.groups().find((g) => g.groupId === groupId);
+    if (!group) return;
+    for (const m of group.members) {
+      if (m.sessionId === winner) continue;
+      await this.closeForDealElsewhere({ sessionId: m.sessionId }).catch(() => undefined);
+    }
+    await this.#onDealConcluded?.({ groupId, mandateId, sessionId: winner });
+  }
+
+  /** Resolves once the other sessions of a concluded deal are closed (for tests and orderly shutdown). */
+  async settled(): Promise<void> {
+    let seen: Promise<unknown> | null = null;
+    while (seen !== this.#closing) {
+      seen = this.#closing;
+      await seen;
+    }
+  }
+
+  /**
+   * The deal went to another counterparty: close this session politely. Fixed wording from code (no
+   * model call): the news, nothing about the other deal, and a request to keep their contact.
+   */
+  closeForDealElsewhere(input: { sessionId: string }): Promise<TurnResult | TurnError> {
+    return this.#serialize(input.sessionId, async () => {
+      const started = performance.now();
+      const ctx = await this.#record.context(input.sessionId);
+      if (!ctx.mandate) return { ok: false, code: "session_not_found", message: "The session does not exist." };
+      const state = projectState(ctx);
+      if (state.status === "agreed" || state.status === "no_agreement" || state.status === "ended") return { ok: false, code: "not_pending", message: "The negotiation has already finished." };
+      const principal: Actor = { kind: "principal", partyId: state.view.principalId };
+      const agent: Actor = { kind: AGENT, partyId: state.view.principalId };
+      const writes = new Writer(this.#record, input.sessionId);
+      const channel = lastChannel(ctx.events);
+      try {
+        const plan = basePlan("end_negotiation", { kind: "end", reason: DEAL_ELSEWHERE_REASON }, null);
+        plan.action = "end";
+        plan.end = { requestedBy: "principal", reason: DEAL_ELSEWHERE_REASON, unresolved: [], line: null };
+        await writes.put({ id: newEventId(), type: "decision", channel: null, payload: this.#decisionPayload(plan, state, []) }, agent);
+        await writes.put({ id: newEventId(), type: "status_changed", channel: null, payload: { from: state.status, to: "no_agreement", reason: DEAL_ELSEWHERE_REASON, requestedBy: "principal" } }, principal);
+        const who = this.#listingDetails.get(state.view.mandate.caseId)?.publicPrincipalName?.trim() || principalLabel(state.view);
+        const ask = channel === "voice" ? "Can I keep your number in case it falls through?" : "Would you like to leave your number in case it falls through?";
+        const text = `${channel === "voice" ? "Sorry to cut in. " : ""}I've just heard from ${who}: they've agreed terms with someone else, so I can't take this one further. ${ask}`;
+        await this.#recordGate(writes, plan, { decision: "allow", reasons: [], mandateRevision: state.mandateRevision, termsHash: null, breachedRuleIds: [] }, "send", null, agent);
+        const sent = await writes.put({ id: newEventId(), type: "message", channel, payload: { direction: "outbound", speakerPartyId: state.view.principalId, text, utteranceId: null, offerIds: [] } }, agent);
+        this.#onSessionClosedElsewhere?.(input.sessionId);
+        return {
+          ok: true,
+          reply: { messageId: sent.id, text, offerIds: [], channel },
+          events: writes.created,
+          state: projectState(await this.#record.context(input.sessionId)),
+          timings: { interpretMs: 0, composeMs: 0, totalMs: Math.round(performance.now() - started) },
+        };
+      } catch (error) {
+        if (error instanceof WriteFailure) return { ok: false, code: error.code, message: error.message };
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * After a session closed because the deal went elsewhere, their next message answers "can I keep
+   * your number?". Read in code (yes, no, or a number), recorded as their stated preference, and
+   * answered with fixed wording. Returns null when this is not that answer.
+   */
+  async #contactAnswer(sessionId: string, inbound: RecordedEvent, channel: Channel, writes: Writer, started: number): Promise<TurnResult | null> {
+    const ctx = await this.#record.context(sessionId);
+    const asked = contactState(ctx);
+    if (asked !== "asked" && asked !== "asked_number") return null;
+    const state = projectState(ctx);
+    const agent: Actor = { kind: AGENT, partyId: state.view.principalId };
+    const text = (inbound.payload as PayloadOf<"message">).text;
+    const digits = /(\+?\d[\d\s-]{8,}\d)/.exec(text)?.[1]?.replace(/[^\d+]/g, "") ?? null;
+    const no = /\b(no|nope|nah|not really|don'?t|do not|no thanks|nahi|nahin|illa|beda)\b/i.test(text);
+    const yes = /\b(yes|yeah|yep|sure|ok(ay)?|fine|please|go ahead|of course|haan|han|ji|sari|houdu)\b/i.test(text);
+    const callerNumber = this.#contactFor?.(sessionId) ?? null;
+    let summary: string | null = null;
+    let number: string | null = null;
+    let reply: string;
+    if (digits && digits.length >= 10) {
+      number = digits;
+      summary = "Agreed to be contacted if the deal falls through.";
+      reply = "Thank you, I've noted it. I'll let you know if anything changes. Have a good day!";
+    } else if (no && !yes) {
+      summary = "Declined to be contacted later about this deal.";
+      reply = "No problem at all. Thanks for your time, and all the best!";
+    } else if (yes && callerNumber) {
+      number = callerNumber;
+      summary = "Agreed to be contacted if the deal falls through.";
+      reply = "Thank you, I'll keep your number and let you know if anything changes. Have a good day!";
+    } else if (yes && asked === "asked") {
+      reply = "Thanks! What's the best number to reach you on?";
+    } else {
+      // No clear answer: let the closed negotiation answer as usual.
+      return null;
+    }
+    try {
+      if (summary) {
+        await writes.put({ id: newEventId(), type: "counterparty_noted", channel: null, payload: { sourceMessageId: inbound.id, items: [{ kind: "preference", quote: text.trim().slice(0, 500), summary, termId: null, value: number ? { type: "text", value: number } : null, condition: null, basis: "stated" }] } }, agent);
+      }
+      const plan = basePlan("closed", { kind: "answer", reason: summary ?? "Asked for the number to keep." }, null);
+      await this.#recordGate(writes, plan, { decision: "allow", reasons: [], mandateRevision: state.mandateRevision, termsHash: null, breachedRuleIds: [] }, "send", null, agent);
+      const sent = await writes.put({ id: newEventId(), type: "message", channel, payload: { direction: "outbound", speakerPartyId: state.view.principalId, text: reply, utteranceId: null, offerIds: [] } }, agent);
+      return { ok: true, reply: { messageId: sent.id, text: reply, offerIds: [], channel }, events: writes.created, state: projectState(await this.#record.context(sessionId)), timings: { interpretMs: 0, composeMs: 0, totalMs: Math.round(performance.now() - started) } };
+    } catch (error) {
+      if (error instanceof WriteFailure) throw error;
+      throw error;
+    }
   }
 
   /** The principal pauses or resumes. While paused, no negotiation content reaches the counterparty. */

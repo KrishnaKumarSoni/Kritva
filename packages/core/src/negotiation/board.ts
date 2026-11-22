@@ -16,6 +16,30 @@ import { clearedNow, publicDealTerms, type NegotiationState } from "./state.ts";
 /** The reason recorded when a session closes because the deal went to another counterparty. */
 export const DEAL_ELSEWHERE_REASON = "The principal agreed terms with another counterparty.";
 
+const CONTACT_KEPT = "Agreed to be contacted if the deal falls through.";
+const CONTACT_DECLINED = "Declined to be contacted later about this deal.";
+
+/**
+ * Where "can I keep your number?" stands after a session closed because the deal went elsewhere:
+ * asked (no answer yet), asked_number (they said yes; Kritva asked which number), kept, declined, or
+ * null when it was never asked.
+ */
+export function contactState(ctx: SessionContext): "asked" | "asked_number" | "kept" | "declined" | null {
+  const closedAt = ctx.events.findLast((e) => e.type === "status_changed" && (e.payload as PayloadOf<"status_changed">).reason === DEAL_ELSEWHERE_REASON);
+  if (!closedAt) return null;
+  let state: "asked" | "asked_number" | "kept" | "declined" = "asked";
+  for (const e of ctx.events) {
+    if (e.seq <= closedAt.seq) continue;
+    if (e.type === "counterparty_noted") {
+      const summary = (e.payload as PayloadOf<"counterparty_noted">).items[0]?.summary;
+      if (summary === CONTACT_KEPT) state = "kept";
+      if (summary === CONTACT_DECLINED) state = "declined";
+    }
+    if (e.type === "message" && state === "asked" && (e.payload as PayloadOf<"message">).direction === "outbound" && /best number/i.test((e.payload as PayloadOf<"message">).text)) state = "asked_number";
+  }
+  return state;
+}
+
 export interface BoardOffer {
   offerId: string;
   /** The complete package: their terms over the principal's current terms. */
@@ -132,6 +156,8 @@ export interface BoardRow {
   gap: number | null;
   flag: "outside_limits" | "unclear" | null;
   best: boolean;
+  /** After the deal went elsewhere: whether they agreed to be contacted if it falls through. */
+  contact: ReturnType<typeof contactState>;
   lastActivityAt: string;
 }
 
@@ -158,6 +184,7 @@ export function projectBoard(inputs: BoardRowInput[], group: GroupState): Board 
       gap: offer ? gapToLimit(state, offer.terms) : null,
       flag: offer === null ? null : offer.withinLimits === false ? "outside_limits" : offer.withinLimits === null ? "unclear" : null,
       best: false,
+      contact: contactState(ctx),
       lastActivityAt: ctx.events.at(-1)?.recordedAt ?? "",
     };
   });

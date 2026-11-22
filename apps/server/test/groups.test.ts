@@ -125,3 +125,30 @@ describe("several counterparties: the board", () => {
     expect(board.json.counters).toMatchObject({ negotiationsRun: 3, dealsOutsideLimits: 0 });
   });
 });
+
+describe("several counterparties: the lock", () => {
+  it("approving one counterparty's accepted terms closes the deal for the others", async () => {
+    const { call, mandateId, say, offer, engine, record } = groupSetup();
+    await call("POST", `/api/operator/library/${mandateId}/counterparties`, { name: "Ravi" });
+    await call("POST", `/api/operator/library/${mandateId}/counterparties`, { name: "Asha" });
+    const [ravi, asha] = ((await call("POST", `/api/operator/library/${mandateId}/start`)).json.started as Array<{ sessionId: string }>).map((s) => s.sessionId);
+    const acceptAtAsking = async (id: string) => {
+      const stated = await say(id!, "I'll pay 20,000", offer(20_000));
+      await call("POST", `/api/buyer/sessions/${id}/deliveries`, { messageId: stated.json.reply.messageId });
+      const accepted = await say(id!, "Yes, I confirm.", { intent: "accept_stated_terms", accepts_stated_terms: true });
+      await call("POST", `/api/buyer/sessions/${id}/deliveries`, { messageId: accepted.json.reply.messageId });
+      return (await call("GET", `/api/operator/sessions/${id}`)).json.state.pendingApproval;
+    };
+    const pr = await acceptAtAsking(ravi!);
+    const pa = await acceptAtAsking(asha!);
+    expect((await call("POST", `/api/operator/sessions/${ravi}/approvals/${pr.requestId}`, { decision: "approved", offerId: pr.offerId, mandateRevision: pr.mandateRevision })).status).toBe(200);
+    await engine.settled();
+    const second = await call("POST", `/api/operator/sessions/${asha}/approvals/${pa.requestId}`, { decision: "approved", offerId: pa.offerId, mandateRevision: pa.mandateRevision });
+    expect(second.status).toBe(409);
+    expect(second.json.message).toMatch(/another counterparty/);
+    expect((await record.context(asha!)).status).toBe("no_agreement");
+    const board = (await call("GET", `/api/operator/library/${mandateId}/board`)).json;
+    expect(board.concluded.name).toBe("Ravi");
+    expect(board.rows.find((r: { name: string }) => r.name === "Asha").status).toBe("closed_elsewhere");
+  });
+});

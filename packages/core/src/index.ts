@@ -31,7 +31,7 @@ export { NegotiationRecord, GroupConflict, newEventId, type RecordBackend, type 
 export { SqliteRecordBackend } from "./record/sqlite.ts";
 export { DealGroups, GROUP_PAYLOADS, type GroupState, type GroupMember, type GroupStartResult, type JoinVia } from "./record/groups.ts";
 export { NegotiationEngine, type TurnResult, type TurnError, type EngineOptions } from "./negotiation/engine.ts";
-export { projectBoard, latestOffer, liveOffer, scoreOffer, gapToLimit, DEAL_ELSEWHERE_REASON, type Board, type BoardRow, type BoardOffer, type BoardStatus } from "./negotiation/board.ts";
+export { projectBoard, latestOffer, liveOffer, scoreOffer, gapToLimit, contactState, DEAL_ELSEWHERE_REASON, type Board, type BoardRow, type BoardOffer, type BoardStatus } from "./negotiation/board.ts";
 export { projectState, type NegotiationState, type Outcome, type StatedOffer } from "./negotiation/state.ts";
 export { readMandate, formatValue, orderTerms, type MandateView, type NegotiableTerm } from "./negotiation/mandate-view.ts";
 export { checkReply, findAmounts, type ReplyViolation } from "./negotiation/reply-check.ts";
