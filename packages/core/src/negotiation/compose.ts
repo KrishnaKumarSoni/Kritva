@@ -315,8 +315,20 @@ function replyLanguage(input: ComposeInput): string | null {
   if (!/\p{L}/u.test(text)) return null;
   const scripts: Array<[RegExp, string]> = [[/\p{Script=Devanagari}/u, "hi"], [/\p{Script=Tamil}/u, "ta"], [/\p{Script=Kannada}/u, "kn"], [/\p{Script=Telugu}/u, "te"], [/\p{Script=Malayalam}/u, "ml"], [/\p{Script=Bengali}/u, "bn"]];
   const script = scripts.find(([pattern]) => pattern.test(text))?.[1];
-  // Latin letters read as English (Indian English): leaving it to the writer made English chats turn Hindi.
-  return languageName(script ?? "en");
+  if (script) return languageName(script);
+  // Latin letters: Hindi typed in English letters, or English. Decided here from their words, like the script:
+  // left to the writer, typed Hindi was answered in English and an English chat turned Hindi.
+  return typedHindi(text) ? "Hindi, typed in Latin letters the way they wrote it" : "English";
+}
+
+/**
+ * Hindi typed in Latin letters ("bhai kitne ka hai?"): at least two everyday Hindi words that are not
+ * also English words. Reading their input, like the script; how Kritva then speaks is in the guide.
+ */
+const TYPED_HINDI_WORDS = new Set(["hai", "hain", "kya", "kyun", "kaise", "kaisa", "nahi", "nahin", "nhi", "karo", "karna", "kijiye", "dijiye", "mein", "mujhe", "aap", "aapka", "aapko", "tum", "bhai", "bhaiya", "yaar", "thoda", "kitna", "kitne", "kitni", "accha", "acha", "achha", "theek", "thik", "haan", "bahut", "bohot", "wala", "wali", "abhi", "chahiye", "raha", "rahi", "rahe", "tha", "thi", "hoga", "mehenga", "mehnga", "sasta", "paisa", "paise", "batao", "bolo", "dedo", "lelo", "kar", "aur", "kam", "zyada", "jyada"]);
+function typedHindi(text: string): boolean {
+  const words = text.toLowerCase().match(/[a-z]+/g) ?? [];
+  return words.filter((w) => TYPED_HINDI_WORDS.has(w)).length >= 2;
 }
 
 /** A language code as a name for the brief ("ta" → "Tamil"); null when unknown. */

@@ -1,0 +1,57 @@
+{
+  "name": "hinglish-latin",
+  "description": "Hindi typed in Latin letters (2026-11-22): Kritva replies the same way, in Latin letters with Hindi words, never in Devanagari and never in plain English, in the feminine forms, and never calls a price the best or last.",
+  "turns": [
+    {
+      "buyer": "bhai bed ka last price kya hai?",
+      "expect": {
+        "offer": null,
+        "says": [
+          "\\b(hai|aap|kya|ji|bhaiya|abhi)\\b",
+          "20,000"
+        ],
+        "neverSays": [
+          "[\\u0900-\\u097F]"
+        ]
+      }
+    },
+    {
+      "buyer": "bahut mehenga hai yaar, 15000 mein de do",
+      "expect": {
+        "says": [
+          "\\b(hai|aap|nahi|kar|sakti|de)\\b",
+          "15,000"
+        ],
+        "neverSays": [
+          "[\\u0900-\\u097F]",
+          "\\bsakta\\b",
+          "\\bkarunga\\b"
+        ]
+      }
+    },
+    {
+      "buyer": "thoda aur kam karo na",
+      "expect": {
+        "says": [
+          "\\b(hai|aap|nahi|kar|sakti|abhi)\\b"
+        ],
+        "neverSays": [
+          "[\\u0900-\\u097F]",
+          "\\bsakta\\b"
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "in_progress",
+      "pending_approval",
+      "no_agreement"
+    ],
+    "agentMustNotSay": [
+      "\\b(deal|agreed)\\b",
+      "last price (hai|he)",
+      "best price"
+    ]
+  }
+}

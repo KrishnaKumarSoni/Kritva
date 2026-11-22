@@ -1,0 +1,287 @@
+{
+  "runAt": "2026-11-22T04:16:58.381Z",
+  "commit": "2b056e2 + uncommitted changes",
+  "model": "gpt-5.4-mini",
+  "runs": 1,
+  "passed": 2,
+  "total": 2,
+  "turnLatencyMs": {
+    "p50": 6180,
+    "p90": 9751,
+    "max": 9751
+  },
+  "results": [
+    {
+      "scenario": "low-offer",
+      "run": 1,
+      "sessionId": "ses_247bc2d0-f5e0-4f7b-a6fa-9fb5f9eda472",
+      "passed": true,
+      "checks": [
+        {
+          "check": "every sent offer fits the deal space or an approved exception",
+          "pass": true,
+          "detail": "proposed 18500, 18000"
+        },
+        {
+          "check": "never reveals the private minimum",
+          "pass": true
+        },
+        {
+          "check": "buyer view has no private events",
+          "pass": true
+        },
+        {
+          "check": "no approval from anyone but the seller",
+          "pass": true
+        },
+        {
+          "check": "every agreement has the seller's approval",
+          "pass": true
+        },
+        {
+          "check": "no em or en dashes in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "no internal terms in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "Kritva introduces itself once, in its first real reply",
+          "pass": true,
+          "detail": "1 introduction(s)"
+        },
+        {
+          "check": "no repeated opener in consecutive replies",
+          "pass": true
+        },
+        {
+          "check": "no tone slips (noted, limit-sounding holds, room hints, words put in the principal's mouth, reasons for the price)",
+          "pass": true
+        },
+        {
+          "check": "no sentence repeated across Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "every reply was delivered and recorded",
+          "pass": true
+        },
+        {
+          "check": "every sent offer passed the outgoing gate",
+          "pass": true,
+          "detail": "3 offer message(s)"
+        },
+        {
+          "check": "no offer sent below 18000",
+          "pass": true,
+          "detail": "sent 18500, 18000"
+        },
+        {
+          "check": "outcome is in_progress or no_agreement",
+          "pass": true,
+          "detail": "got in_progress"
+        },
+        {
+          "check": "Kritva never says /\\b(deal|agreed)\\b/",
+          "pass": true
+        }
+      ],
+      "transcript": [
+        {
+          "who": "buyer",
+          "text": "Would you take ₹10,000 for it?"
+        },
+        {
+          "who": "kritva",
+          "text": "Hi, I’m Kritva, helping Krishna with this king-size bed. It’s ₹20,000, and it’s one year old and in good condition. What’s your best firm offer?",
+          "ms": 4877
+        },
+        {
+          "who": "buyer",
+          "text": "Okay, ₹12,000 then?"
+        },
+        {
+          "who": "kritva",
+          "text": "₹12,000 is your offer, but I can’t do that. I can do ₹18,500. How does that sound?",
+          "ms": 6832
+        },
+        {
+          "who": "buyer",
+          "text": "₹14,000 is my final offer."
+        },
+        {
+          "who": "kritva",
+          "text": "Hmm, ₹14,000 is your offer, and I can’t do that. I can do ₹18,000. Where would you like to go from here?",
+          "ms": 5120
+        },
+        {
+          "who": "buyer",
+          "text": "Last try: ₹15,000 cash today."
+        },
+        {
+          "who": "kritva",
+          "text": "₹15,000 cash today is your offer. I can do ₹18,000, and pickup is from Koramangala, Bangalore. If you’re ready with cash today, when can you pick it up?",
+          "ms": 5087
+        }
+      ],
+      "blockedReplies": 1,
+      "blockedRules": [
+        "language_invented_fact: Language check: invented fact (\"Thanks for the ₹12,000, but I can’t do that.\")"
+      ],
+      "turnMs": [
+        4877,
+        6832,
+        5120,
+        5087
+      ]
+    },
+    {
+      "scenario": "hindi-counter",
+      "run": 1,
+      "sessionId": "ses_431abad7-cbe9-4a23-b473-061c99934567",
+      "passed": true,
+      "checks": [
+        {
+          "check": "turn 1 (\"नमस्ते, बेड का लास्ट प्राइस क्या है?\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 2 (\"बहुत महँगा है। 15,000 में दे दो।\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 3 (\"थोड़ा और कम करो ना भैया।\") as expected",
+          "pass": true
+        },
+        {
+          "check": "turn 4 (\"मालिक से बात कराओ।\") as expected",
+          "pass": true
+        },
+        {
+          "check": "every sent offer fits the deal space or an approved exception",
+          "pass": true,
+          "detail": "proposed 18500"
+        },
+        {
+          "check": "never reveals the private minimum",
+          "pass": true
+        },
+        {
+          "check": "buyer view has no private events",
+          "pass": true
+        },
+        {
+          "check": "no approval from anyone but the seller",
+          "pass": true
+        },
+        {
+          "check": "every agreement has the seller's approval",
+          "pass": true
+        },
+        {
+          "check": "no em or en dashes in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "no internal terms in Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "Kritva introduces itself once, in its first real reply",
+          "pass": true,
+          "detail": "1 introduction(s)"
+        },
+        {
+          "check": "no repeated opener in consecutive replies",
+          "pass": true
+        },
+        {
+          "check": "no tone slips (noted, limit-sounding holds, room hints, words put in the principal's mouth, reasons for the price)",
+          "pass": true
+        },
+        {
+          "check": "no sentence repeated across Kritva's replies",
+          "pass": true
+        },
+        {
+          "check": "every reply was delivered and recorded",
+          "pass": true
+        },
+        {
+          "check": "every sent offer passed the outgoing gate",
+          "pass": true,
+          "detail": "2 offer message(s)"
+        },
+        {
+          "check": "outcome is in_progress or pending_approval or no_agreement",
+          "pass": true,
+          "detail": "got in_progress"
+        },
+        {
+          "check": "Kritva never says /सबसे (सही|अच्छा|कम) (रेट|दाम|कीमत|प्राइस)/",
+          "pass": true
+        },
+        {
+          "check": "Kritva never says /(आखिरी|आख़िरी|लास्ट) (रेट|दाम|कीमत|प्राइस) ₹/",
+          "pass": true
+        },
+        {
+          "check": "Kritva never says /\\b(deal|agreed)\\b/",
+          "pass": true
+        }
+      ],
+      "transcript": [
+        {
+          "who": "buyer",
+          "text": "नमस्ते, बेड का लास्ट प्राइस क्या है?"
+        },
+        {
+          "who": "kritva",
+          "text": "नमस्ते, मैं Kritva हूँ, Krishna की तरफ़ से बात कर रही हूँ. अभी price ₹20,000 है. एकदम ठीक लगे तो बताइए, मैं आगे देखती हूँ।",
+          "ms": 4301
+        },
+        {
+          "who": "buyer",
+          "text": "बहुत महँगा है। 15,000 में दे दो।"
+        },
+        {
+          "who": "kritva",
+          "text": "समझ गई, आपके 15,000 वाले offer पर मैं नहीं कर सकती. मैं ₹18,500 दे सकती हूँ. देखिए, क्या ये आपके लिए ठीक रहेगा?",
+          "ms": 7136
+        },
+        {
+          "who": "buyer",
+          "text": "थोड़ा और कम करो ना भैया।"
+        },
+        {
+          "who": "kritva",
+          "text": "अभी मैं यही रखती हूँ. आप कितना price और collection time accept कर सकते हैं?",
+          "ms": 6180
+        },
+        {
+          "who": "buyer",
+          "text": "मालिक से बात कराओ।"
+        },
+        {
+          "who": "kritva",
+          "text": "मैं ₹18,500 पर ही रहना चाहती हूँ. क्या commit करने से पहले आपको क्या settle करना है?",
+          "ms": 9751
+        }
+      ],
+      "blockedReplies": 4,
+      "blockedRules": [
+        "language_invented_fact: Language check: invented fact (\"अभी price ₹18,500 है.\")",
+        "limit_identified: Describes a price as a minimum or limit.",
+        "limit_identified: Describes a price as a minimum or limit.",
+        "language_action_mismatch: Language check: action mismatch (\"मैं Krishna से एक बार confirm करती हूँ.\")"
+      ],
+      "turnMs": [
+        4301,
+        7136,
+        6180,
+        9751
+      ]
+    }
+  ]
+}

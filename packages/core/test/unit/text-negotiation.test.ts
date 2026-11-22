@@ -763,6 +763,10 @@ describe("One rewrite before the checked fallback", () => {
     const { say, llm } = await setup(listingOnlyDeliveryMandate());
     await say("Hi", { intent: "greeting" });
     expect(frames(llm).at(-1).reply_language).toBe("English");
+    await say("bhai kitne ka hai?", { intent: "question", questions: ["bhai kitne ka hai?"] });
+    expect(frames(llm).at(-1).reply_language).toBe("Hindi, typed in Latin letters the way they wrote it");
+    await say("No bro. Please come down a little.", { intent: "other" });
+    expect(frames(llm).at(-1).reply_language).toBe("English");
     await say("बेड का दाम क्या है?", { intent: "question", questions: ["बेड का दाम क्या है?"] });
     expect(frames(llm).at(-1).reply_language).toBe("Hindi");
     expect(frames(llm).at(-1).must.join(" ")).toMatch(/Reply in Hindi/);

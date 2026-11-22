@@ -51,10 +51,15 @@ const WORKS_CLAIM_INDIC = /\d[\d,]*\s*(?:में\s*)?(?:चलेगा|ठी
 const QUOTE_CUE_INDIC = /మీ|మీరు|ನಿಮ್ಮ|ನೀವು|നിങ്ങളുടെ|നിങ്ങൾ|আপনার|আপনি|तुमचा|तुमची|आप|तुम|உங்கள்|நீங்கள்|உங்க|நீங்க/u;
 const ACKNOWLEDGED_INDIC = /ధన్యవాదాలు|థ్యాంక్స్|ధన్యవాదాలు|ಧನ್ಯವಾದ|ಥ್ಯಾಂಕ್ಸ್|നന്ദി|ধন্যবাদ|থ্যাঙ্কস|धन्यवाद|शुक्रिया|थैंक|बताया|कहा|बजट|நன்றி|சொன்ன|பட்ஜெட்/u;
 const OFFERING_INDIC = /ఇవ్వగలను|ఇస్తాను|ಕೊಡಬಹುದು|ಕೊಡುತ್ತೇನೆ|തരാം|തരാൻ പറ്റും|দিতে পারি|দেব|देऊ शकते|देऊ शकतो|कर सकता|कर सकती|कर सकते|दे सकता|दे सकती|दे सकते|चलेगा|ठीक रहेगा|डील|தர முடியும்|கொடுக்க முடியும்|பண்ணலாம்|செய்யலாம்|டீல்/u;
-const declines = (s: string) => DECLINE_CUE.test(s) || DECLINE_CUE_INDIC.test(s);
-const quotes = (s: string) => QUOTE_CUE.test(s) || QUOTE_CUE_INDIC.test(s);
-const acknowledges = (s: string) => ACKNOWLEDGED.test(s) || ACKNOWLEDGED_INDIC.test(s);
-const offers = (s: string) => OFFERING.test(s) || OFFERING_INDIC.test(s);
+/** Hindi typed in Latin letters ("nahi kar sakti", "aapka offer", "chalega"). */
+const DECLINE_CUE_TYPED = /\b(?:nahi|nahin|nhi|mushkil|possible nahi|nahi ho payega|nahi hoga)\b/i;
+const QUOTE_CUE_TYPED = /\b(?:aap|aapka|aapki|aapke|tum|tumhara|tumhari)\b/i;
+const ACKNOWLEDGED_TYPED = /\b(?:shukriya|dhanyavaad|bataya|bola|budget)\b/i;
+const OFFERING_TYPED = /\b(?:kar sakti|kar sakta|kar sakte|de sakti|de sakta|de sakte|chalega|theek rahega|deal)\b/i;
+const declines = (s: string) => DECLINE_CUE.test(s) || DECLINE_CUE_INDIC.test(s) || DECLINE_CUE_TYPED.test(s);
+const quotes = (s: string) => QUOTE_CUE.test(s) || QUOTE_CUE_INDIC.test(s) || QUOTE_CUE_TYPED.test(s);
+const acknowledges = (s: string) => ACKNOWLEDGED.test(s) || ACKNOWLEDGED_INDIC.test(s) || ACKNOWLEDGED_TYPED.test(s);
+const offers = (s: string) => OFFERING.test(s) || OFFERING_INDIC.test(s) || OFFERING_TYPED.test(s);
 
 const INTERNAL_TERM = /\b(mandate|governance|zopa|batna|parameter|principal|negotiation core|the core|strategy engine|guidance file|policy engine|score)\b/i;
 /** snake_case identifiers (prompt or record field names) never belong in a reply. */
@@ -121,7 +126,7 @@ export function checkReply(reply: string, ctx: CheckContext): ReplyViolation[] {
       const crosses = n ? (n.direction === "up" ? amount < n.limit : amount > n.limit) : false;
       // Quoting the counterparty's own figure back (in a question, with "your", or acknowledged as theirs) is not offering it.
       const theirs = ctx.counterpartyAmounts.includes(amount) || plan.statedBudget === amount || plan.enquiredAmount === amount;
-      const clause = sentence.split(/;\s*|,\s+|\s+but\s+|\s+(?:लेकिन|मगर|ஆனால்|ஆனா)\s+/iu).find((part) => findAmounts(part).includes(amount)) ?? sentence;
+      const clause = sentence.split(/;\s*|,\s+|\s+but\s+|\s+(?:लेकिन|मगर|ஆனால்|ஆனா|lekin|par|magar)\s+/iu).find((part) => findAmounts(part).includes(amount)) ?? sentence;
       // Putting their figure forward as ours ("I can do X if you collect it") is never quoting them.
       const quotingThem = theirs && !offers(clause) && (quotes(sentence) || acknowledges(clause));
       if (crosses && !offered.includes(amount) && !citedAmounts.includes(amount) && !declines(sentence) && !quotingThem) {

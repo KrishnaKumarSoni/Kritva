@@ -14,7 +14,7 @@
 import { readFileSync } from "node:fs";
 import type { Hono } from "hono";
 import type { NegotiationEngine, NegotiationRecord, PayloadOf, ReplyViolation } from "@kritva/core";
-import { CONVERSATION_TONE, contactState, DEFAULT_LANGUAGE, findAmounts } from "@kritva/core";
+import { CONVERSATION_MISTAKES, CONVERSATION_TONE, contactState, DEFAULT_LANGUAGE, findAmounts } from "@kritva/core";
 import type { LiveCalls } from "./live-calls.ts";
 
 // ---------- Settings ----------
@@ -232,7 +232,10 @@ ${VOICE_RULES}
 ${ENDING_GUIDE}
 
 How you sound. This is the same guide that every reply you are given follows, so the whole call sounds like one person. On this call, the person you represent is ${b.principalName || `the ${b.principalRole || "person you represent"}`}. For your own words, the rules above always win: anything about the deal, holding a line, another offer or checking with the person you represent comes only in the replies you are given.
-${CONVERSATION_TONE}`;
+${CONVERSATION_TONE}
+
+Mistakes to avoid:
+${CONVERSATION_MISTAKES}`;
 }
 
 /** Each language in its own script, and every number as digits so amounts are read exactly. */
@@ -907,7 +910,7 @@ export class RealtimeCall {
   }
 
   #lineInstructions(kind: LineKind): string {
-    return `${LINES_INTRO}\n\nNow: ${LINES[kind].instruction}\n\nSpeak ${languageLabel(this.#language)}.${kind === "break_in" ? "" : `\n\nHow you sound:\n${CONVERSATION_TONE}`}`;
+    return `${LINES_INTRO}\n\nNow: ${LINES[kind].instruction}\n\nSpeak ${languageLabel(this.#language)}.${kind === "break_in" ? "" : `\n\nHow you sound:\n${CONVERSATION_TONE}`}\n\nMistakes to avoid:\n${CONVERSATION_MISTAKES}`;
   }
 
   /** What the agent said for a short line: kept as a fragment when it passes; otherwise the fallback, word for word, once. */
@@ -1009,7 +1012,7 @@ export class RealtimeCall {
       response: {
         conversation: "none",
         input: [],
-        instructions: `${WAITING_GUIDE}\n\nSpeak ${language}. Never use dashes.\n\nNow: ${situation}${last}\n\nHow you sound:\n${CONVERSATION_TONE}`,
+        instructions: `${WAITING_GUIDE}\n\nSpeak ${language}. Never use dashes.\n\nNow: ${situation}${last}\n\nHow you sound:\n${CONVERSATION_TONE}\n\nMistakes to avoid:\n${CONVERSATION_MISTAKES}`,
         tools: [STAY_QUIET_TOOL],
         tool_choice: "auto",
         metadata: { kritva: "wait", situation: "working" },
@@ -1039,7 +1042,7 @@ export class RealtimeCall {
       response: {
         conversation: "none",
         input: [],
-        instructions: `${ENDING_GUIDE}\n\nSpeak ${languageLabel(this.#language)}. Never use dashes.\n\nNow: the negotiation has ${over}, and the line has been quiet for ${quiet} seconds.${last} If the call is over, say your goodbye and call end_call. If they may still want something, warmly ask if there is anything else. If speaking now would be awkward, call stay_quiet.\n\nHow you sound:\n${CONVERSATION_TONE}`,
+        instructions: `${ENDING_GUIDE}\n\nSpeak ${languageLabel(this.#language)}. Never use dashes.\n\nNow: the negotiation has ${over}, and the line has been quiet for ${quiet} seconds.${last} If the call is over, say your goodbye and call end_call. If they may still want something, warmly ask if there is anything else. If speaking now would be awkward, call stay_quiet.\n\nHow you sound:\n${CONVERSATION_TONE}\n\nMistakes to avoid:\n${CONVERSATION_MISTAKES}`,
         tools: [END_CALL_TOOL, STAY_QUIET_TOOL],
         tool_choice: "auto",
         metadata: { kritva: "wait", situation: "over" },

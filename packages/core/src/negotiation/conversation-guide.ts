@@ -19,5 +19,8 @@ export function guideSection(title: string): string {
  */
 export const CONVERSATION_TONE = guideSection("How Kritva sounds");
 
+/** "Mistakes to avoid": what went wrong on real calls and chats, each with what to say instead. Read by the writer and the voice model alike. */
+export const CONVERSATION_MISTAKES = guideSection("Mistakes to avoid");
+
 /** The guide's "Default language: <name>." line: the language Kritva speaks before the other party has spoken. Set in the guide, never in code. */
 export const DEFAULT_LANGUAGE = /^- Default language: ([^.\n]+)\./m.exec(CONVERSATION_GUIDE)?.[1]?.trim() ?? null;
