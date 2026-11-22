@@ -209,7 +209,7 @@ export function InsightsPanel({ view, responding, sessionId, onDecide, onPause, 
                 <dd className="tabular">{nextConcession(insights, roles.counterparty)}</dd>
               </div>
               <div className="kv-row">
-                <dt>Discount earned</dt>
+                <dt>Concession earned</dt>
                 <dd>
                   {s.allowance && s.allowance.earned === 0 ? (
                     "None earned yet"

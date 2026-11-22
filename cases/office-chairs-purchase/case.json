@@ -1,0 +1,26 @@
+{
+  "caseId": "office-chairs-purchase",
+  "description": "Buying 40 office chairs from a vendor. The principal pays: Kritva offers, and a better deal is a lower price per chair. It runs on the default strategy.",
+  "parties": [
+    {
+      "id": "principal",
+      "role": "buyer",
+      "name": null,
+      "isPrincipal": true
+    },
+    {
+      "id": "counterparty",
+      "role": "vendor",
+      "name": null,
+      "isPrincipal": false
+    }
+  ],
+  "sources": {},
+  "mandates": {
+    "vendor": {
+      "file": "mandates/vendor.confirmed.json",
+      "description": "40 ergonomic chairs, offering ₹6,000 per chair including GST, maximum ₹7,500, delivered and installed by 15 December.",
+      "label": "Office chairs purchase"
+    }
+  }
+}

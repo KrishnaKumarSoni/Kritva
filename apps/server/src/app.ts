@@ -414,7 +414,7 @@ const KIND_LABEL: Record<TermKind, string> = {
   options: "Options",
   fixed: "Fixed",
   restricted: "Restricted",
-  stated: "Stated by seller",
+  stated: "Stated by you",
   linked: "Condition detail",
   descriptive: "Description",
   unresolved: "Unresolved",
@@ -549,7 +549,7 @@ function counterpartyView(model: CounterpartyModel, state: NegotiationState, loc
   return {
     items: model.items.map((i) => ({ id: i.id, kind: i.kind, quote: i.quote, summary: i.summary, term: i.termId ? nameOf(i.termId) : null, value: i.value ? formatValue(i.value, locale) : null, condition: i.condition, basis: i.basis })),
     estimates: model.estimates.map((e) => ({
-      package: e.packageTerms.map((t) => `${nameOf(t.termId)}: ${formatValue(t.value, locale)}`).join(" · ") || "Seller's listed terms",
+      package: e.packageTerms.map((t) => `${nameOf(t.termId)}: ${formatValue(t.value, locale)}`).join(" · ") || "Your listed terms",
       highestOffer: e.highestOffer ? money(e.highestOffer.amount) : null,
       statedBudget: e.statedMaximum?.value ? formatValue(e.statedMaximum.value, locale) : null,
       finalStatements: e.finalStatements.map((f) => f.quote),
@@ -636,7 +636,7 @@ const STATUS_LABEL: Record<string, string> = {
   rejected: "Rejected",
   superseded: "Superseded",
   withdrawn: "Withdrawn",
-  corrected: "Corrected by the buyer",
+  corrected: "Corrected by them",
   expired: "Expired",
 };
 
@@ -805,6 +805,9 @@ const CALL_END_LABEL: Record<string, string> = {
 
 /** One event as the console shows it: a short title, a one-line summary, and the raw payload. */
 function describeEvent(e: RecordedEvent, view: MandateView, locale: string) {
+  // The other side in the mandate's own word ("Vendor", "Buyer"); the console is the principal's view, so the principal is "you".
+  const role = rolesOf(view).counterparty;
+  const them = role.charAt(0).toUpperCase() + role.slice(1);
   const p = e.payload as Record<string, unknown>;
   const terms = (t: unknown) => termsView(view, t as OfferTerm[], locale)?.map((x) => `${x.name}: ${x.value}`).join(" · ") ?? "";
   let title = e.type.replace(/_/g, " ");
@@ -815,7 +818,7 @@ function describeEvent(e: RecordedEvent, view: MandateView, locale: string) {
       summary = `Confirmed mandate, revision ${p.mandateRevision}${p.previousSessionId ? " (reset)" : ""}`;
       break;
     case "message":
-      title = p.direction === "inbound" ? "Buyer message" : "Agent reply";
+      title = p.direction === "inbound" ? `${them} message` : "Agent reply";
       summary = String(p.text);
       break;
     case "offer_extracted":
@@ -846,13 +849,13 @@ function describeEvent(e: RecordedEvent, view: MandateView, locale: string) {
       break;
     }
     case "acceptance_recorded":
-      title = "Buyer accepted stated terms";
+      title = `${them} accepted stated terms`;
       break;
     case "approval_requested":
       title = "Approval requested";
       break;
     case "approval_responded":
-      title = p.decision === "approved" ? "Seller approved" : "Seller rejected";
+      title = p.decision === "approved" ? "You approved" : "You rejected";
       break;
     case "agreement_recorded":
       title = "Agreement recorded";
@@ -867,7 +870,7 @@ function describeEvent(e: RecordedEvent, view: MandateView, locale: string) {
       summary = String(p.reason);
       break;
     case "term_requested":
-      title = "Buyer requested a new term";
+      title = `${them} requested a new term`;
       summary = `${p.name}${p.description ? `: ${p.description}` : ""}`;
       break;
     case "proposal_checked": {
@@ -896,7 +899,7 @@ function describeEvent(e: RecordedEvent, view: MandateView, locale: string) {
     }
     case "counterparty_noted": {
       const items = p.items as Array<{ kind: string; quote: string }>;
-      title = p.failed ? "Could not read buyer message" : "Buyer context noted";
+      title = p.failed ? "Could not read their message" : `${them} context noted`;
       summary = p.failed ? "Earlier context is unchanged." : items.map((i) => `${i.kind.replace("_", " ")}: “${i.quote}”`).join(" · ");
       break;
     }

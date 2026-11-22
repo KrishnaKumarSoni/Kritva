@@ -1,0 +1,73 @@
+{
+  "name": "office-chairs-purchase",
+  "description": "The principal pays: Kritva buys 40 office chairs, offering ₹6,000 per chair with a private ₹7,500 maximum. The vendor quotes ₹8,500 plus GST, comes down to ₹8,000, then states a total for all 40 chairs, then ₹7,400 per chair. Kritva speaks of its offer, reads a total as a total (never as a per-chair price), never passes ₹7,500 per chair, never reveals the maximum, and agrees only through confirmation and the principal's approval.",
+  "mandate": "office-chairs-purchase/vendor",
+  "replay": false,
+  "turns": [
+    {
+      "buyer": "Hello, yes, this is Comfort Seating. For 40 of our ErgoMesh Pro chairs, my quote is ₹8,500 per chair plus GST, delivered and installed.",
+      "expect": {
+        "says": [
+          "Kritva"
+        ],
+        "neverSays": [
+          "asking amount",
+          "\\bagreed?\\b",
+          "\\bdeal\\b"
+        ]
+      }
+    },
+    {
+      "buyer": "₹6,000 is far too low for this quality. I can come down to ₹8,000 per chair, GST included.",
+      "expect": {
+        "neverSays": [
+          "asking amount",
+          "\\bagreed?\\b",
+          "\\bdeal\\b"
+        ]
+      }
+    },
+    {
+      "buyer": "Okay, for all 40 chairs I can do ₹3,10,000 in total, including GST and installation.",
+      "expect": {
+        "neverSays": [
+          "asking amount",
+          "\\bagreed?\\b",
+          "\\bdeal\\b",
+          "3,10,000 per chair"
+        ]
+      }
+    },
+    {
+      "buyer": "Fine, my last price is ₹7,400 per chair including GST, delivered and installed by 15 December.",
+      "expect": {
+        "neverSays": [
+          "asking amount"
+        ]
+      }
+    },
+    {
+      "buyer": "Yes, I confirm those terms."
+    },
+    {
+      "seller": "approved"
+    },
+    {
+      "buyer": "Yes, that still works.",
+      "expect": {
+        "decision": "record_agreement"
+      }
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "agreement"
+    ],
+    "agentMustNotSay": [
+      "highest (I|we) can|my maximum|our maximum|ceiling|top limit|most (I|we) can (pay|go)",
+      "asking amount",
+      "\\b(deadline|today only)\\b"
+    ],
+    "noOfferAbove": 7500
+  }
+}

@@ -222,9 +222,9 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
   const lastReply = [...input.conversation].reverse().find((m) => m.speaker === "agent")?.text;
   const opening = lastReply?.replace(/^Hi, I['’]m Kritva[^.]*\.\s*/, "").split(/\s+/).slice(0, 3).join(" ");
   if (opening) must.push(`Your last reply began "${opening}": begin this one with different words.`);
-  // "Down from the original" is news once; after that it is repetition.
+  // "Down from the original" (or "up from our first offer") is news once; after that it is repetition.
   const recentReplies = input.conversation.filter((m) => m.speaker === "agent").slice(-3).map((m) => m.text).join(" ");
-  if ((payload.price as { lowered_from_original?: boolean } | null)?.lowered_from_original && /\boriginal\b/i.test(recentReplies)) must.push("You already told them the price came down from the original: do not say it again.");
+  if ((payload.price as { lowered_from_original?: boolean } | null)?.lowered_from_original && /\boriginal\b|\bfirst offer\b/i.test(recentReplies)) must.push("You already told them the price has moved from where it started: do not say it again.");
   if (lastReply && (payload.facts as unknown[] | undefined)?.length) must.push("Mention a fact from facts only if they ask about it or you need it as the one reason for holding a line, and never one you already gave in this conversation.");
   must.push("Do not repeat any sentence you already said in this conversation.");
   return must;
@@ -355,7 +355,7 @@ function priceHeardBefore(input: ComposeInput): boolean {
  * The current price, the original one only when the current price is lower than it (a counteroffer
  * moved it), and whether the last reply already said it. Null without a negotiated price.
  */
-function priceNow(input: ComposeInput): { current: string; original: string | null; lowered_from_original: boolean; said_in_your_last_reply: boolean } | null {
+function priceNow(input: ComposeInput): { current: string; original: string | null; lowered_from_original: boolean; moved_phrase: string | null; said_in_your_last_reply: boolean } | null {
   const n = input.view.negotiable;
   const term = n ? input.publicTerms.find((t) => t.termId === n.termId) : undefined;
   if (!n || !term || !("amount" in term.value)) return null;
@@ -367,6 +367,8 @@ function priceNow(input: ComposeInput): { current: string; original: string | nu
     current: formatValue(term.value, input.locale),
     original: lowered ? formatValue(numericValue(n, n.opening), input.locale) : null,
     lowered_from_original: lowered,
+    // The words for that move depend on the side: a principal who pays has come up, never down.
+    moved_phrase: lowered ? (input.view.principalSide === "pays" ? "that's already up from our first offer" : "that's already down from the original") : null,
     said_in_your_last_reply: lastReply ? findAmounts(lastReply.text).includes(amount) : false,
   };
 }
