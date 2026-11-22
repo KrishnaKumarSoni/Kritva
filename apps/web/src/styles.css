@@ -2758,6 +2758,8 @@ input {
   }
   .people-add {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
 
 /* ---------- Approval card: the decision and what following up needs ---------- */
 .approval {
