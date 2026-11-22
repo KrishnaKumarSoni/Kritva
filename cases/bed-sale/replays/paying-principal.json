@@ -104,7 +104,7 @@
     },
     {
       "turn": "Yes, I confirm those terms.",
-      "reply": "Nice, thanks. One quick thing, I'm checking with the buyer before anything is confirmed. Is this good till tonight?",
+      "reply": "Nice, thanks. I'll check with the buyer and come back to you before anything is confirmed. How long does your offer stand, and when's a good time to get back to you?",
       "offerAmount": null,
       "decision": {
         "kind": "request_approval",
@@ -468,6 +468,20 @@
             "severity": "doubt"
           }
         ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Nice, thanks. I'll check with the buyer and come back to you before anything is confirmed. How long does your offer stand, and when's a good time to get back to you?",
+        "question": "How long does your offer stand, and when's a good time to get back to you?",
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": []
       }
     },
     {

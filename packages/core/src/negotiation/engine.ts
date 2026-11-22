@@ -28,6 +28,9 @@ import { checkReply, findAmounts, type ReplyViolation } from "./reply-check.ts";
 import { approvedFor, projectState, publicDealTerms, type NegotiationState } from "./state.ts";
 import { MINIMAL_GUIDANCE, type StrategyGuidance } from "../strategy/guidance.ts";
 import { projectAllowance } from "../strategy/allowance.ts";
+
+/** Words that ask them to wait or say Kritva is checking right now, in the languages calls use. */
+const ASKS_TO_WAIT = /\b(?:one|a|just a) (?:sec|second|moment|minute)\b|\bhold on\b|\bgive me a (?:sec|second|moment)\b|\bI(?:'m| am) (?:still )?checking\b|एक\s*(?:पल|सेकंड|सेकेंड|second|sec|मिनट)|रुकिए|(?:check|चेक|confirm|कन्फर्म) कर रही हूँ|ஒரு (?:நிமிஷம்|நொடி)/iu;
 import { clean, introduction, principalLabel, speakTerms, templateReply } from "./templates.ts";
 
 interface PublicListingDetails {
@@ -821,6 +824,9 @@ export class NegotiationEngine {
     }
     if (question) draft = dropDuplicateInvitation(draft, question);
     if (previousReply && opener(draft) === opener(previousReply)) styleRule("The reply opened the same way as your previous reply. Open differently.");
+    // A reply is the answer, said after Kritva has worked it out: it never asks them to wait or says it
+    // is checking right now (the person represented decides after the conversation).
+    if (ASKS_TO_WAIT.test(draft)) styleRule("Never ask them to wait or say you are checking right now. Say what happens next instead (for example that you'll check and come back to them).");
     // While paused or ended, nothing that negotiates reaches them.
     if ((plan.notice === "paused" || plan.notice === "ended") && (findAmounts(draft).length > 0 || draft.includes("?"))) {
       return fail(draft, [{ rule: "action_mismatch", detail: `The conversation is ${plan.notice}: mention no amount, offer or question.` }]);

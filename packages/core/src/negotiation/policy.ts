@@ -340,7 +340,7 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
     // a probe, so it gets no step (concessions answer firm offers): it gets a nudge for a firm offer instead.
     const enquired = interp.offerKind === "enquiry" ? interp.offerTerms.find((t) => t.termId === n?.termId)?.value : undefined;
     if (!enquired && budget?.type === "money" && budget.currency === n?.currency) {
-      const toward = towardPosition(plan, state, g, deal, context, budget.amount, "budget");
+      const toward = towardPosition(plan, state, g, deal, context, budget.amount, "budget", interp.pressure === "final_offer");
       if (toward) return toward;
     }
     if (interp.offerKind === "enquiry" && interp.offerTerms.length > 0) {
@@ -710,7 +710,7 @@ export function nextConcessionCap(state: NegotiationState, g: StrategyGuidance):
  * it. Null when no step fits, the position was already answered, or it is at or above the closing point;
  * the caller then keeps the existing non-commitment handling. A position is never accepted or closed on.
  */
-function towardPosition(plan: Plan, state: NegotiationState, g: StrategyGuidance, deal: DealInput, context: StrategyContext, position: number, kind: "budget" | "enquiry"): Plan | null {
+function towardPosition(plan: Plan, state: NegotiationState, g: StrategyGuidance, deal: DealInput, context: StrategyContext, position: number, kind: "budget" | "enquiry", firm = false): Plan | null {
   const { view } = state;
   const n = view.negotiable;
   if (!n || n.valueType !== "money" || !n.canConcede || state.currentAsk === null || state.status !== "active") return null;
@@ -728,6 +728,22 @@ function towardPosition(plan: Plan, state: NegotiationState, g: StrategyGuidance
     ? (context.counterparty?.items ?? []).filter((item) => item.kind === "budget" && item.value?.type === "money" && item.value.amount === position).length
     : (context.counterparty?.offers ?? []).filter((offer) => offer.amount === position).length;
   const earlierBudget = (context.counterparty?.items ?? []).some((item) => item.kind === "budget" && item.value?.type === "money" && item.value.amount === position);
+  // Their ceiling inside the mandate, said as final ("I can't go above X") or said again, is where the
+  // deal can close: state the complete terms at that amount for them to confirm (the principal then
+  // approves). Holding or stepping again past that point only stalls a deal both sides can make.
+  // Only once Kritva has already moved toward them, and only for a plain ceiling (one that includes other
+  // costs is not the price).
+  const plain = (context.counterparty?.items ?? []).filter((item) => item.kind === "budget" && item.value?.type === "money" && item.value.amount === position).every((item) => !item.condition);
+  // Said again, it converges only when they have already moved toward Kritva (a lower figure before):
+  // someone repeating their first number has not moved, so they get a hold and an invitation instead.
+  const earlier = [
+    ...(context.counterparty?.items ?? []).flatMap((item) => (item.kind === "budget" && item.value?.type === "money" ? [item.value.amount] : [])),
+    ...(context.counterparty?.offers ?? []).map((offer) => offer.amount),
+  ];
+  const movedToward = earlier.some((amount) => amount !== position && atLeast(position, amount));
+  if (kind === "budget" && state.countersMade >= 1 && plain && (firm || (seen > 1 && movedToward)) && atLeast(position, limit)) {
+    return { ...finalAt(plan, view, position, packageExtras(state, []), "Their firm ceiling is within the mandate: state complete terms at it for them to confirm."), statedBudget: position, referenceAmount: ask };
+  }
   if (seen > 1 || (kind === "enquiry" && earlierBudget && state.countersMade > 0)) return null;
   const q = g.increment ?? niceStep(n.opening);
   // A first stated position counts like a first offer for the allowance: it may earn one step. A claim is
