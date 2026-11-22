@@ -210,6 +210,8 @@ export function realtimeInstructions(b: VoiceBriefing): string {
   const facts = [...(b.subject ? [`What is offered: ${b.subject}`] : []), ...b.facts, ...b.terms];
   return `You are Kritva, an assistant speaking on a live voice call for ${principal}, with a ${b.counterpartyRole || "counterparty"}. You are not ${principal} yourself.
 
+Accent: always an Indian accent, as people in Bangalore speak. In English, Indian English with an Indian accent, never American or British; in Hindi and every other Indian language, the way people in Indian cities speak.
+
 Public facts you may state:
 ${facts.map((f) => `- ${f}`).join("\n") || "- (none)"}
 
@@ -296,6 +298,12 @@ function languageLabel(code: string): string {
     /* keep the code */
   }
   return scripts[code] ? `in ${name} (${scripts[code]} script)` : `in ${name}`;
+}
+
+/** "Hello", "Hi", "Haan ji": a greeting alone says nothing about the language they will speak. */
+export function isGreetingOnly(text: string): boolean {
+  const words = text.toLowerCase().replace(/[^\p{L}\p{M}\s]/gu, " ").split(/\s+/).filter(Boolean);
+  return words.length > 0 && words.length <= 3 && words.every((w) => /^(?:hello|helo|hallo|hi|hey|haan|han|ha|ji|haanji|yes|yeah|ok|okay|hlo|हेलो|हैलो|हाँ|हां|जी|नमस्ते)$/u.test(w));
 }
 
 /** The language a text is written in, from its script; Latin script counts as English. */
@@ -423,6 +431,8 @@ export class RealtimeCall {
   #theySpeaking = false;
   #cutPending = false;
   #suppressAuto = false;
+  /** The opening line is being written: the model's own answer to their "Hello" would be a second greeting. */
+  #greetingPending = false;
   #over = false;
   /** When the call last had sound (either side); the wait sensor reports quiet stretches from it. */
   #lastSoundAt = Date.now();
@@ -500,6 +510,7 @@ export class RealtimeCall {
       return;
     }
     this.#busy += 1;
+    this.#greetingPending = true;
     try {
       // A call-back opens with the principal's decision; with nothing to follow up, it greets.
       const followed = this.#d.opening === "follow_up" ? await this.#d.engine.followUp({ sessionId: this.#d.sessionId, channel: "voice", callBack: true }) : null;
@@ -512,6 +523,7 @@ export class RealtimeCall {
         if (greeted.ok && greeted.reply) this.#say(greeted.reply.messageId, greeted.reply.text);
       }
     } finally {
+      this.#greetingPending = false;
       this.#busy -= 1;
     }
     this.#poll = setInterval(() => void this.#watch().catch(() => undefined), this.#d.pollMs ?? 1_200);
@@ -648,6 +660,10 @@ export class RealtimeCall {
         // Breaking in after they stopped talking: the model's own answer to them is cancelled.
         if (this.#suppressAuto && !e.response?.metadata?.kritva) {
           this.#suppressAuto = false;
+          this.#d.link.send({ type: "response.cancel" });
+        } else if (this.#greetingPending && !e.response?.metadata?.kritva) {
+          // They said "Hello" before the opening line was ready: the opening line is the answer, said once.
+          this.#log({ kind: "greeting_kept_single" });
           this.#d.link.send({ type: "response.cancel" });
         }
         return;
@@ -874,7 +890,8 @@ export class RealtimeCall {
     try {
       const itemId = this.#lastUserItem;
       const theirs = (await this.#transcript(itemId)) || "(not transcribed)";
-      this.#language = scriptLanguage(theirs === "(not transcribed)" ? spoken : theirs);
+      const said = theirs === "(not transcribed)" ? spoken : theirs;
+      if (!isGreetingOnly(said)) this.#language = scriptLanguage(said);
       const recorded = await this.#d.engine.recordVoiceAnswer({
         sessionId: this.#d.sessionId,
         buyerText: theirs,

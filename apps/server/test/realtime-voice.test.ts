@@ -515,3 +515,26 @@ describe("Realtime voice: short lines from the voice-lines guide", () => {
     expect(t.link.says()).toHaveLength(3);
   });
 });
+
+describe("Realtime voice: one greeting", () => {
+  it("while the opening line is being written, the model's own answer to their Hello is cancelled, so the call greets once", async () => {
+    const t = await setup();
+    const call = new RealtimeCall({ engine: t.engine, record: t.record, sessionId: t.sessionId, link: t.link, afterSeq: 0, waitSensor: { quietMs: 80, sampleMs: 20 } });
+    const started = call.start();
+    // They said "Hello" and the model started answering on its own before the engine's opening line was ready.
+    t.link.emit({ type: "response.created", response: { id: "resp_auto" } });
+    // The cancelled response reports done, as the realtime API does after response.cancel.
+    t.link.emit({ type: "response.done", response: { id: "resp_auto", status: "cancelled", output: [] } });
+    await started;
+    await until(() => t.link.says().length === 1);
+    call.close();
+    expect(t.link.sent.some((e) => e.type === "response.cancel")).toBe(true);
+    expect(t.link.says()).toHaveLength(1);
+  });
+
+  it("a bare Hello, Hi or Haan says nothing about their language", async () => {
+    const { isGreetingOnly } = await import("../src/realtime-voice.ts");
+    for (const hello of ["Hello.", "Hi", "Haan ji", "हेलो", "Hello? Hello?"]) expect(isGreetingOnly(hello), hello).toBe(true);
+    for (const sentence of ["Hello, what's the price?", "Okay, tell me in English", "हेलो, कितने का है?"]) expect(isGreetingOnly(sentence), sentence).toBe(false);
+  });
+});
