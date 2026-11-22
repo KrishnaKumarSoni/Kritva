@@ -46,6 +46,7 @@ import {
   type DealGroups,
 } from "@kritva/core";
 import { registerGroupRoutes, startNegotiation } from "./group-routes.ts";
+import type { LiveCalls } from "./live-calls.ts";
 
 export interface MandateEntry {
   id: string;
@@ -78,6 +79,8 @@ export interface AppDeps {
   operatorKey?: string;
   /** Several counterparties per saved mandate (docs/Kritva_Multiple_Counterparties.md). Off when absent. */
   groups?: DealGroups | null;
+  /** Voice calls connected now (browser and phone), shared with the engine's break-in callback. */
+  liveCalls?: LiveCalls | null;
 }
 
 export function createApp(deps: AppDeps): Hono {
@@ -106,7 +109,7 @@ export function createApp(deps: AppDeps): Hono {
   }
 
   if (deps.library) registerLibraryRoutes(app, { library: deps.library, record, engine, locale, examples: deps.examples ?? [], protectedIds: (deps.listings ?? []).map((l) => l.libraryId), groups: deps.groups ?? null });
-  if (deps.library && deps.groups) registerGroupRoutes(app, { record, library: deps.library, groups: deps.groups, locale });
+  if (deps.library && deps.groups) registerGroupRoutes(app, { record, library: deps.library, groups: deps.groups, locale, liveCalls: deps.liveCalls ? () => deps.liveCalls!.sessions() : undefined });
   if (deps.library && deps.intake) registerIntakeRoutes(app, { intake: deps.intake, library: deps.library, record, engine, locale });
   registerVoiceRoutes(app, {
     record,
@@ -123,9 +126,9 @@ export function createApp(deps: AppDeps): Hono {
     },
   });
 
-  registerRealtimeRoutes(app, { record, engine, connector: deps.realtime?.connector ?? null, settings: deps.realtime?.settings ?? realtimeSettingsFromEnv(), log: deps.realtime?.log });
+  registerRealtimeRoutes(app, { record, engine, connector: deps.realtime?.connector ?? null, settings: deps.realtime?.settings ?? realtimeSettingsFromEnv(), log: deps.realtime?.log, liveCalls: deps.liveCalls ?? null });
   if (deps.phone) {
-    registerPhoneRoutes(app, { record, engine, library: deps.library ?? null, groups: deps.groups ?? null, listings: deps.listings ?? [], connector: deps.phone.connector, settings: deps.phone.settings, realtime: deps.realtime?.settings ?? realtimeSettingsFromEnv(), log: deps.phone.log, pollMs: deps.phone.pollMs, acceptBackoffMs: deps.phone.acceptBackoffMs });
+    registerPhoneRoutes(app, { record, engine, library: deps.library ?? null, groups: deps.groups ?? null, liveCalls: deps.liveCalls ?? null, listings: deps.listings ?? [], connector: deps.phone.connector, settings: deps.phone.settings, realtime: deps.realtime?.settings ?? realtimeSettingsFromEnv(), log: deps.phone.log, pollMs: deps.phone.pollMs, acceptBackoffMs: deps.phone.acceptBackoffMs });
   }
 
   /** Prepared mandates from cases/, plus saved mandates with a confirmed revision. Unconfirmed drafts never appear. */

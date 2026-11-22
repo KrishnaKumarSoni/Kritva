@@ -13,7 +13,8 @@
  */
 import type { Hono } from "hono";
 import type { NegotiationEngine, NegotiationRecord, PayloadOf, ReplyViolation } from "@kritva/core";
-import { findAmounts } from "@kritva/core";
+import { contactState, findAmounts } from "@kritva/core";
+import type { LiveCalls } from "./live-calls.ts";
 
 // ---------- Settings ----------
 
@@ -271,7 +272,13 @@ const line = (table: Record<string, string>, language: string) => table[language
  * promise nothing and carry no amount; they are kept as transcript fragments, never as messages.
  */
 export const FILLER_TIMING = { firstAfterMs: 2_200, everyMs: 6_000, maxPerWait: 3, holdEveryMs: 18_000 };
-const FILLERS: Record<"working" | "hold" | "long_hold", Record<string, string[]>> = {
+const FILLERS: Record<"working" | "hold" | "long_hold" | "break_in", Record<string, string[]>> = {
+  // Before telling them the deal went to someone else (docs/Kritva_Multiple_Counterparties.md, section 12).
+  break_in: {
+    en: ["Sorry, one second."],
+    hi: ["माफ़ कीजिए, एक सेकंड।"],
+    ta: ["மன்னிக்கவும், ஒரு நொடி."],
+  },
   working: {
     en: ["One moment, I'm just checking that.", "Still with you, nearly there.", "Thanks for bearing with me."],
     hi: ["एक पल, अभी देखते हैं।", "बस एक सेकंड, लगभग हो गया।", "थोड़ा रुकने के लिए शुक्रिया।"],
@@ -304,6 +311,10 @@ export interface CallDeps {
   pollMs?: number;
   /** Overrides for the filler timing (tests). */
   fillerTiming?: Partial<typeof FILLER_TIMING>;
+  /** After the deal went elsewhere and they answered about keeping their number: the host ends the call. */
+  onOver?: () => void;
+  /** How long to wait for the end of a sentence (or for them to stop talking) before breaking in anyway. */
+  breakInWaitMs?: number;
 }
 
 /**
@@ -314,8 +325,17 @@ export interface CallDeps {
 export class RealtimeCall {
   readonly #d: CallDeps;
   #active = false;
-  #queue: Array<{ messageId: string; text: string }> = [];
-  #pendingSay: { messageId: string; text: string } | null = null;
+  #queue: Array<{ messageId: string; text: string; filler?: boolean }> = [];
+  #pendingSay: { messageId: string; text: string; filler?: boolean } | null = null;
+  /** Several counterparties: the deal went elsewhere and Kritva is breaking in to say so. */
+  #brokeInAfterTurn: number | null = null;
+  #turns = 0;
+  /** Messages at or before this sequence number are never spoken after a break-in (they were overtaken). */
+  #minSeq = 0;
+  #theySpeaking = false;
+  #cutPending = false;
+  #suppressAuto = false;
+  #over = false;
   /** When the call last had sound (either side), for the approval-wait fillers. */
   #lastSoundAt = Date.now();
   #fillersSaid = 0;
@@ -394,11 +414,58 @@ export class RealtimeCall {
 
   #drain() {
     if (this.#active || this.#closed) return;
+    // Breaking in: never over their voice.
+    if (this.#brokeInAfterTurn !== null && this.#theySpeaking) return;
     const next = this.#queue.shift();
     if (!next) return;
     this.#active = true;
     this.#pendingSay = next;
-    this.#d.link.send({ type: "response.create", response: { instructions: verbatim(next.text), tool_choice: "none", metadata: { kritva: "say", message_id: next.messageId } } });
+    this.#d.link.send({ type: "response.create", response: { instructions: verbatim(next.text), tool_choice: "none", metadata: next.filler ? { kritva: "filler", kind: "break_in" } : { kritva: "say", message_id: next.messageId } } });
+  }
+
+  /**
+   * The deal went to another counterparty while they are on the call. Kritva finishes the sentence it
+   * is saying (or lets them finish theirs), says a short filler, then the closing message the engine
+   * recorded. Anything queued or still being decided from before is dropped.
+   */
+  async breakIn(): Promise<void> {
+    if (this.#closed || this.#brokeInAfterTurn !== null) return;
+    this.#brokeInAfterTurn = this.#turns;
+    this.#queue = [];
+    // Every turn from now on goes to the engine, which knows the negotiation has closed.
+    this.#d.link.send({ type: "session.update", session: { type: "realtime", tool_choice: "required" } });
+    const ctx = await this.#d.record.context(this.#d.sessionId);
+    const closing = ctx.events.findLast((e) => e.type === "message" && (e.payload as PayloadOf<"message">).direction === "outbound");
+    if (closing) this.#minSeq = closing.seq;
+    const lines = FILLERS.break_in[this.#language] ?? FILLERS.break_in.en!;
+    this.#queue.push({ messageId: "filler_break_in", text: lines[0]!, filler: true });
+    if (closing) {
+      const text = (closing.payload as PayloadOf<"message">).text;
+      this.#spoken.add(closing.id);
+      this.#lastSaid.set(closing.id, text);
+      this.#queue.push({ messageId: closing.id, text });
+    }
+    this.#log({ kind: "break_in", speaking: this.#active, theySpeaking: this.#theySpeaking });
+    const wait = this.#d.breakInWaitMs ?? 4_000;
+    if (this.#active) {
+      // Cut at the end of the current sentence (see the transcript deltas), or after a short wait.
+      this.#cutPending = true;
+      setTimeout(() => this.#cut(), wait);
+    } else if (this.#theySpeaking) {
+      setTimeout(() => {
+        this.#theySpeaking = false;
+        this.#drain();
+      }, wait * 2);
+    } else {
+      this.#drain();
+    }
+  }
+
+  #cut() {
+    if (!this.#cutPending) return;
+    this.#cutPending = false;
+    this.#d.link.send({ type: "response.cancel" });
+    this.#d.link.send({ type: "output_audio_buffer.clear" });
   }
 
   #transcript(itemId: string | null, waitMs = 2_500): Promise<string> {
@@ -430,10 +497,27 @@ export class RealtimeCall {
       }
       case "response.created":
         this.#active = true;
+        // Breaking in after they stopped talking: the model's own answer to them is cancelled.
+        if (this.#suppressAuto && !e.response?.metadata?.kritva) {
+          this.#suppressAuto = false;
+          this.#d.link.send({ type: "response.cancel" });
+        }
+        return;
+      case "response.output_audio_transcript.delta":
+      case "response.audio_transcript.delta":
+        if (this.#cutPending && /[.?!।](["')\]]*)\s*$/.test(String(e.delta ?? ""))) this.#cut();
         return;
       case "input_audio_buffer.speech_started":
-      case "input_audio_buffer.speech_stopped":
+        this.#theySpeaking = true;
         this.#lastSoundAt = Date.now();
+        return;
+      case "input_audio_buffer.speech_stopped":
+        this.#theySpeaking = false;
+        this.#lastSoundAt = Date.now();
+        if (this.#brokeInAfterTurn !== null && this.#queue.length > 0) {
+          this.#suppressAuto = true;
+          this.#drain();
+        }
         return;
       case "error": {
         this.#log({ kind: "realtime_error", error: e.error });
@@ -447,9 +531,11 @@ export class RealtimeCall {
       case "response.done":
         this.#active = false;
         this.#pendingSay = null;
+        this.#cutPending = false;
         this.#lastSoundAt = Date.now();
         await this.#finished(e.response ?? {});
         this.#drain();
+        if (this.#brokeInAfterTurn !== null) await this.#maybeOver();
         return;
       default:
         return;
@@ -478,6 +564,7 @@ export class RealtimeCall {
   /** A deal turn: check and keep the acknowledgement, run the engine, speak its checked reply. */
   async #dealTurn(call: Record<string, any>, acknowledgement: string): Promise<void> {
     this.#busy += 1;
+    const turn = ++this.#turns;
     const started = performance.now();
     try {
       let args: { their_words?: string; language?: string } = {};
@@ -516,6 +603,11 @@ export class RealtimeCall {
       }
       if (!result.reply) {
         this.#output(call, { reply_to_say: null, note: "Nothing to say right now." });
+        return;
+      }
+      // A turn that began before the deal went elsewhere was overtaken: its reply is not spoken.
+      if (this.#brokeInAfterTurn !== null && turn <= this.#brokeInAfterTurn) {
+        this.#output(call, { reply_to_say: null, note: "Overtaken: the deal went to someone else." });
         return;
       }
       this.#output(call, { reply_to_say: result.reply.text });
@@ -591,7 +683,7 @@ export class RealtimeCall {
       this.#status = status;
     }
     for (const e of ctx.events) {
-      if (e.seq <= this.#d.afterSeq || e.type !== "message" || e.channel !== "voice" || this.#spoken.has(e.id)) continue;
+      if (e.seq <= this.#d.afterSeq || e.seq <= this.#minSeq || e.type !== "message" || e.channel !== "voice" || this.#spoken.has(e.id)) continue;
       const p = e.payload as PayloadOf<"message">;
       if (p.direction === "outbound") this.#say(e.id, p.text);
     }
@@ -601,6 +693,16 @@ export class RealtimeCall {
       this.#holdsSaid += 1;
       this.#filler(this.#holdsSaid === 4 ? "long_hold" : "hold");
     }
+  }
+
+  /** After the break-in: once they answered about their number and the thanks was said, the call ends. */
+  async #maybeOver(): Promise<void> {
+    if (this.#over || this.#active || this.#queue.length > 0 || this.#busy > 0) return;
+    const state = contactState(await this.#d.record.context(this.#d.sessionId));
+    if (state !== "kept" && state !== "declined") return;
+    this.#over = true;
+    this.#log({ kind: "conversation_over", contact: state });
+    this.#d.onOver?.();
   }
 
   /** While the engine works on a deal turn, a short line after a pause and then every few seconds. */
@@ -645,6 +747,8 @@ export interface RealtimeDeps {
   connector: RealtimeConnector | null;
   settings: RealtimeSettings;
   log?: (entry: Record<string, unknown>) => void;
+  /** Calls connected now, so the server can break in when the deal goes elsewhere. */
+  liveCalls?: LiveCalls | null;
 }
 
 export function registerRealtimeRoutes(app: Hono, deps: RealtimeDeps): void {
@@ -670,8 +774,24 @@ export function registerRealtimeRoutes(app: Hono, deps: RealtimeDeps): void {
     }
     calls.get(id)?.close();
     const afterSeq = (await deps.record.context(id)).events.at(-1)?.seq ?? 0;
-    const call = new RealtimeCall({ engine: deps.engine, record: deps.record, sessionId: id, link, afterSeq, log: deps.log });
+    const connector = deps.connector;
+    const call: RealtimeCall = new RealtimeCall({
+      engine: deps.engine,
+      record: deps.record,
+      sessionId: id,
+      link,
+      afterSeq,
+      log: deps.log,
+      // The deal went elsewhere and they answered about their number: end the call.
+      onOver: () => {
+        const control = connector as Partial<RealtimeCallControl>;
+        void control.hangup?.(created.callId).catch(() => undefined);
+        call.close();
+        deps.liveCalls?.unregister(id, call);
+      },
+    });
     calls.set(id, call);
+    deps.liveCalls?.register(id, call);
     await deps.record.append(id, { id: `voice_${created.callId}`.slice(0, 128), type: "voice_connection", channel: "voice", payload: { status: "connected" } }, { kind: "system", partyId: null });
     void call.start().catch((error) => deps.log?.({ kind: "start_failed", sessionId: id, error: String(error) }));
     return c.json({ sdp: created.sdpAnswer, afterSeq });
@@ -679,7 +799,9 @@ export function registerRealtimeRoutes(app: Hono, deps: RealtimeDeps): void {
 
   app.post("/api/buyer/sessions/:id/voice/realtime/end", (c) => {
     const id = c.req.param("id");
-    calls.get(id)?.close();
+    const call = calls.get(id);
+    call?.close();
+    if (call) deps.liveCalls?.unregister(id, call);
     calls.delete(id);
     return c.json({ ok: true });
   });

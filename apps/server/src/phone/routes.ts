@@ -18,6 +18,7 @@
 import type { Hono } from "hono";
 import type { ConfirmedMandate, DealGroups, MandateLibrary, NegotiationEngine, NegotiationRecord } from "@kritva/core";
 import { openSessionFor, startNegotiation } from "../group-routes.ts";
+import type { LiveCalls } from "../live-calls.ts";
 import type { ListingConfig } from "../main-helpers.ts";
 import { OpenAIRealtimeConnector, realtimeSession, RealtimeCallError, type RealtimeCallControl, type RealtimeConnector, type RealtimeSettings } from "../realtime-voice.ts";
 import { resolveListing } from "../voice-routes.ts";
@@ -35,6 +36,8 @@ const ACCEPT_BACKOFF_MS = [0, 300, 900];
 export interface PhoneDeps {
   /** Several counterparties per saved mandate (docs/Kritva_Multiple_Counterparties.md). */
   groups?: DealGroups | null;
+  /** Calls connected now, with the caller's number while the call lasts. */
+  liveCalls?: LiveCalls | null;
   record: NegotiationRecord;
   engine: NegotiationEngine;
   library: MandateLibrary | null;
@@ -69,6 +72,8 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
   const handled = new Map<string, number>();
   /** The session started for a call, reused if OpenAI retries after a failed accept. */
   const sessions = new Map<string, string>();
+  /** The caller's number per call, kept in memory only while the call is being set up and connected. */
+  const callers = new Map<string, string | null>();
   let connecting = 0;
 
   const resolve = (target: PhoneTarget): Resolved => {
@@ -125,8 +130,16 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
         return;
       }
       const afterSeq = (await record.context(sessionId)).events.at(-1)?.seq ?? 0;
-      const call = new PhoneCall({ engine, record, sessionId, callId, link, control: deps.connector, settings, afterSeq, log, pollMs: deps.pollMs, onEnded: () => calls.delete(callId) });
+      const call: PhoneCall = new PhoneCall({
+        engine, record, sessionId, callId, link, control: deps.connector, settings, afterSeq, log, pollMs: deps.pollMs,
+        onEnded: () => {
+          calls.delete(callId);
+          callers.delete(callId);
+          deps.liveCalls?.unregister(sessionId, call.realtime);
+        },
+      });
       calls.set(callId, call);
+      deps.liveCalls?.register(sessionId, call.realtime, callers.get(callId) ?? null);
       await call.start().catch(async (error) => {
         log({ kind: "phone_start_failed", callId, sessionId, error: String(error) });
         await call.end("error");
@@ -150,6 +163,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
       // Several counterparties: a listed counterparty's number continues their open negotiation;
       // anyone else joins the mandate's group as a walk-in, within the cap.
       const caller = callerNumber(headers, settings.countryCode);
+      callers.set(callId, caller);
       const entry = caller && deps.groups ? (deps.library?.counterparties(target.source.mandateId) ?? []).find((e) => e.phone && normalizeNumber(e.phone, settings.countryCode) === caller) ?? null : null;
       const existing = entry && deps.groups ? await openSessionFor(deps.groups, target.source.mandateId, entry.id) : null;
       if (existing) {

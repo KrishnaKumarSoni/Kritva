@@ -93,12 +93,18 @@ export class PhoneCall {
     deps.link.onEvent = (e) => this.#observe(e);
     // The sideband lives as long as the SIP call, so its closing means the caller hung up or the line dropped.
     deps.link.onClose = () => void this.end("hung_up");
-    this.#call = new RealtimeCall({ engine: deps.engine, record: deps.record, sessionId: deps.sessionId, link: this.#tap, afterSeq: deps.afterSeq, log: deps.log, pollMs: deps.pollMs });
+    // After the deal went elsewhere and they answered about their number, the call ends.
+    this.#call = new RealtimeCall({ engine: deps.engine, record: deps.record, sessionId: deps.sessionId, link: this.#tap, afterSeq: deps.afterSeq, log: deps.log, pollMs: deps.pollMs, onOver: () => void this.end("server") });
     this.#playback = new ServerPlayback({ textOf: (id) => this.#call.textOf(id), report: (r) => this.#report(r), clock: deps.clock ?? realClock });
   }
 
   get ended(): boolean {
     return this.#ended !== null;
+  }
+
+  /** The call controller, for breaking in when the deal goes to another counterparty. */
+  get realtime(): RealtimeCall {
+    return this.#call;
   }
 
   /** Records the connection, starts the silence and time-limit timers, and greets. */
