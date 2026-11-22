@@ -27,8 +27,9 @@ export { createMappingLlmFromEnv, DEFAULT_MAPPING_MODEL } from "./llm/config.ts"
 export { confirmMandate, validateConfirmedMandate, type ValidConfirmedMandate, type ConfirmResult } from "./mandate/confirm.ts";
 export * from "./record/events.ts";
 export { SessionContext, CORRECTABLE_TYPES } from "./record/rules.ts";
-export { NegotiationRecord, newEventId, type RecordBackend, type Viewer, type AppendResult, type StartResult, type RecordError, type SessionRow } from "./record/store.ts";
+export { NegotiationRecord, GroupConflict, newEventId, type RecordBackend, type Viewer, type AppendResult, type StartResult, type RecordError, type SessionRow } from "./record/store.ts";
 export { SqliteRecordBackend } from "./record/sqlite.ts";
+export { DealGroups, GROUP_PAYLOADS, type GroupState, type GroupMember, type GroupStartResult, type JoinVia } from "./record/groups.ts";
 export { NegotiationEngine, type TurnResult, type TurnError, type EngineOptions } from "./negotiation/engine.ts";
 export { projectState, type NegotiationState, type Outcome, type StatedOffer } from "./negotiation/state.ts";
 export { readMandate, formatValue, orderTerms, type MandateView, type NegotiableTerm } from "./negotiation/mandate-view.ts";
@@ -54,6 +55,6 @@ export { projectAllowance, type AllowanceLedger, type AllowanceEntry } from "./s
 export { negotiationInsights, type NegotiationInsights } from "./strategy/insights.ts";
 export { projectCommitments, noAgreementSummary, type CommitmentsModel, type OfferRecord, type OfferStatus, type SessionOutcome, type Obligation } from "./commitments/model.ts";
 export { promptVersions } from "./llm/prompt-versions.ts";
-export { MandateLibrary, SqliteLibraryBackend, blockers, type LibraryBackend, type LibraryDetail, type LibraryInput, type LibraryVersion, type Correction, type VersionStatus, type LifecycleAction, type MandateState } from "./mandate/library.ts";
+export { MandateLibrary, SqliteLibraryBackend, blockers, type LibraryBackend, type LibraryDetail, type LibraryInput, type LibraryVersion, type Correction, type VersionStatus, type LifecycleAction, type MandateState, type CounterpartyEntry } from "./mandate/library.ts";
 export * from "./intake/index.ts";
 export { OpenAISpeech, createSpeechFromEnv, type SpeechProvider } from "./voice/speech.ts";

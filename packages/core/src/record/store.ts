@@ -45,13 +45,25 @@ export interface RecordBackend {
   insertEvent(row: EventRow): void;
   getEvent(id: string): EventRow | null;
   listEvents(sessionId: string): EventRow[];
+  /** The deal-group record (record/groups.ts): append-only, on the same connection as sessions. */
+  insertGroupEvent(row: GroupEventRow): void;
+  listGroupEvents(): GroupEventRow[];
   close(): void;
+}
+
+export interface GroupEventRow {
+  id: string;
+  groupId: string;
+  seq: number;
+  recordedAt: string;
+  type: string;
+  payloadJson: string;
 }
 
 /** Who is reading. Taken from the application, never from request content. */
 export type Viewer = "principal" | "operator" | "evaluator" | "counterparty";
 
-export type RecordErrorCode = "invalid_event" | "id_conflict" | "session_not_found" | "invalid_mandate" | "write_failed";
+export type RecordErrorCode = "invalid_event" | "id_conflict" | "session_not_found" | "invalid_mandate" | "write_failed" | "group_conflict";
 export interface RecordError {
   code: RecordErrorCode;
   message: string;
@@ -67,6 +79,9 @@ export type StartResult = { ok: true; session: SessionRow; startEvent: RecordedE
 export interface RecordOptions {
   now?: () => Date;
 }
+
+/** Thrown by a deal-group write that conflicts (for example the deal is held by another session). */
+export class GroupConflict extends Error {}
 
 export function newEventId(): string {
   return `evt_${randomUUID()}`;
@@ -122,13 +137,27 @@ export class NegotiationRecord {
     return this.startSession({ mandate, previousSessionId });
   }
 
-  /** Validates and saves one event. `actor` comes from application metadata. */
-  async append(sessionId: string, event: NewEvent, actor: Actor): Promise<AppendResult> {
+  /**
+   * Validates and saves one event. `actor` comes from application metadata. `alsoWrite` runs in
+   * the same transaction once the event is written (a deal-group write that must commit with it);
+   * if it throws, neither is saved.
+   */
+  async append(sessionId: string, event: NewEvent, actor: Actor, options: { alsoWrite?: () => void } = {}): Promise<AppendResult> {
     try {
-      return this.#backend.transaction(() => this.#appendInTransaction(sessionId, event, actor));
-    } catch {
+      return this.#backend.transaction(() => {
+        const result = this.#appendInTransaction(sessionId, event, actor);
+        if (result.ok && result.created && options.alsoWrite) options.alsoWrite();
+        return result;
+      });
+    } catch (error) {
+      if (error instanceof GroupConflict) return fail("group_conflict", error.message, []);
       return fail("write_failed", "The event could not be saved. Nothing was recorded.", []);
     }
+  }
+
+  /** The deal-group tables, for record/groups.ts. */
+  groupBackend(): Pick<RecordBackend, "insertGroupEvent" | "listGroupEvents" | "transaction"> {
+    return this.#backend;
   }
 
   #appendInTransaction(sessionId: string, event: NewEvent, actor: Actor): AppendResult {

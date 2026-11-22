@@ -89,7 +89,33 @@ interface LifecycleRow {
  */
 export type MandateState = "draft" | "live" | "paused" | "closed";
 
+/**
+ * One person on the other side the principal plans to negotiate with. Kept on the saved mandate but
+ * outside its confirmed body: adding someone needs no new revision, and no session's copy of the
+ * mandate ever carries another counterparty's name or number.
+ */
+export interface CounterpartyEntry {
+  id: string;
+  name: string;
+  /** E.164 where known, for matching an incoming call. Operator-only. */
+  phone: string | null;
+  /** The principal's private note. */
+  note: string | null;
+  addedAt: string;
+}
+
+interface CounterpartyEventRow {
+  id: string;
+  mandateId: string;
+  entryId: string;
+  kind: "added" | "updated" | "removed";
+  createdAt: string;
+  entry: Omit<CounterpartyEntry, "id" | "addedAt"> | null;
+}
+
 export interface LibraryBackend {
+  insertCounterpartyEvent(row: CounterpartyEventRow): void;
+  listCounterpartyEvents(mandateId: string): CounterpartyEventRow[];
   insertLifecycle(row: LifecycleRow): void;
   listLifecycle(mandateId: string): LifecycleRow[];
   insertMandate(row: MandateRow): void;
@@ -205,6 +231,42 @@ export class MandateLibrary {
       latest: latest && latestView ? { versionId: latest.id, status: latestView.status, draft: latest.draft, draftHash: latest.draftHash, readiness: readiness(latest.draft), blockers: blockers(latest.draft) } : null,
       active: lastConfirmed && lastConfirmed.confirmed ? { revision: lastConfirmed.revision!, versionId: lastConfirmed.versionId, confirmedAt: lastConfirmed.createdAt, mandate: lastConfirmed.confirmed } : null,
     };
+  }
+
+  /** The mandate's counterparty list, in the order added. */
+  counterparties(mandateId: string): CounterpartyEntry[] {
+    const out = new Map<string, CounterpartyEntry>();
+    for (const e of this.#backend.listCounterpartyEvents(mandateId)) {
+      if (e.kind === "removed") out.delete(e.entryId);
+      else if (e.entry) out.set(e.entryId, { id: e.entryId, ...e.entry, addedAt: out.get(e.entryId)?.addedAt ?? e.createdAt });
+    }
+    return [...out.values()];
+  }
+
+  /** Adds someone to the list, up to `max` entries (the deployment's counterparty cap). */
+  addCounterparty(mandateId: string, input: { name: string; phone?: string | null; note?: string | null }, max: number): LibraryResult<CounterpartyEntry> {
+    const d = this.get(mandateId);
+    if (!d || d.deleted) return { ok: false, code: "not_found", message: "That mandate does not exist." };
+    const entry = cleanEntry(input);
+    if (!entry) return { ok: false, code: "invalid_input", message: "Give each counterparty a name (up to 100 characters)." };
+    if (this.counterparties(mandateId).length >= max) return { ok: false, code: "full", message: `You can list up to ${max} counterparties for one mandate.` };
+    const entryId = `cpt_${randomUUID()}`;
+    this.#backend.insertCounterpartyEvent({ id: `cpe_${randomUUID()}`, mandateId, entryId, kind: "added", createdAt: this.#now().toISOString(), entry });
+    return { ok: true, value: this.counterparties(mandateId).find((e) => e.id === entryId)! };
+  }
+
+  updateCounterparty(mandateId: string, entryId: string, input: { name: string; phone?: string | null; note?: string | null }): LibraryResult<CounterpartyEntry> {
+    if (!this.counterparties(mandateId).some((e) => e.id === entryId)) return { ok: false, code: "not_found", message: "That counterparty is not on the list." };
+    const entry = cleanEntry(input);
+    if (!entry) return { ok: false, code: "invalid_input", message: "Give each counterparty a name (up to 100 characters)." };
+    this.#backend.insertCounterpartyEvent({ id: `cpe_${randomUUID()}`, mandateId, entryId, kind: "updated", createdAt: this.#now().toISOString(), entry });
+    return { ok: true, value: this.counterparties(mandateId).find((e) => e.id === entryId)! };
+  }
+
+  removeCounterparty(mandateId: string, entryId: string): LibraryResult<null> {
+    if (!this.counterparties(mandateId).some((e) => e.id === entryId)) return { ok: false, code: "not_found", message: "That counterparty is not on the list." };
+    this.#backend.insertCounterpartyEvent({ id: `cpe_${randomUUID()}`, mandateId, entryId, kind: "removed", createdAt: this.#now().toISOString(), entry: null });
+    return { ok: true, value: null };
   }
 
   /** The confirmed revision sessions should use now. Unconfirmed drafts never appear here. */
@@ -448,6 +510,15 @@ function parseValue(text: string, type: string, currency: string | null, unit: s
   }
 }
 
+function cleanEntry(input: { name: string; phone?: string | null; note?: string | null }): Omit<CounterpartyEntry, "id" | "addedAt"> | null {
+  const name = typeof input.name === "string" ? input.name.trim() : "";
+  if (!name || name.length > 100) return null;
+  const digits = typeof input.phone === "string" ? input.phone.replace(/[^\d+]/g, "") : "";
+  const phone = /^\+?\d{6,15}$/.test(digits) ? digits : null;
+  const note = typeof input.note === "string" && input.note.trim() ? input.note.trim().slice(0, 500) : null;
+  return { name, phone, note };
+}
+
 // ---------------------------------------------------------------- SQLite (local development)
 
 const SCHEMA = `
@@ -465,6 +536,11 @@ CREATE TABLE IF NOT EXISTS library_lifecycle (
   id TEXT PRIMARY KEY, mandate_id TEXT NOT NULL REFERENCES library_mandates(id),
   kind TEXT NOT NULL CHECK (kind IN ('paused', 'resumed', 'closed', 'reopened', 'deleted')), created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS library_counterparties (
+  id TEXT PRIMARY KEY, mandate_id TEXT NOT NULL REFERENCES library_mandates(id), entry_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('added', 'updated', 'removed')), created_at TEXT NOT NULL, body TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS library_counterparties_no_update BEFORE UPDATE ON library_counterparties BEGIN SELECT RAISE(ABORT, 'counterparty events are append-only'); END;
 CREATE TRIGGER IF NOT EXISTS library_lifecycle_no_update BEFORE UPDATE ON library_lifecycle BEGIN SELECT RAISE(ABORT, 'lifecycle events are append-only'); END;
 CREATE TRIGGER IF NOT EXISTS library_versions_no_update BEFORE UPDATE ON library_versions BEGIN SELECT RAISE(ABORT, 'versions are append-only'); END;
 CREATE TRIGGER IF NOT EXISTS library_events_no_update BEFORE UPDATE ON library_events BEGIN SELECT RAISE(ABORT, 'library events are append-only'); END;
@@ -514,6 +590,12 @@ export class SqliteLibraryBackend implements LibraryBackend {
   }
   insertEvent(row: LibraryEventRow): void {
     this.#db.prepare("INSERT INTO library_events (id, mandate_id, version_id, kind, revision, created_at, body) VALUES (?, ?, ?, ?, ?, ?, ?)").run(row.id, row.mandateId, row.versionId, row.kind, row.revision, row.createdAt, JSON.stringify(row));
+  }
+  insertCounterpartyEvent(row: CounterpartyEventRow): void {
+    this.#db.prepare("INSERT INTO library_counterparties (id, mandate_id, entry_id, kind, created_at, body) VALUES (?, ?, ?, ?, ?, ?)").run(row.id, row.mandateId, row.entryId, row.kind, row.createdAt, JSON.stringify(row));
+  }
+  listCounterpartyEvents(mandateId: string): CounterpartyEventRow[] {
+    return (this.#db.prepare("SELECT body FROM library_counterparties WHERE mandate_id = ? ORDER BY rowid").all(mandateId) as Array<{ body: string }>).map((r) => JSON.parse(r.body) as CounterpartyEventRow);
   }
   insertLifecycle(row: LifecycleRow): void {
     this.#db.prepare("INSERT INTO library_lifecycle (id, mandate_id, kind, created_at) VALUES (?, ?, ?, ?)").run(row.id, row.mandateId, row.kind, row.createdAt);

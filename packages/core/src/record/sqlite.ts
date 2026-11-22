@@ -6,7 +6,7 @@
  * IDs and duplicate sequence numbers within a session.
  */
 import { DatabaseSync } from "node:sqlite";
-import type { EventRow, RecordBackend, SessionRow } from "./store.ts";
+import type { EventRow, GroupEventRow, RecordBackend, SessionRow } from "./store.ts";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS sessions (
@@ -33,6 +33,19 @@ CREATE TRIGGER IF NOT EXISTS events_no_update BEFORE UPDATE ON events
 BEGIN SELECT RAISE(ABORT, 'events are append-only'); END;
 CREATE TRIGGER IF NOT EXISTS events_no_delete BEFORE DELETE ON events
 BEGIN SELECT RAISE(ABORT, 'events are append-only'); END;
+CREATE TABLE IF NOT EXISTS group_events (
+  id TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  recorded_at TEXT NOT NULL,
+  type TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  UNIQUE (group_id, seq)
+);
+CREATE TRIGGER IF NOT EXISTS group_events_no_update BEFORE UPDATE ON group_events
+BEGIN SELECT RAISE(ABORT, 'group events are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS group_events_no_delete BEFORE DELETE ON group_events
+BEGIN SELECT RAISE(ABORT, 'group events are append-only'); END;
 `;
 
 export class SqliteRecordBackend implements RecordBackend {
@@ -92,6 +105,23 @@ export class SqliteRecordBackend implements RecordBackend {
 
   listEvents(sessionId: string): EventRow[] {
     return (this.#db.prepare("SELECT * FROM events WHERE session_id = ? ORDER BY seq").all(sessionId) as Record<string, unknown>[]).map(toEvent);
+  }
+
+  insertGroupEvent(row: GroupEventRow): void {
+    this.#db
+      .prepare("INSERT INTO group_events (id, group_id, seq, recorded_at, type, payload) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(row.id, row.groupId, row.seq, row.recordedAt, row.type, row.payloadJson);
+  }
+
+  listGroupEvents(): GroupEventRow[] {
+    return (this.#db.prepare("SELECT * FROM group_events ORDER BY rowid").all() as Record<string, unknown>[]).map((r) => ({
+      id: r.id as string,
+      groupId: r.group_id as string,
+      seq: Number(r.seq),
+      recordedAt: r.recorded_at as string,
+      type: r.type as string,
+      payloadJson: r.payload as string,
+    }));
   }
 
   close(): void {
