@@ -59,7 +59,8 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
     }
   };
 
-  const enter = reduced ? { initial: { opacity: 0 }, animate: { opacity: 1 } } : { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 } };
+  // New messages grow in from their own side (see .bubble-row transform-origin); reduced motion only fades.
+  const enter = reduced ? { initial: { opacity: 0 }, animate: { opacity: 1 } } : { initial: { opacity: 0, y: 6, scale: 0.97 }, animate: { opacity: 1, y: 0, scale: 1 } };
 
   return (
     <section className="panel" aria-labelledby="chat-title">
@@ -130,7 +131,7 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
             <AlertIcon />
             <span style={{ flex: 1 }}>{error}</span>
             {onRetry && (
-              <button type="button" className="button button-secondary" onClick={onRetry} disabled={sending || voiceOn} style={{ minHeight: 32 }}>
+              <button type="button" className="button button-secondary button-small" onClick={onRetry} disabled={sending || voiceOn}>
                 Retry message
               </button>
             )}

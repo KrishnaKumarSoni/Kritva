@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { motion, useReducedMotion } from "motion/react";
 import { api, ApiError, type BuyerView, type Decision, type MandateOption, type OperatorView, type TermValue } from "./api.ts";
 import { Chat } from "./Chat.tsx";
 import { InsightsPanel } from "./InsightsPanel.tsx";
@@ -35,6 +36,7 @@ export function App() {
   const [mandates, setMandates] = useState<MandateOption[]>([]);
   const [mandateId, setMandateId] = useState<string | null>(null);
   const [view, setView] = useState<"deals" | "negotiation" | "instructions">("negotiation");
+  const reducedMotion = useReducedMotion();
   const [openMandate, setOpenMandate] = useState<string | null>(null);
 
   const loadMandates = useCallback(() => {
@@ -248,6 +250,8 @@ export function App() {
                   if (v !== "negotiation") setOpenMandate(null);
                 }}
               >
+                {/* One pill springs to the current view, so the switch moves like a physical control. */}
+                {view === v && <motion.span layoutId="view-switch-pill" className="view-switch-pill" transition={reducedMotion ? { duration: 0 } : { type: "spring", duration: 0.35, bounce: 0 }} aria-hidden="true" />}
                 {v === "deals" ? "Deals" : v === "negotiation" ? "Negotiation" : "Mandates"}
               </button>
             ))}

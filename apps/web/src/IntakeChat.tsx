@@ -143,7 +143,8 @@ export function IntakeChat({ view, examples, onChange, onSaved, onUse }: Props) 
     void addFiles(e.dataTransfer.files);
   };
 
-  const enter = reduced ? { initial: { opacity: 0 }, animate: { opacity: 1 } } : { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 } };
+  // New messages grow in from their own side (see .bubble-row transform-origin); reduced motion only fades.
+  const enter = reduced ? { initial: { opacity: 0 }, animate: { opacity: 1 } } : { initial: { opacity: 0, y: 6, scale: 0.97 }, animate: { opacity: 1, y: 0, scale: 1 } };
   const lastCard = [...view.messages].reverse().find((m) => m.card)?.card ?? null;
   // Settled: the chat matches a confirmed revision, with nothing waiting to go live.
   const settled = (view.state === "live" || view.state === "paused" || view.state === "closed") && view.progress === 1 && lastCard?.kind !== "ready";
