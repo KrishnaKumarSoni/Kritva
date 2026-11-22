@@ -30,6 +30,8 @@ export const GROUP_PAYLOADS = {
   deal_released: z.strictObject({ sessionId: Id, reason: z.string().trim().min(1).max(500) }),
   deal_concluded: z.strictObject({ sessionId: Id, offerId: Id }),
   principal_time: z.strictObject({ action: z.string().min(1).max(40), sessionId: Id.nullable(), ms: z.number().int().min(0).max(3_600_000) }),
+  /** The principal reset the mandate: this group's negotiations are set aside and a fresh group follows. */
+  group_reset: z.strictObject({ nextGroupId: Id }),
 } as const;
 export type GroupEventType = keyof typeof GROUP_PAYLOADS;
 export type GroupPayload<T extends GroupEventType> = z.infer<(typeof GROUP_PAYLOADS)[T]>;
@@ -54,6 +56,8 @@ export interface GroupState {
   concluded: { sessionId: string; offerId: string } | null;
   /** The principal's measured decision time on this group, in milliseconds. */
   timeMs: number;
+  /** Set aside by a reset of the mandate: its negotiations are history, not shown with the deal. */
+  reset: boolean;
 }
 
 export type GroupStartResult =
@@ -85,7 +89,7 @@ export class DealGroups {
     for (const row of this.#record.groupBackend().listGroupEvents()) {
       const payload = JSON.parse(row.payloadJson);
       if (row.type === "group_opened") {
-        byId.set(row.groupId, { groupId: row.groupId, mandateId: payload.mandateId, caseId: payload.caseId, openedAt: row.recordedAt, maxOpen: payload.maxOpen, members: [], reservation: null, concluded: null, timeMs: 0 });
+        byId.set(row.groupId, { groupId: row.groupId, mandateId: payload.mandateId, caseId: payload.caseId, openedAt: row.recordedAt, maxOpen: payload.maxOpen, members: [], reservation: null, concluded: null, timeMs: 0, reset: false });
         continue;
       }
       const g = byId.get(row.groupId);
@@ -107,6 +111,9 @@ export class DealGroups {
           break;
         case "principal_time":
           g.timeMs += payload.ms;
+          break;
+        case "group_reset":
+          g.reset = true;
           break;
       }
     }
@@ -184,6 +191,24 @@ export class DealGroups {
     const latest = this.latestFor(mandateId);
     if (!latest?.concluded) return;
     this.#write(`grp_${randomUUID()}`, "group_opened", { mandateId, caseId, maxOpen: this.#maxOpen });
+  }
+
+  /**
+   * Starts the mandate over: every group so far is set aside and a fresh, empty group opens, so the
+   * counterparty list can be reached again. Returns the sessions still open in the old group, for
+   * the caller to end. Nothing is deleted from the record.
+   */
+  reset(mandateId: string, caseId: string): Promise<string[]> {
+    return this.#serialize(mandateId, async () => {
+      const latest = this.latestFor(mandateId);
+      const open = latest ? await this.openSessions(latest) : [];
+      const nextGroupId = `grp_${randomUUID()}`;
+      this.#record.groupBackend().transaction(() => {
+        for (const g of this.groups().filter((x) => x.mandateId === mandateId && !x.reset)) this.#write(g.groupId, "group_reset", { nextGroupId });
+        this.#write(nextGroupId, "group_opened", { mandateId, caseId, maxOpen: this.#maxOpen });
+      });
+      return open;
+    });
   }
 
   /** Holds the deal for one session's accepted terms. Only one session may hold it at a time. */

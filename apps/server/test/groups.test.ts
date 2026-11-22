@@ -279,6 +279,26 @@ describe("several counterparties: the call-everyone campaign reaches each person
   });
 });
 
+describe("several counterparties: resetting a mandate", () => {
+  it("ends its open negotiations, hides them, and lets everyone on the list be reached again, once", async () => {
+    const dialer = new FakeDialer();
+    const { call, mandateId, engine } = groupSetup(5, dialer);
+    await call("POST", `/api/operator/library/${mandateId}/counterparties`, { name: "Ravi", phone: "98450 12345" });
+    const [first] = (await call("POST", `/api/operator/library/${mandateId}/start`)).json.started as Array<{ sessionId: string }>;
+    expect((await call("GET", `/api/operator/library/${mandateId}/board`)).json.campaign.reached).toBe(1);
+    const reset = await call("POST", `/api/operator/library/${mandateId}/reset`);
+    expect(reset.status).toBe(200);
+    expect(reset.json.ended).toBe(1);
+    expect((await engine.state(first!.sessionId)).status).not.toBe("active");
+    const board = (await call("GET", `/api/operator/library/${mandateId}/board`)).json;
+    expect(board.rows).toEqual([]);
+    expect(board.campaign.call.map((x: { name: string }) => x.name)).toEqual(["Ravi"]);
+    expect((await call("GET", "/api/operator/negotiations")).json.map((r: { sessionId: string }) => r.sessionId)).not.toContain(first!.sessionId);
+    await Promise.all([call("POST", `/api/operator/library/${mandateId}/start`), call("POST", `/api/operator/library/${mandateId}/start`)]);
+    expect(dialer.numbers).toEqual(["9845012345", "9845012345"]);
+  });
+});
+
 describe("several counterparties: which numbers Kritva may call", () => {
   it("calls numbers on a counterparty list as well as the allowed ones, and nothing else", () => {
     const listed = new Set(["919845012345"]);

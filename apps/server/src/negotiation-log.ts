@@ -37,7 +37,9 @@ export interface LogDeps {
 export function registerNegotiationLog(app: Hono, deps: LogDeps): void {
   app.get("/api/operator/negotiations", async (c) => {
     const limit = Math.min(300, Math.max(1, Number(c.req.query("limit") ?? 150) || 150));
-    const sessions = (await deps.record.listSessions()).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(-limit);
+    // Negotiations a mandate reset set aside are history, not shown.
+    const setAside = new Set((deps.groups?.groups() ?? []).filter((g) => g.reset).flatMap((g) => g.members.map((m) => m.sessionId)));
+    const sessions = (await deps.record.listSessions()).filter((s) => !setAside.has(s.id)).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(-limit);
     const live = deps.liveCalls?.() ?? new Set<string>();
     const rows = await Promise.all(sessions.map((s) => logRow(deps, s.id, s.caseId, s.createdAt, live)));
     return c.json(rows.sort((a, b) => b.lastAt.localeCompare(a.lastAt)));

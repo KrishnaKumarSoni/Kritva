@@ -25,7 +25,8 @@ interface Props {
 
 type Selection = { kind: "mandate"; id: string } | { kind: "intake"; id: string };
 type Row = { key: string; selection: Selection; title: string; state: MandateState; updatedAt: string; meta: string; side: PrincipalSide | null };
-type Deleting = { selection: Selection; title: string };
+/** A confirmed step: delete a mandate or draft, or reset a mandate's negotiations. */
+type Deleting = { selection: Selection; title: string; action?: "delete" | "reset" };
 
 const GROUPS: Array<{ state: MandateState; title: string }> = [
   { state: "live", title: "Live" },
@@ -124,8 +125,19 @@ export function MandatesPage({ onUse, initialId = null, onOpenNegotiation }: Pro
   const confirmDelete = async () => {
     if (!deleting) return;
     const target = deleting.selection;
+    const action = deleting.action ?? "delete";
     setDeleting(null);
     setError(null);
+    if (action === "reset") {
+      try {
+        const r = await api.library.reset(target.id);
+        setToast(r.ended > 0 ? `Reset. ${r.ended === 1 ? "1 negotiation was" : `${r.ended} negotiations were`} ended, and everyone can be reached again.` : "Reset. Everyone on the list can be reached again.");
+        await loadList();
+      } catch (e) {
+        setError(e instanceof ApiError ? e.message : "Unable to reset it. Try again.");
+      }
+      return;
+    }
     try {
       if (target.kind === "mandate") await api.library.remove(target.id);
       else await api.intake.discard(target.id);
@@ -148,13 +160,16 @@ export function MandatesPage({ onUse, initialId = null, onOpenNegotiation }: Pro
     const id = row.selection.id;
     const remove: MenuItem = { id: "delete", label: "Delete", icon: <TrashIcon />, destructive: true, onSelect: () => setDeleting({ selection: row.selection, title: row.title }) };
     if (row.selection.kind === "intake") return [remove];
+    const reset: MenuItem = { id: "reset", label: "Reset", icon: <RefreshIcon />, onSelect: () => setDeleting({ selection: row.selection, title: row.title, action: "reset" }) };
     const steps: Record<MandateState, MenuItem[]> = {
       live: [
         { id: "pause", label: "Pause", icon: <PauseIcon />, onSelect: () => void lifecycle(id, "pause") },
+        reset,
         { id: "close", label: "Close", icon: <ArchiveIcon />, onSelect: () => void lifecycle(id, "close") },
       ],
       paused: [
         { id: "resume", label: "Resume", icon: <PlayIcon />, onSelect: () => void lifecycle(id, "resume") },
+        reset,
         { id: "close", label: "Close", icon: <ArchiveIcon />, onSelect: () => void lifecycle(id, "close") },
       ],
       closed: [{ id: "reopen", label: "Reopen", icon: <RefreshIcon />, onSelect: () => void lifecycle(id, "reopen") }],
@@ -298,6 +313,7 @@ function ConfirmDelete({ target, onCancel, onConfirm }: { target: Deleting | nul
   }, [target, onCancel]);
 
   const mandate = target?.selection.kind === "mandate";
+  const resetting = target?.action === "reset";
   return (
     <AnimatePresence>
       {target && (
@@ -322,18 +338,22 @@ function ConfirmDelete({ target, onCancel, onConfirm }: { target: Deleting | nul
             }}
           >
             <h2 id="delete-title" className="dialog-title">
-              Delete “{target.title}”?
+              {resetting ? `Reset “${target.title}”?` : `Delete “${target.title}”?`}
             </h2>
             <p id="delete-body" className="dialog-body">
-              {mandate ? "It leaves your list and can't start new negotiations. Any negotiation using it is paused, and its history is kept." : "This conversation is removed. Nothing was saved from it yet."}
+              {resetting
+                ? "Its negotiations end and leave your deals and negotiation list, so you can start fresh. The mandate, its settings and its counterparty list stay, and everyone on the list can be called again."
+                : mandate
+                  ? "It leaves your list and can't start new negotiations. Any negotiation using it is paused, and its history is kept."
+                  : "This conversation is removed. Nothing was saved from it yet."}
             </p>
             <div className="dialog-actions">
               <button ref={cancelRef} type="button" className="button button-secondary" onClick={onCancel}>
                 Cancel
               </button>
               <button type="button" className="button button-neutral" onClick={onConfirm}>
-                <TrashIcon />
-                Delete
+                {resetting ? <RefreshIcon /> : <TrashIcon />}
+                {resetting ? "Reset" : "Delete"}
               </button>
             </div>
           </motion.div>

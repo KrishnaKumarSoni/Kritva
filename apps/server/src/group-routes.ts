@@ -100,6 +100,8 @@ export interface GroupRouteDeps {
    * default (KRITVA_BOARD_CALLS=on turns it on), so outbound problems never reach a demo.
    */
   boardCalls?: boolean;
+  /** Ends one negotiation without agreement (a reset ends the mandate's open ones). */
+  endSession?: (sessionId: string) => Promise<unknown>;
 }
 
 export function registerGroupRoutes(app: Hono, deps: GroupRouteDeps): void {
@@ -161,6 +163,26 @@ export function registerGroupRoutes(app: Hono, deps: GroupRouteDeps): void {
     running.set(mandateId, next.catch(() => undefined));
     return next;
   };
+
+  /**
+   * Reset: start the mandate over without making a new one. Its open negotiations end (calls still
+   * ringing are stopped), they leave the deal and the log, and a fresh group starts so everyone on
+   * the list can be reached again. The record keeps everything; nothing is deleted.
+   */
+  app.post("/api/operator/library/:id/reset", async (c) => {
+    const id = c.req.param("id");
+    const detail = found(id);
+    if (!detail) return c.json({ error: "not_found" }, 404);
+    const ended = await oneAtATime(id, async () => {
+      const open = await groups.reset(id, detail.caseId);
+      for (const sessionId of open) {
+        await hangUpPending(deps.dialer ?? null, sessionId);
+        await Promise.resolve(deps.endSession?.(sessionId)).catch(() => undefined);
+      }
+      return open.length;
+    });
+    return c.json({ ended, ...(await listView(id)) });
+  });
 
   app.get("/api/operator/library/:id/counterparties", async (c) => {
     const id = c.req.param("id");

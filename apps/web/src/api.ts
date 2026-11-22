@@ -589,6 +589,8 @@ export const api = {
     discard: (id: string, versionId: string) => call<LibraryDetailView>("POST", `/api/operator/library/${id}/discard`, { versionId }),
     lifecycle: (id: string, action: LifecycleStep) => call<LibraryDetailView>("POST", `/api/operator/library/${id}/lifecycle`, { action }),
     remove: (id: string) => call<{ ok: true }>("DELETE", `/api/operator/library/${id}`),
+    /** Ends the mandate's negotiations and starts it over, so everyone can be reached again. */
+    reset: (id: string) => call<{ ended: number }>("POST", `/api/operator/library/${id}/reset`),
   },
   intake: {
     drafts: () => call<IntakeDraftSummary[]>("GET", "/api/operator/intake"),
