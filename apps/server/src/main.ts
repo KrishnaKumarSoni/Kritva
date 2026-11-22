@@ -6,6 +6,7 @@ import { serve } from "@hono/node-server";
 import { createAgentFromEnv, createIntakeAgentFromEnv, createMappingLlmFromEnv, createSpeechFromEnv, createTurnLlmFromEnv, IntakeService, SqliteIntakeStore, MandateLibrary, MandateRevisions, NegotiationEngine, NegotiationRecord, SqliteLibraryBackend, SqliteRecordBackend } from "@kritva/core";
 import { createApp } from "./app.ts";
 import { OpenAIRealtimeConnector, realtimeSettingsFromEnv } from "./realtime-voice.ts";
+import { phoneFromEnv } from "./phone/routes.ts";
 import { loadCaseRuntime } from "./main-helpers.ts";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
@@ -46,6 +47,8 @@ const app = createApp({
     process.env.OPENAI_API_KEY && (process.env.KRITVA_VOICE_MODE ?? "realtime") === "realtime"
       ? { connector: new OpenAIRealtimeConnector(process.env.OPENAI_API_KEY), settings: realtimeSettingsFromEnv(), log: (entry) => console.log("[voice]", JSON.stringify(entry)) }
       : null,
+  // Phone calls (docs/Kritva_Phone_Calls.md): on when OPENAI_WEBHOOK_SECRET and KRITVA_PHONE_ROUTES are set.
+  phone: phoneFromEnv(),
 });
 const port = Number(process.env.PORT ?? 8787);
 

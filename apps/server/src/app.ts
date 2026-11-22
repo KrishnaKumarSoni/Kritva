@@ -12,7 +12,9 @@ import { registerIntakeRoutes } from "./intake-routes.ts";
 import { registerLibraryRoutes, type LibraryDeps } from "./library-routes.ts";
 import type { ListingConfig } from "./main-helpers.ts";
 import { registerVoiceRoutes } from "./voice-routes.ts";
-import { registerRealtimeRoutes, realtimeSettingsFromEnv, type RealtimeConnector, type RealtimeSettings } from "./realtime-voice.ts";
+import { registerRealtimeRoutes, realtimeSettingsFromEnv, type RealtimeCallControl, type RealtimeConnector, type RealtimeSettings } from "./realtime-voice.ts";
+import type { PhoneSettings } from "./phone/config.ts";
+import { registerPhoneRoutes } from "./phone/routes.ts";
 import {
   formatValue,
   negotiationInsights,
@@ -68,6 +70,8 @@ export interface AppDeps {
   transcriptionPrompt?: string;
   /** Realtime voice (docs/Kritva_Realtime_Voice.md). Without a connector the browser uses turn-based voice. */
   realtime?: { connector: RealtimeConnector | null; settings?: RealtimeSettings; log?: (entry: Record<string, unknown>) => void } | null;
+  /** Phone calls through a SIP trunk into OpenAI (docs/Kritva_Phone_Calls.md). Off when absent. */
+  phone?: { settings: PhoneSettings; connector: RealtimeConnector & RealtimeCallControl; log?: (entry: Record<string, unknown>) => void; pollMs?: number; acceptBackoffMs?: number[] } | null;
   /** Required by the network server. In-process tools can call the app as the operator. */
   operatorKey?: string;
 }
@@ -114,6 +118,9 @@ export function createApp(deps: AppDeps): Hono {
   });
 
   registerRealtimeRoutes(app, { record, engine, connector: deps.realtime?.connector ?? null, settings: deps.realtime?.settings ?? realtimeSettingsFromEnv(), log: deps.realtime?.log });
+  if (deps.phone) {
+    registerPhoneRoutes(app, { record, engine, library: deps.library ?? null, listings: deps.listings ?? [], connector: deps.phone.connector, settings: deps.phone.settings, realtime: deps.realtime?.settings ?? realtimeSettingsFromEnv(), log: deps.phone.log, pollMs: deps.phone.pollMs, acceptBackoffMs: deps.phone.acceptBackoffMs });
+  }
 
   /** Prepared mandates from cases/, plus saved mandates with a confirmed revision. Unconfirmed drafts never appear. */
   app.get("/api/operator/mandates", (c) =>
@@ -589,7 +596,11 @@ function commitmentsView(ctx: SessionContext, state: NegotiationState, locale: s
 function voiceInterrupted(events: RecordedEvent[]): boolean {
   for (let i = events.length - 1; i >= 0; i -= 1) {
     const e = events[i]!;
-    if (e.type === "voice_connection") return (e.payload as { status: string }).status === "interrupted";
+    if (e.type === "voice_connection") {
+      // A call ending says nothing by itself: look at the reply before it (a hang-up mid-reply reports that reply interrupted).
+      if ((e.payload as { status: string }).status === "ended") continue;
+      return (e.payload as { status: string }).status === "interrupted";
+    }
     if (e.type === "message") {
       const p = e.payload as { direction: string };
       if (p.direction === "inbound") return false;
@@ -628,6 +639,15 @@ function operatorState(state: NegotiationState, locale: string) {
   };
 }
 
+/** Why a phone call ended (voice_connection "ended"), as the console shows it. */
+const CALL_END_LABEL: Record<string, string> = {
+  hung_up: "The caller hung up, or the line dropped.",
+  idle: "Kritva ended the call after a long silence.",
+  max_duration: "Kritva ended the call at its time limit.",
+  server: "Kritva ended the call.",
+  error: "The call failed to connect.",
+};
+
 /** One event as the console shows it: a short title, a one-line summary, and the raw payload. */
 function describeEvent(e: RecordedEvent, view: MandateView, locale: string) {
   const p = e.payload as Record<string, unknown>;
@@ -663,9 +683,12 @@ function describeEvent(e: RecordedEvent, view: MandateView, locale: string) {
       title = `Delivery ${p.status}`;
       summary = "";
       break;
-    case "voice_connection":
-      title = p.status === "interrupted" ? "Voice connection interrupted" : "Voice connected";
+    case "voice_connection": {
+      const phone = p.transport === "phone";
+      title = p.status === "interrupted" ? "Voice connection interrupted" : p.status === "ended" ? (phone ? "Phone call ended" : "Voice call ended") : phone ? "Phone call connected" : "Voice connected";
+      if (p.status === "ended") summary = CALL_END_LABEL[String(p.reason)] ?? "";
       break;
+    }
     case "acceptance_recorded":
       title = "Buyer accepted stated terms";
       break;

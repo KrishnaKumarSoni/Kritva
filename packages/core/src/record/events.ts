@@ -295,7 +295,16 @@ export const PAYLOADS = {
     /** For voice: milliseconds from the end of the counterparty's speech to the start of this reply's audio. */
     audioStartMs: z.number().int().min(0).max(600_000).nullable().default(null),
   }),
-  voice_connection: z.strictObject({ status: z.enum(["connected", "interrupted"]) }),
+  /**
+   * A voice call's connection. "ended" closes a call (phone calls record it, with why it ended);
+   * "interrupted" is a dropped browser connection. transport and reason are absent on older events.
+   */
+  voice_connection: z.strictObject({
+    status: z.enum(["connected", "interrupted", "ended"]),
+    transport: z.enum(["browser", "phone"]).nullable().default(null),
+    /** Why a call ended: the line closed (caller hung up or it dropped), silence, the time limit, Kritva ended it, or an error. */
+    reason: z.enum(["hung_up", "idle", "max_duration", "server", "error"]).nullable().default(null),
+  }),
   status_changed: z.strictObject({
     from: SessionStatus,
     to: SessionStatus,

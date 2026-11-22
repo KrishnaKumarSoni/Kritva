@@ -8,7 +8,7 @@ The turn pipeline was measured at about 7 to 8 seconds of silence before each re
 
 - Listening, turn-taking and barge-in are handled by OpenAI's realtime model on a live audio stream.
 - The model hears audio directly, so Hindi, Tamil, English and mixed speech are understood in their own script.
-- The same call controller serves the browser (WebRTC) and, later, phone calls (Twilio Elastic SIP trunk into OpenAI's SIP endpoint, including the India edge `sip-in.api.openai.com`).
+- The same call controller serves the browser (WebRTC) and phone calls (a Vobiz SIP trunk into OpenAI's SIP endpoint, on the India edge `sip-in.api.openai.com`; see `docs/Kritva_Phone_Calls.md`).
 
 ## 2. What stays exactly as it is
 
@@ -53,6 +53,7 @@ The model's own words (conversation turns and acknowledgements) never carry an a
 - If the buyer talks over Kritva, OpenAI stops the audio and drops what was not played.
 - The browser sees when each reply's audio starts, finishes or is cut off, and reports it against the recorded message, as before: finished means delivered; cut off means interrupted, with the approximate part heard.
 - A dropped connection or closed tab is reported as an interruption.
+- A phone call has no browser, so the server decides the same reports from the call's events (`docs/Kritva_Phone_Calls.md`, section 6).
 
 ## 7. Expectations (measured 2026-11-22, then estimated for the live call)
 
@@ -83,9 +84,9 @@ About $0.06 to $0.12 per minute of call on `gpt-realtime-2.1` (audio in $32 and 
 | `KRITVA_REALTIME_EAGERNESS` | `high` (waits at most 2 s for a finished thought) |
 | `KRITVA_REALTIME_REASONING` | `low` |
 
-## 10. Phone calls (next)
+## 10. Phone calls
 
-Twilio's Elastic SIP trunk points at OpenAI's SIP endpoint. OpenAI calls Kritva's webhook (`realtime.call.incoming`); the server accepts the call with the same session settings and joins it with the same controller over the sideband WebSocket. Nothing in the engine or the controller's turn logic changes. Delivery on the phone is inferred from the server's view of the call rather than from a browser.
+Built: see `docs/Kritva_Phone_Calls.md` for the design, the delivery rule and the setup steps. A Vobiz inbound SIP trunk points at OpenAI's SIP endpoint on the India edge. OpenAI calls Kritva's webhook (`realtime.call.incoming`); the server verifies it, routes the dialled number to a listing or mandate, accepts the call with the same session settings and joins it with the same controller over the sideband WebSocket. Nothing in the engine or the controller's turn logic changes. Delivery on the phone is decided by the server from the call's playback events, with a stricter timing fallback.
 
 ## 11. Tests
 
@@ -98,4 +99,4 @@ Twilio's Elastic SIP trunk points at OpenAI's SIP endpoint. OpenAI calls Kritva'
 - Read-backs of full terms keep the term names in English inside a Hindi or Tamil sentence.
 - The model decides which turns are conversation turns; a deal turn it answers itself is caught by the checks and corrected, not prevented.
 - The amount of a reply heard before an interruption is estimated from playback time.
-- The browser reports delivery. A phone call will need the server to infer it, because an offer only counts once it was heard in full.
+- The browser reports delivery in a browser call; in a phone call the server decides it (`docs/Kritva_Phone_Calls.md`, section 6).

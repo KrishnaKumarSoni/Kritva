@@ -8,8 +8,8 @@
  *   answers itself, and code checks and records those words;
  * - deal turns go to the negotiation engine through the `negotiate` tool, and the engine's checked
  *   reply is spoken word for word.
- * The engine still decides every amount, offer and agreement. The same controller can serve a SIP
- * (phone) call: only how the call is created differs.
+ * The engine still decides every amount, offer and agreement. The same controller serves SIP
+ * (phone) calls: only how the call starts and how delivery is observed differ (see src/phone/).
  */
 import type { Hono } from "hono";
 import type { NegotiationEngine, NegotiationRecord, PayloadOf, ReplyViolation } from "@kritva/core";
@@ -60,7 +60,34 @@ export interface RealtimeConnector {
   attach(callId: string): Promise<RealtimeLink>;
 }
 
-export class OpenAIRealtimeConnector implements RealtimeConnector {
+/**
+ * Control of a SIP (phone) call that OpenAI is ringing or has connected
+ * (https://developers.openai.com/api/docs/guides/realtime-sip).
+ */
+export interface RealtimeCallControl {
+  /** Answers the call with this session (the same flat body as a browser call's session). */
+  accept(callId: string, session: Record<string, unknown>): Promise<void>;
+  /** Declines the call with a SIP status code (for example 404, 480 or 486). */
+  reject(callId: string, statusCode: number): Promise<void>;
+  /** Ends a connected call (OpenAI sends the SIP BYE). */
+  hangup(callId: string): Promise<void>;
+}
+
+/** A call-control request OpenAI refused. `gone` means the call no longer exists (the caller hung up while it rang). */
+export class RealtimeCallError extends Error {
+  readonly status: number;
+  readonly body: string;
+  constructor(status: number, body: string) {
+    super(`Realtime call request failed (${status}): ${body.slice(0, 300)}`);
+    this.status = status;
+    this.body = body;
+  }
+  get gone(): boolean {
+    return this.status === 404 || /call_id_not_found|not.?found/i.test(this.body);
+  }
+}
+
+export class OpenAIRealtimeConnector implements RealtimeConnector, RealtimeCallControl {
   readonly #apiKey: string;
   readonly #base: string;
 
@@ -79,6 +106,29 @@ export class OpenAIRealtimeConnector implements RealtimeConnector {
     const callId = res.headers.get("location")?.split("/").filter(Boolean).at(-1);
     if (!callId) throw new Error("Realtime call has no call ID.");
     return { sdpAnswer: body, callId };
+  }
+
+  async accept(callId: string, session: Record<string, unknown>) {
+    await this.#control(callId, "accept", session);
+  }
+
+  async reject(callId: string, statusCode: number) {
+    await this.#control(callId, "reject", { status_code: statusCode });
+  }
+
+  async hangup(callId: string) {
+    await this.#control(callId, "hangup", null);
+  }
+
+  async #control(callId: string, action: "accept" | "reject" | "hangup", body: Record<string, unknown> | null) {
+    const res = await fetch(`${this.#base}/realtime/calls/${encodeURIComponent(callId)}/${action}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${this.#apiKey}`, ...(body ? { "Content-Type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+      // Short, so a retried accept still fits in the webhook's few seconds.
+      signal: AbortSignal.timeout(4_000),
+    });
+    if (!res.ok) throw new RealtimeCallError(res.status, await res.text());
   }
 
   attach(callId: string): Promise<RealtimeLink> {
@@ -157,7 +207,18 @@ Voice: a friendly person on the phone. Warm, relaxed, clear and unhurried; never
 /** Each language in its own script, and every number as digits so amounts are read exactly. */
 export const TRANSCRIPTION_PROMPT = "A buyer and a seller's assistant talk about an item and its price. Write each language in its own script: Hindi in Devanagari (never Urdu script), Tamil in Tamil script, English in English. Write every number and amount as digits, for example 18000 or 1.5 lakh.";
 
-export function realtimeSession(settings: RealtimeSettings, briefing: VoiceBriefing): Record<string, unknown> {
+export interface SessionOptions {
+  /**
+   * Input noise reduction. Browser mics default to near_field. A phone call passes its own setting
+   * (KRITVA_PHONE_NOISE_REDUCTION); null turns it off. Audio formats are never set: a browser call
+   * uses OpenAI's defaults and a SIP call negotiates its codec in the SIP handshake.
+   */
+  noiseReduction?: "near_field" | "far_field" | null;
+}
+
+/** The realtime session: a browser call's `session`, and the flat body of a SIP call's accept. */
+export function realtimeSession(settings: RealtimeSettings, briefing: VoiceBriefing, options: SessionOptions = {}): Record<string, unknown> {
+  const noise = options.noiseReduction === undefined ? "near_field" : options.noiseReduction;
   return {
     type: "realtime",
     model: settings.model,
@@ -165,7 +226,7 @@ export function realtimeSession(settings: RealtimeSettings, briefing: VoiceBrief
     output_modalities: ["audio"],
     audio: {
       input: {
-        noise_reduction: { type: "near_field" },
+        noise_reduction: noise ? { type: noise } : null,
         transcription: { model: settings.transcribeModel, prompt: TRANSCRIPTION_PROMPT, ...(settings.languages.length ? { languages: settings.languages } : {}) },
         turn_detection: { type: "semantic_vad", eagerness: settings.eagerness, create_response: true, interrupt_response: true },
       },
@@ -255,6 +316,16 @@ export class RealtimeCall {
   /** Nothing is being said, decided or queued. */
   get idle() {
     return !this.#active && this.#busy === 0 && this.#queue.length === 0;
+  }
+
+  /** The language they last spoke (ISO 639-1), for lines the call says itself. */
+  get language() {
+    return this.#language;
+  }
+
+  /** The text of a recorded message this call has spoken or queued, for estimating how much of it was heard. */
+  textOf(messageId: string): string | undefined {
+    return this.#lastSaid.get(messageId);
   }
 
   /** Greets (the engine writes the line) and starts watching for engine-initiated messages. */

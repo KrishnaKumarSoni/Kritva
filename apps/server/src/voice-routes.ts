@@ -24,6 +24,24 @@ export interface VoiceDeps {
 
 const MAX_AUDIO_BYTES = 4 * 1024 * 1024;
 
+type ListingError = { status: 404 | 409; body: { error: "not_found" | "listing_paused" | "mandate_missing"; message: string } };
+
+/**
+ * Whether a listing can take a call, and the confirmed mandate revision it uses. Shared by the
+ * listing's "Call Seller" button and phone calls (src/phone/), so both follow the same rules:
+ * a paused or closed listing, or one without a confirmed mandate, starts nothing.
+ */
+export function resolveListing(listings: ListingConfig[], library: MandateLibrary | null, caseId: string) {
+  const fail = (status: ListingError["status"], error: ListingError["body"]["error"], message: string) => ({ error: { status, body: { error, message } } as ListingError });
+  const listing = listings.find((l) => l.caseId === caseId);
+  if (!listing) return fail(404, "not_found", "That listing doesn't exist.");
+  const detail = library?.get(listing.libraryId) ?? null;
+  if (detail && !detail.deleted && detail.state !== "live" && detail.state !== "draft") return fail(409, "listing_paused", `The seller has ${detail.state === "paused" ? "paused" : "closed"} this listing. No call was started.`);
+  const active = library?.active(listing.libraryId) ?? null;
+  if (!active) return fail(409, "mandate_missing", "This listing isn't set up yet: the seller's mandate is missing or not confirmed. No call was started.");
+  return { listing, active };
+}
+
 function transcriptionContext(mandate: ConfirmedMandate): string {
   const currencies = new Set(mandate.terms.flatMap((term) => term.disclosure === "public" && term.currency ? [term.currency] : []));
   const labels = new Intl.DisplayNames(["en"], { type: "currency" });
@@ -109,15 +127,7 @@ export function registerVoiceRoutes(app: Hono, deps: VoiceDeps): void {
 
   // ---------- Epic 14: the demo listing ----------
 
-  const resolve = (caseId: string) => {
-    const listing = deps.listings.find((l) => l.caseId === caseId);
-    if (!listing) return { error: { status: 404 as const, body: { error: "not_found", message: "That listing doesn't exist." } } };
-    const detail = deps.library?.get(listing.libraryId) ?? null;
-    if (detail && !detail.deleted && detail.state !== "live" && detail.state !== "draft") return { error: { status: 409 as const, body: { error: "listing_paused", message: `The seller has ${detail.state === "paused" ? "paused" : "closed"} this listing. No call was started.` } } };
-    const active = deps.library?.active(listing.libraryId) ?? null;
-    if (!active) return { error: { status: 409 as const, body: { error: "mandate_missing", message: "This listing isn't set up yet: the seller's mandate is missing or not confirmed. No call was started." } } };
-    return { listing, active };
-  };
+  const resolve = (caseId: string) => resolveListing(deps.listings, deps.library, caseId);
 
   /** Public listing content only: the confirmed mandate's public terms and facts. */
   app.get("/api/public/listings/:caseId", (c) => {
