@@ -16,9 +16,6 @@ import { clearedNow, publicDealTerms, type NegotiationState } from "./state.ts";
 /** The reason recorded when a session closes because the deal went to another counterparty. */
 export const DEAL_ELSEWHERE_REASON = "The principal agreed terms with another counterparty.";
 
-const CONTACT_KEPT = "Agreed to be contacted if the deal falls through.";
-const CONTACT_DECLINED = "Declined to be contacted later about this deal.";
-
 /**
  * Where "can I keep your number?" stands after a session closed because the deal went elsewhere:
  * asked (no answer yet), asked_number (they said yes; Kritva asked which number), kept, declined, or
@@ -30,10 +27,10 @@ export function contactState(ctx: SessionContext): "asked" | "asked_number" | "k
   let state: "asked" | "asked_number" | "kept" | "declined" = "asked";
   for (const e of ctx.events) {
     if (e.seq <= closedAt.seq) continue;
-    if (e.type === "counterparty_noted") {
-      const summary = (e.payload as PayloadOf<"counterparty_noted">).items[0]?.summary;
-      if (summary === CONTACT_KEPT) state = "kept";
-      if (summary === CONTACT_DECLINED) state = "declined";
+    if (e.type === "follow_up_noted") {
+      const keep = (e.payload as { keepContact?: boolean | null }).keepContact;
+      if (keep === true) state = "kept";
+      if (keep === false) state = "declined";
     }
     if (e.type === "message" && state === "asked" && (e.payload as PayloadOf<"message">).direction === "outbound" && /best number/i.test((e.payload as PayloadOf<"message">).text)) state = "asked_number";
   }

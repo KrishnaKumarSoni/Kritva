@@ -163,11 +163,16 @@ describe("several counterparties: the lock", () => {
     };
     const pr = await acceptAtAsking(ravi!);
     const pa = await acceptAtAsking(asha!);
-    expect((await call("POST", `/api/operator/sessions/${ravi}/approvals/${pr.requestId}`, { decision: "approved", offerId: pr.offerId, mandateRevision: pr.mandateRevision })).status).toBe(200);
-    await engine.settled();
+    const approved = await call("POST", `/api/operator/sessions/${ravi}/approvals/${pr.requestId}`, { decision: "approved", offerId: pr.offerId, mandateRevision: pr.mandateRevision });
+    expect(approved.status).toBe(200);
+    // Ravi's approval holds the deal: Asha's can't go through while it does.
     const second = await call("POST", `/api/operator/sessions/${asha}/approvals/${pa.requestId}`, { decision: "approved", offerId: pa.offerId, mandateRevision: pa.mandateRevision });
     expect(second.status).toBe(409);
-    expect(second.json.message).toMatch(/another counterparty/);
+    expect(second.json.message).toMatch(/holds this deal/);
+    // Ravi says yes again after the approval: only that records the agreement and closes Asha.
+    if (approved.json.reply?.messageId) await call("POST", `/api/buyer/sessions/${ravi}/deliveries`, { messageId: approved.json.reply.messageId });
+    await say(ravi!, "Yes, still good.", { intent: "accept_stated_terms", accepts_stated_terms: true });
+    await engine.settled();
     expect((await record.context(asha!)).status).toBe("no_agreement");
     const board = (await call("GET", `/api/operator/library/${mandateId}/board`)).json;
     expect(board.concluded.name).toBe("Ravi");

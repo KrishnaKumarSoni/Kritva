@@ -57,7 +57,31 @@ const VALUE_SCHEMA = {
   additionalProperties: false,
 };
 
-function schemaFor(termIds: string[]): Record<string, unknown> {
+/** The follow-up details a message can give while an offer waits for the principal. */
+const FOLLOW_UP_SCHEMA = {
+  type: "object",
+  description: "Only what this message itself says about following up on the pending offer. Nulls and false when it says nothing about it.",
+  properties: {
+    valid_until: { type: ["string", "null"], description: "When their offer stops standing, as an ISO 8601 date-time with offset, worked out from follow_up_context.now_local (\"till tonight\" is 23:59 today, \"till tomorrow\" is 23:59 tomorrow). Null if they did not say." },
+    validity_quote: { type: ["string", "null"], description: "Their exact words about how long the offer stands." },
+    contact: { type: ["string", "null"], enum: ["chat", "call", "whatsapp", null], description: "How they said they want to be reached: chat (here, in this conversation), call (a phone call) or whatsapp. Null unless this message says how." },
+    phone_number: { type: ["string", "null"], description: "A phone number they gave in this message, digits only." },
+    use_this_number: { type: "boolean", description: "True when they agree to be called back on the number they are calling from." },
+    best_time_quote: { type: ["string", "null"], description: "Their exact words about when suits them." },
+    keep_contact: { type: ["boolean", "null"], description: "Their yes (true) or no (false) to being contacted again if anything changes. Null if they did not answer that." },
+    declined: { type: "array", items: { type: "string", enum: ["validity", "contact", "time"] }, description: "Details they said they would rather not give." },
+  },
+  required: ["valid_until", "validity_quote", "contact", "phone_number", "use_this_number", "best_time_quote", "keep_contact", "declined"],
+  additionalProperties: false,
+};
+
+function schemaFor(termIds: string[], followUp = false): Record<string, unknown> {
+  const schema = baseSchema(termIds);
+  if (!followUp) return schema;
+  return { ...schema, properties: { ...(schema.properties as Record<string, unknown>), follow_up: FOLLOW_UP_SCHEMA }, required: [...(schema.required as string[]), "follow_up"] };
+}
+
+function baseSchema(termIds: string[]): Record<string, unknown> {
   return {
     type: "object",
     properties: {
@@ -157,6 +181,8 @@ export interface InterpretInput {
   conversation: Array<{ speaker: "agent" | "counterparty"; text: string }>;
   message: string;
   locale: string;
+  /** While an offer waits for the principal: also read the follow-up details, against this local time. */
+  followUp?: { now: Date; timeZone: string } | null;
   signal?: AbortSignal;
 }
 
@@ -182,14 +208,62 @@ export function interpretRequest(input: InterpretInput): { payload: Record<strin
       : null,
     recent_conversation: input.conversation.slice(-10),
     open_questions: input.openQuestions ?? [],
+    ...(input.followUp ? { follow_up_context: { now_local: localTime(input.followUp.now, input.followUp.timeZone), time_zone: input.followUp.timeZone } } : {}),
     counterparty_message: input.message,
   };
-  return { payload, schema: schemaFor(terms.map((t) => t.id)) };
+  return { payload, schema: schemaFor(terms.map((t) => t.id), Boolean(input.followUp)) };
+}
+
+/** "Sunday 22 November 2026, 19:05 (UTC+05:30)": the local time a reading works dates out from. */
+function localTime(now: Date, timeZone: string): string {
+  try {
+    const text = new Intl.DateTimeFormat("en-GB", { timeZone, weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZoneName: "longOffset" }).format(now);
+    return text.replace("GMT", "UTC");
+  } catch {
+    return now.toISOString();
+  }
+}
+
+/** Words that name a way to be reached, in English and Hindi. */
+const CHANNEL_WORDS = /\b(call|calling|phone|ring|whats ?app|message|msg|chat|text|sms|here|number|dial)\b|कॉल|फ़ोन|फोन|मैसेज|व्हाट्सऐप|व्हाट्सएप|नंबर|यहीं|यहाँ/i;
+
+/**
+ * The follow-up details of a reading, kept only where they are grounded: quotes must be the
+ * counterparty's own words, a number must be digits they said, and a time must be a real one that
+ * lies ahead (within a month). Anything else is dropped.
+ */
+export function readFollowUp(input: InterpretInput, json: unknown): NonNullable<Interpretation["followUp"]> | undefined {
+  if (!input.followUp) return undefined;
+  const raw = ((json ?? {}) as { follow_up?: Record<string, unknown> }).follow_up ?? {};
+  const quote = (value: unknown) => (typeof value === "string" && value.trim() && quoteAppearsIn(input.message, value.trim()) ? value.trim().slice(0, 300) : null);
+  const validity = quote(raw.validity_quote);
+  const when = typeof raw.valid_until === "string" ? new Date(raw.valid_until) : null;
+  const now = input.followUp.now.getTime();
+  const validUntil = validity && when && !Number.isNaN(when.getTime()) && when.getTime() > now - 3_600_000 && when.getTime() < now + 31 * 86_400_000 ? when.toISOString() : null;
+  const said = input.message.replace(/\D/g, "");
+  const digits = typeof raw.phone_number === "string" ? raw.phone_number.replace(/\D/g, "") : "";
+  const phone = digits.length >= 10 && digits.length <= 15 && said.includes(digits) ? digits : null;
+  // A way to reach them must be something they said (a channel or a number), never a default the reading filled in.
+  const namesChannel = CHANNEL_WORDS.test(input.message) || phone !== null || raw.use_this_number === true;
+  const contact = namesChannel && (raw.contact === "chat" || raw.contact === "call" || raw.contact === "whatsapp") ? raw.contact : null;
+  const declined = (Array.isArray(raw.declined) ? raw.declined : []).filter((d): d is "validity" | "contact" | "time" => d === "validity" || d === "contact" || d === "time");
+  return {
+    validUntil,
+    validity,
+    contact,
+    phone,
+    useThisNumber: raw.use_this_number === true,
+    bestTime: quote(raw.best_time_quote),
+    keepContact: typeof raw.keep_contact === "boolean" ? raw.keep_contact : null,
+    declined: [...new Set(declined)],
+  };
 }
 
 /** A model's reading of the message, validated and grounded in code. Nothing in it is trusted as is. */
 export function readInterpretation(input: InterpretInput, json: unknown): Interpretation {
   const result = toInterpretation(input.view, json, input.message);
+  const followUp = readFollowUp(input, json);
+  if (followUp) result.followUp = followUp;
   if (input.fulfillment) bindFulfillment(input.view, result, input.message, input.fulfillment);
   bindEarlierAmount(input, result);
   bindConfirmedAmount(input, result);

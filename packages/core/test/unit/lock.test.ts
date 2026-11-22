@@ -50,21 +50,38 @@ async function setup(options: { contactFor?: (id: string) => string | null } = {
     if (!state.pendingApproval) throw new Error(`no approval request (status ${state.status})`);
     return state.pendingApproval;
   };
-  const approve = (sessionId: string, requestId: string) => engine.respondToApproval({ sessionId, requestId, decision: "approved" });
-  return { record, groups, engine, start, say, acceptAtAsking, approve, concluded, closedElsewhere };
+  const approve = async (sessionId: string, requestId: string) => {
+    const r = await engine.respondToApproval({ sessionId, requestId, decision: "approved" });
+    if (r.ok && r.reply) await engine.reportDelivery({ sessionId, messageId: r.reply.messageId, channel: "text", status: "delivered" });
+    return r;
+  };
+  /** After the principal's approval, the counterparty says yes again: only that records the agreement. */
+  const confirm = (sessionId: string) => say(sessionId, "Yes, still good.", { intent: "accept_stated_terms", accepts_stated_terms: true });
+  /** Approve, then their yes. */
+  const agree = async (sessionId: string, requestId: string) => {
+    const r = await approve(sessionId, requestId);
+    if (!r.ok) throw new Error(r.message);
+    await confirm(sessionId);
+  };
+  return { record, groups, engine, start, say, acceptAtAsking, approve, confirm, agree, concluded, closedElsewhere };
 }
 
 describe("the deal lock", () => {
-  it("the first approval wins; the second is refused and that counterparty is closed politely", async () => {
-    const { record, engine, start, acceptAtAsking, approve, groups, concluded, closedElsewhere } = await setup();
+  it("the first approval holds the deal; a second is refused; their yes closes the other politely", async () => {
+    const { record, engine, start, acceptAtAsking, approve, confirm, groups, concluded, closedElsewhere } = await setup();
     const a = await start();
     const b = await start();
     const ra = await acceptAtAsking(a);
     const rb = await acceptAtAsking(b);
     const first = await approve(a, ra.requestId);
     expect(first.ok).toBe(true);
+    expect(groups.groupOf(a)!.reservation?.sessionId).toBe(a);
     const second = await approve(b, rb.requestId);
-    expect(second).toMatchObject({ ok: false, code: "reserved_elsewhere" });
+    expect(second.ok).toBe(false);
+    expect(!second.ok && second.message).toMatch(/holds this deal/);
+    // Nothing was recorded for the refused approval.
+    expect((await record.read(b, { viewer: "operator" })).some((e) => e.type === "approval_responded")).toBe(false);
+    await confirm(a);
     await engine.settled();
     expect((await record.context(a)).status).toBe("agreed");
     expect((await record.context(b)).status).toBe("no_agreement");
@@ -79,25 +96,25 @@ describe("the deal lock", () => {
   });
 
   it("records their yes and the number they give, then thanks them", async () => {
-    const { record, engine, start, acceptAtAsking, approve, say } = await setup();
+    const { record, engine, start, acceptAtAsking, agree, say } = await setup();
     const a = await start();
     const b = await start();
     const ra = await acceptAtAsking(a);
-    await approve(a, ra.requestId);
+    await agree(a, ra.requestId);
     await engine.settled();
     const reply = await say(b, "Yes please, it's 98450 12345");
     expect(reply.reply!.text).toMatch(/noted/);
     expect(contactState(await record.context(b))).toBe("kept");
-    const noted = (await record.read(b, { viewer: "operator" })).findLast((e) => e.type === "counterparty_noted")!.payload as PayloadOf<"counterparty_noted">;
-    expect(noted.items[0]!.value).toEqual({ type: "text", value: "9845012345" });
+    const noted = (await record.read(b, { viewer: "operator" })).findLast((e) => e.type === "follow_up_noted")!.payload as { keepContact: boolean; phone: string };
+    expect(noted).toMatchObject({ keepContact: true, phone: "9845012345" });
   });
 
   it("on a phone call, a yes keeps the caller's number; a no is respected", async () => {
-    const { record, engine, start, acceptAtAsking, approve, say } = await setup({ contactFor: () => "919845012345" });
+    const { record, engine, start, acceptAtAsking, agree, say } = await setup({ contactFor: () => "919845012345" });
     const a = await start();
     const b = await start();
     const c = await start();
-    await approve(a, (await acceptAtAsking(a)).requestId);
+    await agree(a, (await acceptAtAsking(a)).requestId);
     await engine.settled();
     await say(b, "Sure, go ahead");
     expect(contactState(await record.context(b))).toBe("kept");
@@ -106,9 +123,9 @@ describe("the deal lock", () => {
   });
 
   it("a new start after the deal concluded is refused", async () => {
-    const { engine, start, acceptAtAsking, approve, groups } = await setup();
+    const { engine, start, acceptAtAsking, agree, groups } = await setup();
     const a = await start();
-    await approve(a, (await acceptAtAsking(a)).requestId);
+    await agree(a, (await acceptAtAsking(a)).requestId);
     await engine.settled();
     expect(await groups.start({ mandate, mandateSource: { mandateId: "m_demo", revision: 1 }, entryId: null, via: "listing" })).toMatchObject({ ok: false, code: "concluded" });
   });

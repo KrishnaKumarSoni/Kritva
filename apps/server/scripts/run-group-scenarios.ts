@@ -99,7 +99,8 @@ async function run(s: Scenario) {
       await seeCards();
       const pending = cards.get(step.approve);
       const r = pending ? await call("POST", `/api/operator/sessions/${id}/approvals/${pending.requestId}`, { decision: "approved", offerId: pending.offerId, mandateRevision: pending.mandateRevision }) : { status: 0, json: { message: "no pending approval" } };
-      transcript.push(`Seller approves ${step.approve}: ${r.status}${r.json?.message ? ` (${r.json.message})` : ""}`);
+      transcript.push(`Principal approves ${step.approve}: ${r.status}${r.json?.message ? ` (${r.json.message})` : ""}${r.json?.reply?.text ? `\nKritva → ${step.approve} (follow-up): ${r.json.reply.text}` : ""}`);
+      if (r.json?.reply?.messageId) await call("POST", `/api/buyer/sessions/${id}/deliveries`, { messageId: r.json.reply.messageId });
       if (step.expectRefused && r.status !== 409) problems.push(`approving ${step.approve} should be refused, got ${r.status}`);
       if (!step.expectRefused && r.status !== 200) problems.push(`approving ${step.approve} failed: ${r.status} ${r.json?.message ?? ""}`);
       await engine.settled();

@@ -1,5 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import type { OperatorView } from "./api.ts";
+import type { Decision, OperatorView, TermValue } from "./api.ts";
+import { ApprovalCard, FollowUpStatus } from "./ApprovalCard.tsx";
 import { CheckIcon, ClockIcon, LockIcon } from "./icons.tsx";
 import { formatAmount, PriceBand, zoneSentence } from "./PriceBand.tsx";
 
@@ -17,7 +18,8 @@ const STATUS: Record<string, { label: string; tone: "live" | "wait" | "done" | "
 interface InsightsPanelProps {
   view: OperatorView | null;
   responding: boolean;
-  onRespond: (requestId: string, decision: "approved" | "rejected") => void;
+  sessionId: string | null;
+  onDecide: (requestId: string, decision: Decision, extra: { message?: string; counterTerms?: Array<{ termId: string; value: TermValue }> }) => Promise<boolean>;
   onPause: (paused: boolean) => void;
   onEditInstructions: (() => void) | null;
 }
@@ -30,7 +32,7 @@ function splitTerm(line: string): [string, string] {
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-export function InsightsPanel({ view, responding, onRespond, onPause, onEditInstructions }: InsightsPanelProps) {
+export function InsightsPanel({ view, responding, sessionId, onDecide, onPause, onEditInstructions }: InsightsPanelProps) {
   const reduced = useReducedMotion();
   if (!view) {
     return (
@@ -95,27 +97,13 @@ export function InsightsPanel({ view, responding, onRespond, onPause, onEditInst
                 <ClockIcon width={16} height={16} aria-hidden="true" />
                 {pending.purpose === "exception" ? "Approve an exception?" : `The ${roles.counterparty} accepted. Approve?`}
               </h3>
-              <p className="callout-text">{pending.requestedAction}</p>
-              {pending.terms && (
-                <dl className="kv">
-                  {pending.terms.map((t) => (
-                    <div key={t.termId} className="kv-row">
-                      <dt>{cap(t.name)}</dt>
-                      <dd className="tabular">{t.value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              )}
-              {pending.breachedRules.length > 0 && <p className="callout-note">Outside your instructions: {pending.breachedRules.join("; ")}</p>}
-              <div className="callout-actions">
-                <button type="button" className="button button-accent" disabled={responding} onClick={() => onRespond(pending.requestId, "approved")}>
-                  Approve
-                </button>
-                <button type="button" className="button button-secondary" disabled={responding} onClick={() => onRespond(pending.requestId, "rejected")}>
-                  Reject
-                </button>
-              </div>
+              {sessionId && <ApprovalCard sessionId={sessionId} state={state} roles={roles} responding={responding} onDecide={onDecide} />}
             </motion.section>
+          )}
+          {!pending && state.followUp?.decision && state.followUp.status && state.followUp.status !== "agreed" && (
+            <motion.div key="follow-up" {...enter} exit={{ opacity: 0 }} transition={spring}>
+              <FollowUpStatus followUp={state.followUp} roles={roles} />
+            </motion.div>
           )}
           {commitments.agreement && (
             <motion.section key="agreement" className="callout callout-done" aria-labelledby="agreement-title" {...enter} transition={spring}>

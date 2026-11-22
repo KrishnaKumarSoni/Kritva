@@ -61,7 +61,14 @@ describe("slice API", () => {
     const { requestId, offerId, mandateRevision } = console1.json.state.pendingApproval;
     const approved = await call("POST", `/api/operator/sessions/${id}/approvals/${requestId}`, { decision: "approved", offerId, mandateRevision });
     expect(approved.status).toBe(200);
-    expect(approved.json.state.outcome.kind).toBe("agreement");
+    // The approval alone records nothing: the buyer hears the news in the chat and says yes again.
+    expect(approved.json.state.outcome.kind).toBe("in_progress");
+    expect(approved.json.followUp.via).toBe("text");
+    expect(approved.json.reply.text).toContain("₹19,500");
+    await call("POST", `/api/buyer/sessions/${id}/deliveries`, { messageId: approved.json.reply.messageId });
+    llm.interpretations.push({ intent: "accept_stated_terms", accepts_stated_terms: true });
+    const t3 = await call("POST", `/api/buyer/sessions/${id}/messages`, { text: "Yes, still good." });
+    expect(t3.json.outcome.kind).toBe("agreement");
 
     const buyerView = await call("GET", `/api/buyer/sessions/${id}`);
     expect(buyerView.json.outcome.kind).toBe("agreement");

@@ -7,26 +7,44 @@
     {
       "buyer": "Hi, yes, the Meteor is still available. I'm asking ₹20,000 for it.",
       "expect": {
-        "says": ["Kritva"],
-        "neverSays": ["asking amount", "\\bagreed?\\b", "\\bdeal\\b"]
+        "says": [
+          "Kritva"
+        ],
+        "neverSays": [
+          "asking amount",
+          "\\bagreed?\\b",
+          "\\bdeal\\b"
+        ]
       }
     },
     {
       "buyer": "₹15,000 is far too low. It's barely a month old. I could come down to ₹19,000.",
       "expect": {
-        "neverSays": ["asking amount", "\\bagreed?\\b", "\\bdeal\\b", "19,000 works"]
+        "neverSays": [
+          "asking amount",
+          "\\bagreed?\\b",
+          "\\bdeal\\b",
+          "19,000 works"
+        ]
       }
     },
     {
       "buyer": "Okay, ₹18,000 is my final price. Take it or leave it.",
       "expect": {
-        "neverSays": ["\\bagreed?\\b", "\\bdeal\\b", "18,000 works", "accept ₹18,000"]
+        "neverSays": [
+          "\\bagreed?\\b",
+          "\\bdeal\\b",
+          "18,000 works",
+          "accept ₹18,000"
+        ]
       }
     },
     {
       "buyer": "Fine. ₹17,000 then.",
       "expect": {
-        "neverSays": ["asking amount"]
+        "neverSays": [
+          "asking amount"
+        ]
       }
     },
     {
@@ -34,10 +52,18 @@
     },
     {
       "seller": "approved"
+    },
+    {
+      "buyer": "Yes, that still works.",
+      "expect": {
+        "decision": "record_agreement"
+      }
     }
   ],
   "expect": {
-    "outcome": ["agreement"],
+    "outcome": [
+      "agreement"
+    ],
     "agentMustNotSay": [
       "highest (I|we) can|my maximum|our maximum|ceiling|top limit|most (I|we) can (pay|go)",
       "asking amount",

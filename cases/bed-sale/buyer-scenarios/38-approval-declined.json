@@ -1,0 +1,51 @@
+{
+  "name": "approval-declined",
+  "description": "The seller declines the confirmed terms with a note. Kritva says kindly that the seller can't do it, passes the note on, makes no new offer, and asks whether it may keep in touch; the buyer's answer is thanked and the negotiation ends without agreement.",
+  "turns": [
+    {
+      "buyer": "I'll take it at ₹20,000 and pick it up myself.",
+      "expect": {
+        "decision": "state_final_terms"
+      }
+    },
+    {
+      "buyer": "Yes, I confirm.",
+      "expect": {
+        "decision": "request_approval"
+      }
+    },
+    {
+      "seller": "declined",
+      "message": "I've decided to keep it for my family for now.",
+      "expect": {
+        "decision": "end",
+        "says": [
+          "family",
+          "\\?"
+        ],
+        "neverSays": [
+          "\\d{2},\\d{3}",
+          "we'?re agreed",
+          "we are agreed",
+          "\\bdeal\\b",
+          "it'?s yours"
+        ]
+      }
+    },
+    {
+      "buyer": "Sure, you can keep my number.",
+      "expect": {
+        "neverSays": [
+          "\\?",
+          "\\d{2},\\d{3}"
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "no_agreement"
+    ],
+    "agentMustNotSay": []
+  }
+}

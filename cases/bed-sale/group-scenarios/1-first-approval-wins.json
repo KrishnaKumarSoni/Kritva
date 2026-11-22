@@ -1,6 +1,6 @@
 {
   "name": "first-approval-wins",
-  "description": "Two buyers accept the asking price. The seller approves the first; the second approval is refused and that buyer is told politely and asked to keep their number.",
+  "description": "Two counterparties accept the asking price. The principal approves the first, which holds the deal; approving the second is refused. The first says yes again, which records the agreement, and the second is told politely and asked to keep their number.",
   "steps": [
     {
       "as": "A",
@@ -32,6 +32,10 @@
     {
       "approve": "B",
       "expectRefused": true
+    },
+    {
+      "as": "A",
+      "say": "Yes, still good, I confirm."
     }
   ],
   "checks": [

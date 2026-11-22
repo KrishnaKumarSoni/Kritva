@@ -225,9 +225,17 @@ describe("negotiation turns on the shared record", () => {
 
     const approved = await engine.respondToApproval({ sessionId, requestId: t2.state.pendingApproval!.requestId, decision: "approved" });
     if (!approved.ok) throw new Error(approved.message);
-    expect(approved.state.outcome.kind).toBe("agreement");
-    expect(approved.state.outcome.terms?.find((t) => t.termId === terms.price)?.value).toMatchObject({ amount: 19_500 });
-    expect(approved.state.outcome.terms?.find((t) => t.termId === terms.delivery)?.value).toEqual({ type: "boolean", value: false });
+    // The approval alone records nothing: the buyer is asked again.
+    expect(approved.state.outcome.kind).toBe("in_progress");
+    expect(approved.events.some((e) => e.type === "agreement_recorded")).toBe(false);
+    expect(approved.followUp.via).toBe("text");
+    expect(approved.reply!.text).toContain("₹19,500");
+    await engine.reportDelivery({ sessionId, messageId: approved.reply!.messageId, channel: "text", status: "delivered" });
+
+    const yes = await say("Yes, still good.", { intent: "accept_stated_terms", accepts_stated_terms: true });
+    expect(yes.state.outcome.kind).toBe("agreement");
+    expect(yes.state.outcome.terms?.find((t) => t.termId === terms.price)?.value).toMatchObject({ amount: 19_500 });
+    expect(yes.state.outcome.terms?.find((t) => t.termId === terms.delivery)?.value).toEqual({ type: "boolean", value: false });
   });
 
   it("missing seller approval produces pending approval, not an agreement", async () => {
@@ -275,16 +283,18 @@ describe("negotiation turns on the shared record", () => {
     expect(events.some((e) => e.type === "approval_responded" || e.type === "agreement_recorded")).toBe(false);
   });
 
-  it("the seller can reject: no agreement, and the agent returns to its previous ask", async () => {
+  it("the seller can decline: no agreement, a kind no and a keep-in-touch question, with no new offer", async () => {
     const { say, engine, sessionId } = await setup();
     await say("₹19,000?", { intent: "offer", offer_terms: [offer(19_000)] });
     await say("₹19,000, final.", { intent: "offer", offer_terms: [offer(19_000)] });
     const accepted = await say("Yes.", { intent: "accept_stated_terms", accepts_stated_terms: true });
-    const rejected = await engine.respondToApproval({ sessionId, requestId: accepted.state.pendingApproval!.requestId, decision: "rejected" });
-    if (!rejected.ok) throw new Error(rejected.message);
-    expect(rejected.state.outcome.kind).toBe("in_progress");
-    expect(rejected.reply!.text).toMatch(/didn't approve/i);
-    expect(rejected.reply!.text).toContain("₹19,500");
+    const declined = await engine.respondToApproval({ sessionId, requestId: accepted.state.pendingApproval!.requestId, decision: "rejected" });
+    if (!declined.ok) throw new Error(declined.message);
+    expect(declined.state.outcome.kind).toBe("no_agreement");
+    expect(declined.state.status).toBe("no_agreement");
+    expect(declined.reply!.text).toMatch(/can't do that one/i);
+    expect(declined.reply!.text).toMatch(/keep your number/i);
+    expect(findAmounts(declined.reply!.text)).toEqual([]);
   });
 
   it("a retried message is not processed twice", async () => {

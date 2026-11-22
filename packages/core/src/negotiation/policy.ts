@@ -48,6 +48,17 @@ export interface Interpretation {
   endsNegotiation?: boolean;
   /** A pressure move: asking for the lowest price, calling an offer final, or citing a cheaper option. */
   pressure?: "none" | "lowest_price" | "final_offer" | "cheaper_elsewhere";
+  /** Follow-up details, read only while an offer waits for the principal. */
+  followUp?: {
+    validUntil: string | null;
+    validity: string | null;
+    contact: "chat" | "call" | "whatsapp" | null;
+    phone: string | null;
+    useThisNumber: boolean;
+    bestTime: string | null;
+    keepContact: boolean | null;
+    declined: Array<"validity" | "contact" | "time">;
+  };
 }
 
 /** The counterparty's proposal as a whole: their terms on top of the agent's current package, and its deal-space check. */
@@ -87,7 +98,29 @@ export interface Plan {
   /** For an end: who asked for it, why, and what was left open. */
   end?: { requestedBy: "counterparty" | "agent" | "principal"; reason: string; unresolved: string[]; line: string | null } | null;
   /** A question the strategy wants asked that is not one Epic 5 prepared (recorded before asking). */
-  strategyQuestion?: { text: string; kind: "terms_probe" | "comparison" | "conditional" | "obstacle"; purpose: string; key?: string };
+  strategyQuestion?: { text: string; kind: "terms_probe" | "comparison" | "conditional" | "obstacle" | "follow_up"; purpose: string; key?: string };
+  /**
+   * The approval wrap-up or follow-up step this reply carries out. Wrap-up (after the counterparty
+   * accepts terms that need approval): ask how long the offer stands, how and when to reach them,
+   * then close by saying nothing is final yet. Follow-up (after the principal decides): approved,
+   * countered or declined, and their answer to keeping in touch.
+   */
+  followUp?: {
+    step: "validity" | "contact" | "phone" | "close" | "approved" | "countered" | "declined" | "keep_contact";
+    /** The offer the wrap-up is for. */
+    offerId?: string;
+    /** The offer's stated time has passed: ask whether it still stands before anything else. */
+    expired?: boolean;
+    /** Kritva is calling them back: say who is calling and why first. */
+    callBack?: boolean;
+    contact?: "chat" | "call" | "whatsapp" | null;
+    /** Words the principal asked to pass on. */
+    messageFromPrincipal?: string | null;
+  };
+  /** On a call: hang up once this reply has been heard. */
+  endCall?: boolean;
+  /** The counterparty's own offer, recapped as theirs while the principal is asked for an exception. */
+  recap?: OfferTerm[];
   decision: { kind: DecisionKind; reason: string };
   offer: { terms: OfferTerm[]; basis: "counter" | "final_terms"; tactic?: Tactic | null } | null;
   /** Stated terms the counterparty just accepted. */
@@ -205,6 +238,12 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
     return { ...plan, move: "closed", action: "answer", decision: { kind: "answer", reason: "An agreement is already recorded; nothing changes." } };
   }
   if (state.outcome.kind === "no_agreement") {
+    // Their answer to "can I keep your number in case anything changes?" after the principal declined.
+    const keepKey = keepContactKey(state);
+    const keepAsked = keepKey !== null && context.counterparty?.questions.some((q) => q.issueKey === keepKey && q.status !== "open");
+    if (keepAsked && interp.followUp && interp.followUp.keepContact !== null) {
+      return { ...plan, move: "closed", action: "answer", notice: null, refuseDisclosure: false, questions: [], unresolved: [], followUp: { step: "keep_contact" }, endCall: true, decision: { kind: "answer", reason: "They answered whether they may be contacted again; thank them and close." } };
+    }
     return { ...plan, move: "closed", action: "answer", notice: "ended", refuseDisclosure: false, questions: [], unresolved: [], decision: { kind: "answer", reason: "The negotiation ended without agreement; nothing is offered." } };
   }
 
@@ -267,9 +306,9 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
   }
   const declineReason = plan.declined.length > 0 ? " Requested changes to other terms are outside the mandate." : "";
 
-  // Already waiting on the principal: repeating acceptance changes nothing.
+  // Already waiting on the principal: repeating acceptance changes nothing. The wrap-up carries on.
   if (state.status === "awaiting_approval" && amount === null && plan.declined.length === 0 && extras.length === 0) {
-    return { ...plan, move: "await_approval", action: "wait", decision: { kind: "hold", reason: "Waiting for the principal's approval." } };
+    return withWrapUp({ ...plan, move: "await_approval", action: "wait", decision: { kind: "hold", reason: "Waiting for the principal's approval." } }, state, state.pendingApproval?.offerId ?? null, context);
   }
 
   // Accepting the stated terms, with nothing changed.
@@ -278,9 +317,11 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
     if (final && final.communicated && clearedNow(state, final.offerId, final.termsHash)) {
       plan.assessment = assessPackage(state, final.terms, context.locale);
       if (view.acceptRequiresApproval && !approvedFor(state, final.termsHash)) {
-        return { ...plan, move: "request_approval", action: "accept", acceptanceOf: final, decision: { kind: "request_approval", reason: "Counterparty accepted the stated terms; the mandate requires the principal's approval." } };
+        return withWrapUp({ ...plan, move: "request_approval", action: "accept", acceptanceOf: final, decision: { kind: "request_approval", reason: "Counterparty accepted the stated terms; the mandate requires the principal's approval." } }, state, final.offerId, context);
       }
-      return { ...plan, move: "confirm_agreement", action: "accept", acceptanceOf: final, decision: { kind: "record_agreement", reason: "Counterparty accepted the stated terms; the mandate allows accepting." } };
+      // After a follow-up, their yes closes the deal, and a call ends once the agreement is said.
+      const approved = Boolean(approvedFor(state, final.termsHash));
+      return { ...plan, move: "confirm_agreement", action: "accept", acceptanceOf: final, endCall: approved, decision: { kind: "record_agreement", reason: approved ? "Counterparty accepted the terms again after the principal approved them." : "Counterparty accepted the stated terms; the mandate allows accepting." } };
     }
     return {
       ...plan,
@@ -394,7 +435,7 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
       if (ask === limit) {
         const binding = applicableLimit(state.space, n.termId, deal.package);
         const candidate = finalPackage(view, amount, keep);
-        const alreadyRejected = state.approvals.some((a) => a.decision === "rejected" && a.termsHash === hashTerms(candidate) && a.mandateRevision === state.mandateRevision);
+        const alreadyRejected = state.approvals.some((a) => a.decision !== "approved" && a.termsHash === hashTerms(candidate) && a.mandateRevision === state.mandateRevision);
         if (binding && !alreadyRejected && view.authority.exceptionFor(binding.ruleId) === "with_approval" && state.counterpartyAmounts.slice(0, -1).length > 0) {
           return { ...finalAt(plan, view, amount, keep, `Offer is outside the limit; the mandate allows asking the principal for an exception.${declineReason}`), action: "request_approval" };
         }
@@ -561,6 +602,60 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
     return holdAt(plan, view, state.currentAsk, packageExtras(state, []), "The counterparty objected without new terms; the current offer stands.");
   }
   return plan;
+}
+
+/** Question keys for the wrap-up, so each detail is asked once. */
+export const FOLLOW_UP_KEYS = {
+  /** Asked once per negotiation: a later round (after a counter) reuses the answer, or goes without it. */
+  validity: "follow_up:validity",
+  contact: "follow_up:contact",
+  phone: "follow_up:phone",
+  keepContact: (responseId: string) => `follow_up:keep_contact:${responseId}`,
+} as const;
+
+function keepContactKey(state: NegotiationState): string | null {
+  const d = state.followUp.decision;
+  return d && d.decision === "declined" ? FOLLOW_UP_KEYS.keepContact(d.responseId) : null;
+}
+
+/**
+ * The next wrap-up step for terms waiting on the principal: how long the offer stands, then how and
+ * when to reach them (and a number when they want a call), then the closing line. Each detail is asked
+ * at most once, a detail they already gave is not asked, and null means the wrap-up is done.
+ */
+export function wrapUpStep(state: NegotiationState, offerId: string, context: StrategyContext): NonNullable<Plan["followUp"]>["step"] | null {
+  const f = state.followUp;
+  const asked = (key: string) => context.counterparty?.questions.some((q) => q.issueKey === key && q.status !== "open") === true;
+  // What they said about how long it stands carries over to a later round (a counter's new terms).
+  const hasValidity = f.validUntil !== null || f.validity !== null;
+  if (!hasValidity && !asked(FOLLOW_UP_KEYS.validity)) return "validity";
+  if (f.contact === null && !asked(FOLLOW_UP_KEYS.contact)) return "contact";
+  if ((f.contact === "call" || f.contact === "whatsapp") && f.phone === null && !asked(FOLLOW_UP_KEYS.phone)) return "phone";
+  if (!f.closedOfferIds.includes(offerId)) return "close";
+  return null;
+}
+
+const WRAP_UP_QUESTIONS = {
+  validity: { text: "How long does your offer stand?", purpose: "Find out how long their offer stands, for example whether it is good till tonight. Ask only this. Never suggest it is agreed." },
+  contact: { text: "What's the best way and time to reach you?", purpose: "Find out how they would like to hear back (a phone call, or here in this conversation) and what time suits them. Ask only this." },
+  phone: { text: "What number should I call you on?", purpose: "Get the phone number to call them back on. Ask only this." },
+} as const;
+
+/** Adds the wrap-up step to a plan for terms waiting on the principal (no step: the plan is unchanged). */
+function withWrapUp(plan: Plan, state: NegotiationState, offerId: string | null, context: StrategyContext): Plan {
+  if (!offerId) return plan;
+  const step = wrapUpStep(state, offerId, context);
+  if (!step) return plan;
+  const contact = state.followUp.contact;
+  if (step === "close") return { ...plan, followUp: { step, offerId, contact }, endCall: true, questions: [] };
+  const key = step === "validity" ? FOLLOW_UP_KEYS.validity : step === "contact" ? FOLLOW_UP_KEYS.contact : FOLLOW_UP_KEYS.phone;
+  const q = WRAP_UP_QUESTIONS[step as keyof typeof WRAP_UP_QUESTIONS];
+  return { ...plan, followUp: { step, offerId, contact }, strategyQuestion: { key, kind: "follow_up", text: q.text, purpose: q.purpose } };
+}
+
+/** The question asked with a decline: may Kritva contact them again if anything changes. */
+export function keepContactQuestion(responseId: string): NonNullable<Plan["strategyQuestion"]> {
+  return { key: FOLLOW_UP_KEYS.keepContact(responseId), kind: "follow_up", text: "Can I keep your number in case anything changes?", purpose: "Ask whether you may contact them again if anything changes. Ask only this." };
 }
 
 function endWith(plan: Plan, requestedBy: "counterparty" | "agent", reason: string, unresolved: string[], line: string | null): Plan {

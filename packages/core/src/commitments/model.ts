@@ -151,7 +151,8 @@ export function projectCommitments(ctx: SessionContext, options: { negotiableTer
       case "approval_responded": {
         const p = e.payload as PayloadOf<"approval_responded">;
         const o = byId.get(p.offerId);
-        if (o) o.approval = p.decision;
+        // A counter or a decline both leave these exact terms not approved.
+        if (o) o.approval = p.decision === "approved" ? "approved" : "rejected";
         break;
       }
       case "agreement_recorded": {

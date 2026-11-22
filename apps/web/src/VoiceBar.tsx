@@ -102,9 +102,21 @@ export function VoiceBar({ sessionId, messages, paused, startRequest = 0, onActi
   const disconnect = useCallback(() => {
     if ((!session.current && !live.current) || !sessionId) return;
     end();
-    setError("Voice was interrupted. Start voice again to continue.");
-    if (navigator.onLine) void api.voiceInterrupted(sessionId).then(onTurn).catch(() => undefined);
-    else window.addEventListener("online", () => { void api.voiceInterrupted(sessionId).then(onTurn).catch(() => undefined); }, { once: true });
+    const interrupted = "Voice was interrupted. Start voice again to continue.";
+    // Kritva may have ended the call itself after its closing line: then the call simply ended.
+    const notify = () =>
+      api.voiceInterrupted(sessionId)
+        .then(async (res) => {
+          const body = (await res.json().catch(() => ({}))) as { endedByKritva?: boolean };
+          if (!body.endedByKritva) setError(interrupted);
+          onTurn();
+        })
+        .catch(() => setError(interrupted));
+    if (navigator.onLine) void notify();
+    else {
+      setError(interrupted);
+      window.addEventListener("online", () => void notify(), { once: true });
+    }
   }, [end, onTurn, sessionId]);
   const disconnectRef = useRef(disconnect);
   disconnectRef.current = disconnect;
@@ -149,6 +161,8 @@ export function VoiceBar({ sessionId, messages, paused, startRequest = 0, onActi
       },
       onDisconnected: () => disconnectRef.current(),
       onActivity: () => onTurn(),
+      // The recording goes to the seller's approval card; a failed upload never disturbs the buyer.
+      onRecording: (audio, ms) => void api.uploadRecording(sessionId, audio, ms).catch(() => undefined),
     });
     live.current = rt;
     const ok = await rt.start(async (sdp) => {

@@ -19,6 +19,9 @@
     },
     {
       "seller": "approved"
+    },
+    {
+      "buyer": "Yes, still good."
     }
   ],
   "expect": {

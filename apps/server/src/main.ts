@@ -11,6 +11,8 @@ import type { OutboundDialer } from "./phone/outbound.ts";
 import { loadCaseRuntime, maxCounterparties } from "./main-helpers.ts";
 import { LiveCalls } from "./live-calls.ts";
 import { hangUpPending } from "./group-routes.ts";
+import { FollowUpCalls, followUpSettingsFromEnv } from "./phone/follow-up.ts";
+import { sipUri } from "./phone/config.ts";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
 
@@ -56,11 +58,15 @@ const engine = new NegotiationEngine({
 const revisions = new MandateRevisions({ record, engine, mappingLlm });
 // The intake agent: a separate chat agent that gathers a new or changed mandate before any negotiation.
 const intake = new IntakeService({ store: new SqliteIntakeStore(join(dataDir, "kritva.sqlite")), agent: createIntakeAgentFromEnv(), library, defaultCurrency: process.env.KRITVA_DEFAULT_CURRENCY ?? "Indian rupees (₹)" });
-const configuredKey = process.env.KRITVA_OPERATOR_KEY?.trim();
-const operatorKey = configuredKey || randomBytes(24).toString("base64url");
 // Phone calls (docs/Kritva_Phone_Calls.md), and Kritva's outbound dialer, shared by the phone routes and the counterparties' board.
 const phone = phoneFromEnv();
 dialer = outboundDialer(phone, engine);
+// Call-backs after the seller decides (Vobiz). Without them, every follow-up goes to the buyer's chat.
+const followUpConfig = followUpSettingsFromEnv(process.env, phone ? sipUri(phone.settings) : null);
+const followUps = phone && followUpConfig.settings ? new FollowUpCalls({ record, engine, settings: followUpConfig.settings, log: (entry) => console.log("[follow-up]", JSON.stringify(entry)) }) : null;
+console.log(followUps ? "Call-backs: on (Vobiz)." : `Call-backs: off${phone ? `. ${followUpConfig.problems.join(" ")}` : " (phone calls are off)"}. Follow-ups go to the buyer's chat.`);
+const configuredKey = process.env.KRITVA_OPERATOR_KEY?.trim();
+const operatorKey = configuredKey || randomBytes(24).toString("base64url");
 const app = createApp({
   record,
   engine,
@@ -84,6 +90,9 @@ const app = createApp({
   groups,
   liveCalls,
   dialer,
+  followUps,
+  recordingsDir: join(dataDir, "recordings"),
+  vobizAuth: process.env.VOBIZ_AUTH_ID && process.env.VOBIZ_AUTH_TOKEN ? { authId: process.env.VOBIZ_AUTH_ID, authToken: process.env.VOBIZ_AUTH_TOKEN } : null,
 });
 const port = Number(process.env.PORT ?? 8787);
 

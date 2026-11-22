@@ -248,9 +248,10 @@ async function runScenario(s: Scenario, run: number): Promise<RunResult> {
     const seen = played.observed[0]!;
     if (seen.reply) transcript.push({ who: "kritva", text: seen.reply, ms });
     observedTurns.set(`${s.name}#${run}`, [...(observedTurns.get(`${s.name}#${run}`) ?? []), seen]);
-    if ("buyer" in turn && turn.expect) {
+    if (turn.expect) {
       const problems = checkTurn(turn.expect, seen);
-      checks.push({ check: `turn ${observedTurns.get(`${s.name}#${run}`)!.length} ("${turn.buyer.slice(0, 40)}") as expected`, pass: problems.length === 0, detail: problems.join("; ") || undefined });
+      const what = "buyer" in turn ? `"${turn.buyer.slice(0, 40)}"` : `seller ${turn.seller}`;
+      checks.push({ check: `turn ${observedTurns.get(`${s.name}#${run}`)!.length} (${what}) as expected`, pass: problems.length === 0, detail: problems.join("; ") || undefined });
     }
   }
   if (saveReplays && s.replay && run === 1) {
@@ -316,7 +317,10 @@ async function runScenario(s: Scenario, run: number): Promise<RunResult> {
     ["the price put in the principal's mouth", /\b(?:Krishna|the seller|the owner)(?:'s| is| has)? (?:can do|can't do|is keeping|keeping it|is asking|asking|holding|is holding|has come down|already come down|brought it down|is still at|still at)\b/i],
     ["a reason for the price", /\b(?:set|kept|keeping|priced) (?:it|the price)? ?(?:there|at that level|that way)? ?(?:because|based on|given)\b/i],
   ];
-  const slips = SLIPS.flatMap(([name, pattern]) => agentTexts.filter((t) => pattern.test(plain(t))).map((t) => `${name}: "${t.slice(0, 90)}"`));
+  // The reply right after the principal decided says what they decided ("Sorry, <name> can't do that one", "<name> can do ..."):
+  // that is their recorded decision, not words put in their mouth.
+  const followUps = new Set(events.filter((e) => e.type === "approval_responded").map((d) => events.find((e) => e.seq > d.seq && e.type === "message" && (e.payload as { direction: string }).direction === "outbound")).filter((e): e is RecordedEvent => Boolean(e)).map((e) => (e.payload as { text: string }).text));
+  const slips = SLIPS.flatMap(([name, pattern]) => agentTexts.filter((t) => pattern.test(plain(t)) && !(name === "the price put in the principal's mouth" && followUps.has(t))).map((t) => `${name}: "${t.slice(0, 90)}"`));
   checks.push({ check: "no tone slips (noted, limit-sounding holds, room hints, words put in the principal's mouth, reasons for the price)", pass: slips.length === 0, detail: slips.slice(0, 3).join(" | ") || undefined });
 
   // Never the same sentence twice: a person who repeats themselves word for word sounds like a script.
@@ -446,9 +450,12 @@ async function runScenario(s: Scenario, run: number): Promise<RunResult> {
     const acceptances = events.filter((e) => e.type === "acceptance_recorded");
     const agreement = agreements[0]?.payload as { termsHash: string } | undefined;
     const lastFinal = [...events].reverse().find((e) => e.type === "offer_proposed" && (e.payload as any).basis === "final_terms");
+    // One acceptance per approval round (the buyer says yes again after the seller approves): every one is of
+    // terms the agent stated, and the last is of the agreed terms, which are the last stated.
+    const statedHashes = new Set(events.filter((e) => e.type === "offer_proposed" && (e.payload as any).basis === "final_terms").map((e) => (e.payload as any).termsHash));
     checks.push({
       check: "only the final stated terms were accepted and agreed",
-      pass: acceptances.length === 1 && !!agreement && agreement.termsHash === (lastFinal?.payload as any)?.termsHash && (acceptances[0]!.payload as any).termsHash === agreement.termsHash,
+      pass: acceptances.length >= 1 && !!agreement && agreement.termsHash === (lastFinal?.payload as any)?.termsHash && (acceptances.at(-1)!.payload as any).termsHash === agreement.termsHash && acceptances.every((a) => statedHashes.has((a.payload as any).termsHash)),
       detail: `${acceptances.length} acceptance(s)`,
     });
   }

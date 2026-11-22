@@ -72,7 +72,15 @@ export interface NegotiationState {
   pendingFinal: StatedOffer | null;
   pendingApproval: { requestId: string; offerId: string; termsHash: string; acceptanceId: string | null; purpose: "acceptance" | "exception"; breachedRuleIds: string[]; requestedAction: string } | null;
   /** Every principal decision on an approval request, with the exact terms and revision it covers. */
-  approvals: Array<{ requestId: string; responseId: string; offerId: string; termsHash: string; mandateRevision: number; purpose: "acceptance" | "exception"; breachedRuleIds: string[]; decision: "approved" | "rejected" }>;
+  approvals: Array<{ requestId: string; responseId: string; offerId: string; termsHash: string; mandateRevision: number; purpose: "acceptance" | "exception"; breachedRuleIds: string[]; decision: "approved" | "rejected" | "countered" }>;
+  /** What following up on a pending offer needs, and where the follow-up stands. */
+  followUp: FollowUpState;
+  /** A voice call is connected right now. */
+  callConnected: boolean;
+  /** An approval request the counterparty's change of terms made void, while its replacement is open. */
+  supersededApproval: { offerId: string; terms: OfferTerm[] } | null;
+  /** Call recordings kept for the principal, oldest first. */
+  recordings: Array<{ id: string; source: "browser" | "vobiz"; file: string; contentType: string; durationMs: number | null; recordedAt: string }>;
   /** The status to return to when a pause ends. */
   statusBeforePause: SessionStatus | null;
   acceptances: Array<{ id: string; offerId: string; termsHash: string }>;
@@ -88,6 +96,33 @@ export interface NegotiationState {
   checkFindings: Map<string, PayloadOf<"proposal_checked">["findings"]>;
   /** The most recent check of a counterparty proposal. */
   lastCounterpartyCheck: { offerId: string; checkedTerms: OfferTerm[]; result: "fits" | "conflicts" | "needs_clarification"; findings: PayloadOf<"proposal_checked">["findings"] } | null;
+}
+
+export interface FollowUpState {
+  /** How long the offer stands, for the offer named in validityOfferId. */
+  validUntil: string | null;
+  validity: string | null;
+  validityOfferId: string | null;
+  contact: "chat" | "call" | "whatsapp" | null;
+  phone: string | null;
+  bestTime: string | null;
+  keepContact: boolean | null;
+  /** Offers whose wrap-up ("not final until ... confirms") was already said. */
+  closedOfferIds: string[];
+  /** The principal's latest decision on an approval request. */
+  decision: {
+    responseId: string;
+    requestId: string;
+    decision: "approved" | "countered" | "declined";
+    offerId: string;
+    counterOfferId: string | null;
+    messageToCounterparty: string | null;
+    purpose: "acceptance" | "exception";
+    recordedAt: string;
+  } | null;
+  /** A reply went to the counterparty after that decision. */
+  followedUp: boolean;
+  attempts: Array<{ channel: "text" | "call"; attempt: number; outcome: PayloadOf<"follow_up_attempted">["outcome"]; providerCallId: string | null; recordedAt: string }>;
 }
 
 /** The principal's approval of these exact terms under the mandate revision in force, if any. */
@@ -142,6 +177,10 @@ export function projectState(ctx: SessionContext): NegotiationState {
   const requests = new Map<string, PayloadOf<"approval_requested">>();
   let statusBeforePause: SessionStatus | null = null;
   let lastCounterpartyCheck: NegotiationState["lastCounterpartyCheck"] = null;
+  const followUp: FollowUpState = { validUntil: null, validity: null, validityOfferId: null, contact: null, phone: null, bestTime: null, keepContact: null, closedOfferIds: [], decision: null, followedUp: false, attempts: [] };
+  let callConnected = false;
+  let supersededApproval: NegotiationState["supersededApproval"] = null;
+  const recordings: NegotiationState["recordings"] = [];
 
   const amountOf = (terms: OfferTerm[]) => {
     const t = n ? terms.find((x) => x.termId === n.termId) : undefined;
@@ -158,6 +197,7 @@ export function projectState(ctx: SessionContext): NegotiationState {
 
   for (const e of ctx.events as RecordedEvent[]) {
     if (e.type === "offer_proposed" && blocked.has(e.id)) continue;
+    if (e.type === "message" && followUp.decision && (e.payload as PayloadOf<"message">).direction === "outbound") followUp.followedUp = true;
     if (e.type === "message" && (e.payload as PayloadOf<"message">).direction === "inbound") {
       for (const a of findAmounts((e.payload as PayloadOf<"message">).text)) counterpartySaidAmounts.add(a);
     }
@@ -236,12 +276,53 @@ export function projectState(ctx: SessionContext): NegotiationState {
           mandateRevision: p.mandateRevision,
           purpose: request?.purpose ?? "acceptance",
           breachedRuleIds: request?.breachedRuleIds ?? [],
-          decision: p.decision,
+          decision: p.decision === "approved" || p.decision === "countered" ? p.decision : "rejected",
         });
+        followUp.decision = {
+          responseId: e.id,
+          requestId: p.requestId,
+          decision: p.decision === "approved" || p.decision === "countered" ? p.decision : "declined",
+          offerId: p.offerId,
+          counterOfferId: p.counterOfferId ?? null,
+          messageToCounterparty: p.messageToCounterparty ?? null,
+          purpose: request?.purpose ?? "acceptance",
+          recordedAt: e.recordedAt,
+        };
+        followUp.followedUp = false;
+        followUp.attempts = [];
+        supersededApproval = null;
         answered.add(p.requestId);
         if (pendingApproval?.requestId === p.requestId) pendingApproval = null;
         break;
       }
+      case "follow_up_noted": {
+        const p = e.payload as PayloadOf<"follow_up_noted">;
+        // Each event adds what it says; validity belongs to the offer it was given for.
+        if (p.validUntil !== null || p.validity !== null) {
+          followUp.validUntil = p.validUntil;
+          followUp.validity = p.validity;
+          followUp.validityOfferId = p.offerId;
+        }
+        if (p.contact !== null) followUp.contact = p.contact;
+        if (p.phone !== null) followUp.phone = p.phone;
+        if (p.bestTime !== null) followUp.bestTime = p.bestTime;
+        if (p.keepContact !== null) followUp.keepContact = p.keepContact;
+        if (p.closed && p.offerId && !followUp.closedOfferIds.includes(p.offerId)) followUp.closedOfferIds.push(p.offerId);
+        break;
+      }
+      case "follow_up_attempted": {
+        const p = e.payload as PayloadOf<"follow_up_attempted">;
+        if (followUp.decision?.responseId === p.responseId) followUp.attempts.push({ channel: p.channel, attempt: p.attempt, outcome: p.outcome, providerCallId: p.providerCallId, recordedAt: e.recordedAt });
+        break;
+      }
+      case "recording_saved": {
+        const p = e.payload as PayloadOf<"recording_saved">;
+        recordings.push({ id: e.id, source: p.source, file: p.file, contentType: p.contentType, durationMs: p.durationMs, recordedAt: e.recordedAt });
+        break;
+      }
+      case "voice_connection":
+        callConnected = (e.payload as PayloadOf<"voice_connection">).status === "connected";
+        break;
       case "agreement_recorded":
         agreement = { id: e.id, payload: e.payload as PayloadOf<"agreement_recorded"> };
         break;
@@ -250,7 +331,11 @@ export function projectState(ctx: SessionContext): NegotiationState {
         if (s.to === "paused") statusBeforePause = s.from;
         else if (s.from === "paused") statusBeforePause = null;
         // Leaving the approval wait for any reason but a pause supersedes the pending request.
-        if (s.to !== "awaiting_approval" && s.to !== "paused") pendingApproval = null;
+        if (s.to !== "awaiting_approval" && s.to !== "paused" && pendingApproval) {
+          const terms = ctx.offerTerms(pendingApproval.offerId)?.terms;
+          supersededApproval = s.to === "active" && terms ? { offerId: pendingApproval.offerId, terms } : null;
+          pendingApproval = null;
+        }
         break;
       }
     }
@@ -295,5 +380,9 @@ export function projectState(ctx: SessionContext): NegotiationState {
     requestedTerms,
     checks,
     lastCounterpartyCheck,
+    followUp,
+    callConnected,
+    recordings,
+    supersededApproval,
   };
 }

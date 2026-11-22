@@ -1,0 +1,79 @@
+{
+  "name": "approval-counter",
+  "description": "After the buyer confirms ₹19,800, the seller counters with ₹20,000. Kritva puts the new price to the buyer; their yes starts a new approval, and the agreement comes only after the seller approves and the buyer says yes again.",
+  "turns": [
+    {
+      "buyer": "I'll pay ₹19,500 and collect it myself."
+    },
+    {
+      "buyer": "Okay, I'll go with the price you just quoted and collect it from you.",
+      "expect": {
+        "decision": "state_final_terms"
+      }
+    },
+    {
+      "buyer": "Yes, I confirm the full package you just read back.",
+      "expect": {
+        "decision": "request_approval",
+        "neverSays": [
+          "we'?re agreed",
+          "we are agreed",
+          "\\bdeal\\b",
+          "it'?s yours"
+        ]
+      }
+    },
+    {
+      "seller": "countered",
+      "price": 20000,
+      "expect": {
+        "decision": "counter",
+        "offer": 20000,
+        "says": [
+          "20,000",
+          "\\?"
+        ],
+        "neverSays": [
+          "we'?re agreed",
+          "we are agreed",
+          "\\bdeal\\b",
+          "it'?s yours"
+        ]
+      }
+    },
+    {
+      "buyer": "Okay, ₹20,000 works for me.",
+      "expect": {
+        "decision": "request_approval",
+        "neverSays": [
+          "we'?re agreed",
+          "we are agreed",
+          "\\bdeal\\b",
+          "it'?s yours"
+        ]
+      }
+    },
+    {
+      "seller": "approved",
+      "expect": {
+        "says": [
+          "20,000"
+        ]
+      }
+    },
+    {
+      "buyer": "Yes, still good.",
+      "expect": {
+        "decision": "record_agreement"
+      }
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "agreement"
+    ],
+    "agreedAmountAtLeast": 20000,
+    "acceptancesMatchStatedTerms": true,
+    "agentMustNotSay": []
+  }
+}

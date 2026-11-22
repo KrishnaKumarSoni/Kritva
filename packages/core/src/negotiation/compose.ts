@@ -120,6 +120,11 @@ export function composeBrief(input: ComposeInput): Record<string, unknown> {
     question_objective: dynamicQuestion || null,
     // Public facts are always available to answer a question about what is offered; the rules keep replies from padding with them.
     facts: plan.explanationFacts ?? view.publicFacts,
+    // Waiting on, or following up after, the decision of the person you represent.
+    follow_up: plan.followUp
+      ? { step: plan.followUp.step, offer_time_passed: plan.followUp.expired === true, calling_them_back: plan.followUp.callBack === true, reach_them_by: plan.followUp.contact ?? null, message_from_who_you_represent: plan.followUp.messageFromPrincipal ?? null }
+      : null,
+    their_offer_terms: plan.recap ? orderTerms(view, plan.recap).map((t) => ({ term: nameOf(t.termId), value: formatValue(t.value, locale) })) : null,
     recent_conversation: input.conversation.slice(-6),
     // How earlier replies handed the turn back, so this one is worded differently.
     earlier_invitations: earlierInvitations(input.conversation),
@@ -196,7 +201,8 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
   }
   if (payload.another_offer) must.push(`Mention once, briefly and kindly, that you already have another offer of ${String(payload.another_offer)}, as the reason the price stays where it is. Say nothing else about it: not who made it, when, how many others there are, or any other terms, and give no other amount for it.`);
   if (plan.move === "hold" || plan.move === "price_pressure") must.push(`Hold the price warmly with one honest reason (a fact from the brief you have not given yet; if none is left, no reason) and a way forward, never a bare refusal or why the price is what it is. Never say you can't go lower, can't move or are firm, and never call it your lowest, best or final price.`);
-  if (plan.move === "end_negotiation") {
+  must.push(...followUpRequirements(input, payload));
+  if (plan.move === "end_negotiation" && plan.followUp?.step !== "declined") {
     must.push(plan.end?.requestedBy === "principal"
       ? `Say, with one sorry, that ${String(payload.who_you_represent)} decided not to go ahead, and close kindly without agreement.`
       : plan.end?.requestedBy === "counterparty" ? "Acknowledge their decision kindly, thank them for their time, and close without agreement." : `Close kindly without agreement and thank them for their time, and say the point of closing_intent in your own words. You are the one closing: never say ${String(payload.who_you_represent)} decided anything.`);
@@ -213,6 +219,46 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
   if ((payload.price as { lowered_from_original?: boolean } | null)?.lowered_from_original && /\boriginal\b/i.test(recentReplies)) must.push("You already told them the price came down from the original: do not say it again.");
   if (lastReply && (payload.facts as unknown[] | undefined)?.length) must.push("Mention a fact from facts only if they ask about it or you need it as the one reason for holding a line, and never one you already gave in this conversation.");
   must.push("Do not repeat any sentence you already said in this conversation.");
+  return must;
+}
+
+/** What each wrap-up and follow-up step must say. The decision itself was made and checked in code. */
+function followUpRequirements(input: ComposeInput, payload: Record<string, unknown>): string[] {
+  const { plan } = input;
+  const f = plan.followUp;
+  const who = String(payload.who_you_represent);
+  const must: string[] = [];
+  const recap = payload.their_offer_terms as Array<{ term: string; value: string }> | null;
+  if (recap?.length) must.push(`Recap their offer as theirs, plainly (for example "Just so I have it right, your offer is ..."): ${recap.map((t) => `${t.term} ${t.value}`).join(", ")}. Never present it as your offer or as agreed.`);
+  if (!f) return must;
+  if (f.callBack) must.push(`You are calling them back. After introducing yourself, say you're calling about their offer with news from ${who}.`);
+  if (f.messageFromPrincipal) must.push(`Pass on this message from ${who} in your own words: "${f.messageFromPrincipal.slice(0, 300)}". Add no amount or promise of your own.`);
+  switch (f.step) {
+    case "validity":
+    case "contact":
+    case "phone":
+      // Code asks each detail only while it is unknown, so the question is never answered already.
+      must.push(`They haven't told you ${f.step === "validity" ? "how long their offer stands" : f.step === "contact" ? "how and when they'd like to hear back" : "the number to call"} yet: ask it. Nothing is agreed yet: never say or imply it is agreed, accepted, done or theirs.`);
+      break;
+    case "close":
+      must.push(`Say clearly that it is not final until ${who} confirms, that you will get back to them${f.contact === "call" || f.contact === "whatsapp" ? " with a call" : f.contact === "chat" ? " here" : ""}, and thank them warmly for their time. Never say or imply agreement. Ask no question.`);
+      if (input.channel === "voice") must.push("This ends the call: finish with a warm goodbye.");
+      break;
+    case "approved":
+      must.push(f.expired
+        ? `Their offer's time has passed. Say ${who} has confirmed ${EXACT_TERMS_SLOT} (for example "${who} has confirmed ${EXACT_TERMS_SLOT}. Is that still good for you?"), asking first whether it still works for them. It is agreed only when they say yes.`
+        : `Say first, warmly, that ${who} has confirmed ${EXACT_TERMS_SLOT} (for example "Good news, ${who}'s confirmed ${EXACT_TERMS_SLOT}. Still good for you?"), then ask whether it's still good for them. Do not say you are agreed: it is agreed only when they say yes.`);
+      break;
+    case "countered":
+      must.push(`Say ${who} came back with new terms (for example "${who} can do ${EXACT_TERMS_SLOT}. Would that work for you?"), then ask whether that would work. Do not say you are agreed, and do not mention their earlier offer's amount.`);
+      break;
+    case "declined":
+      must.push(`Say kindly that ${who} can't do those terms (for example "Sorry, ${who} can't do that one"). Make no other offer and mention no amount.`);
+      break;
+    case "keep_contact":
+      must.push("Thank them for answering (if they said yes, say you'll keep their details; if no, respect that) and say a warm goodbye. No amount, offer or question.");
+      break;
+  }
   return must;
 }
 

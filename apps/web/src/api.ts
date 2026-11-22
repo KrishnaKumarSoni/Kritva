@@ -102,7 +102,20 @@ export interface OperatorState {
   subject: string | null;
   mandateRevision: number;
   outcome: { kind: OutcomeKind; terms: TermView[] | null };
-  pendingApproval: { requestId: string; offerId: string; mandateRevision: number; purpose: "acceptance" | "exception"; requestedAction: string; breachedRules: string[]; terms: TermView[] | null } | null;
+  pendingApproval: {
+    requestId: string;
+    offerId: string;
+    mandateRevision: number;
+    purpose: "acceptance" | "exception";
+    requestedAction: string;
+    breachedRules: string[];
+    terms: TermView[] | null;
+    /** The same terms as typed values, for a counter. Absent on older servers. */
+    editable?: EditableTerm[];
+  } | null;
+  /** How long the offer stands, how to reach the other party, and where the follow-up is. Absent on older servers. */
+  followUp?: FollowUpView;
+  recordings?: Array<{ id: string; source: "browser" | "vobiz"; durationMs: number | null; recordedAt: string }>;
   /** The last reply was cut off mid-speech and the buyer hasn't spoken since. */
   voiceInterrupted?: boolean;
   paused: boolean;
@@ -116,6 +129,40 @@ export interface OperatorState {
   } | null;
   acceptRequiresApproval: boolean;
   counterpartyOffers: Array<string | null>;
+}
+
+export type Decision = "approved" | "countered" | "declined";
+
+/** A typed term value, as the server stores it. */
+export type TermValue =
+  | { type: "money"; amount: number; currency: string | null }
+  | { type: "quantity"; amount: number; unit: string | null }
+  | { type: "boolean"; value: boolean }
+  | { type: "text"; value: string }
+  | { type: "date_text"; value: string };
+
+export interface EditableTerm {
+  termId: string;
+  name: string;
+  value: TermValue;
+  negotiated: boolean;
+}
+
+export interface FollowUpView {
+  validUntil: string | null;
+  validity: string | null;
+  contact: "chat" | "call" | "whatsapp" | null;
+  /** Masked: 91******3210. */
+  phone: string | null;
+  bestTime: string | null;
+  keepContact: boolean | null;
+  /** "voice" while a call is connected. */
+  channel: "voice" | null;
+  /** The earlier terms, when a change of terms made the earlier request void. */
+  supersededTerms: TermView[] | null;
+  decision: { decision: Decision; at: string; message: string | null } | null;
+  status: "following_up" | "calling" | "retrying" | "waiting_for_yes" | "agreed" | "declined" | "lapsed" | "ended" | null;
+  attempts: Array<{ attempt: number; outcome: string; channel: string; at: string }>;
 }
 
 export interface DealSpaceView {
@@ -430,6 +477,18 @@ export const api = {
   startSession: (mandateId: string, previousSessionId: string | null) =>
     call<{ session: SessionRow }>("POST", "/api/operator/sessions", { mandateId, previousSessionId }),
   operatorView: (id: string) => call<OperatorView>("GET", `/api/operator/sessions/${id}`),
+  /** The seller's decision on a pending approval: approve, counter with new terms, or decline. */
+  decide: (id: string, requestId: string, decision: Decision, offerId: string, mandateRevision: number, extra: { message?: string; counterTerms?: Array<{ termId: string; value: TermValue }> } = {}) =>
+    call<{ followUp: { via: "text" | "voice" | "call" } }>("POST", `/api/operator/sessions/${id}/approvals/${requestId}`, { decision, offerId, mandateRevision, ...extra }),
+  /** A call recording, as a playable file (operator routes need the seller key, so an audio tag can't fetch it directly). */
+  recording: async (id: string, recordingId: string): Promise<Blob> => {
+    const headers = new Headers();
+    const key = sessionStorage.getItem(sellerKeyStorage);
+    if (key) headers.set("authorization", `Bearer ${key}`);
+    const res = await fetch(`/api/operator/sessions/${id}/recordings/${encodeURIComponent(recordingId)}`, { headers });
+    if (!res.ok) throw new ApiError(res.status, ((await res.json().catch(() => ({}))) as { message?: string }).message ?? "The recording isn't available.");
+    return res.blob();
+  },
   respond: (id: string, requestId: string, decision: "approved" | "rejected", offerId: string, mandateRevision: number) =>
     call<unknown>("POST", `/api/operator/sessions/${id}/approvals/${requestId}`, { decision, offerId, mandateRevision }),
   buyerView: (id: string) => call<BuyerView>("GET", `/api/buyer/sessions/${id}`),
@@ -470,6 +529,10 @@ export const api = {
     const json = (await res.json().catch(() => ({}))) as { message?: string; error?: string; sdp?: string; afterSeq?: number };
     if (!res.ok) throw new ApiError(res.status, json.message ?? "Voice couldn't connect. You can keep typing.", json.error);
     return json as { sdp: string; afterSeq: number };
+  },
+  uploadRecording: async (id: string, audio: Blob, durationMs: number) => {
+    const res = await fetch(`/api/buyer/sessions/${id}/voice/recording`, { method: "POST", headers: { "Content-Type": audio.type.split(";")[0] || "audio/webm", "X-Duration-Ms": String(durationMs) }, body: audio });
+    if (!res.ok && res.status !== 501) throw new ApiError(res.status, "The call recording couldn't be saved.");
   },
   voiceRealtimeEnd: (id: string) => fetch(`/api/buyer/sessions/${id}/voice/realtime/end`, { method: "POST", keepalive: true }),
   speechUrl: (id: string, messageId: string) => `/api/buyer/sessions/${id}/voice/speech/${encodeURIComponent(messageId)}`,

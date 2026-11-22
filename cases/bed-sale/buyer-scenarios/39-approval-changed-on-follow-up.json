@@ -1,0 +1,45 @@
+{
+  "name": "approval-changed-on-follow-up",
+  "description": "The seller approves, but on the follow-up the buyer asks for delivery instead. The approval does not cover changed terms: nothing is agreed.",
+  "turns": [
+    {
+      "buyer": "I'll take it at ₹20,000 and pick it up myself.",
+      "expect": {
+        "decision": "state_final_terms"
+      }
+    },
+    {
+      "buyer": "Yes, I confirm.",
+      "expect": {
+        "decision": "request_approval"
+      }
+    },
+    {
+      "seller": "approved",
+      "expect": {
+        "says": [
+          "20,000"
+        ]
+      }
+    },
+    {
+      "buyer": "Actually, could you deliver it to Indiranagar instead of me picking it up?",
+      "expect": {
+        "neverSays": [
+          "we'?re agreed",
+          "we are agreed",
+          "\\bdeal\\b",
+          "it'?s yours"
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "in_progress"
+    ],
+    "agentMustNotSay": [
+      "\\bwe'?re agreed\\b"
+    ]
+  }
+}

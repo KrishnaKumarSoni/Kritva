@@ -51,6 +51,8 @@ export interface PhoneDeps {
   pollMs?: number;
   /** Waits before each accept attempt (tests use none). */
   acceptBackoffMs?: number[];
+  /** Call-backs Kritva placed: an incoming call that is one of them joins its negotiation. */
+  followUps?: { claim(headers: SipHeader[]): { sessionId: string } | null } | null;
   /** Hang up live calls when the process is stopped or restarted (the running server sets it; tests do not). */
   hangUpOnExit?: boolean;
   /** Outbound calls through Vobiz (outbound.ts). Off when absent. */
@@ -174,7 +176,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
   };
 
   /** After the accept: join the call and run it. A call that cannot be joined is hung up at once. */
-  const connect = async (callId: string, sessionId: string, sessionUpdate: Record<string, unknown> | null, outboundCallId: string | null) => {
+  const connect = async (callId: string, sessionId: string, sessionUpdate: Record<string, unknown> | null, outboundCallId: string | null, how: { opening: "greet" | "follow_up"; contactNumber: string | null } = { opening: "greet", contactNumber: null }) => {
     connecting += 1;
     const direction = outboundCallId ? "outbound" : "inbound";
     try {
@@ -195,7 +197,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
         deps.liveCalls?.unregister(sessionId, ended.realtime);
         if (outboundCallId) dialer?.realtimeEnded(outboundCallId, reason);
       };
-      const call = new PhoneCall({ engine, record, sessionId, callId, link, control: deps.connector, settings, afterSeq, log, pollMs: deps.pollMs, sessionUpdate, trace: settings.trace, direction, onEnded });
+      const call = new PhoneCall({ engine, record, sessionId, callId, link, control: deps.connector, settings, afterSeq, log, pollMs: deps.pollMs, sessionUpdate, trace: settings.trace, direction, onEnded, opening: how.opening, contactNumber: how.contactNumber });
       calls.set(callId, call);
       deps.liveCalls?.register(sessionId, call.realtime, callers.get(callId) ?? null);
       if (outboundCallId) {
@@ -229,8 +231,24 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
       return { status: 200, body: { ok: false, error: accepted.gone ? "call_gone" : "accept_failed" } };
     }
     log({ kind: "phone_accepted", callId, sessionId, target, outboundCallId, attempts: accepted.attempts, acceptMode: settings.acceptMode });
-    void connect(callId, sessionId, plan.update, outboundCallId);
+    void connect(callId, sessionId, plan.update, outboundCallId, { opening: "greet", contactNumber: callers.get(callId) ?? null });
     return { status: 200, body: { ok: true, sessionId } };
+  };
+
+  /** A call-back after the principal decided (follow-up.ts): it continues its own negotiation and opens with the decision. */
+  const followUp = async (callId: string, sessionId: string): Promise<{ status: 200 | 500; body: Record<string, unknown> }> => {
+    log({ kind: "phone_follow_up", callId, sessionId });
+    const briefing = await engine.voiceBriefing(sessionId);
+    if (!briefing) return reject(callId, 404, "follow_up_session_missing");
+    const plan = acceptPlan(realtimeSession(deps.realtime, briefing, { noiseReduction: settings.noiseReduction }), settings.acceptMode);
+    const accepted = await acceptWithRetry(callId, plan.accept);
+    if (!accepted.ok) {
+      log({ kind: "phone_accept_failed", callId, sessionId, error: accepted.error });
+      await deps.connector.hangup(callId).catch(() => undefined);
+      return { status: 200, body: { ok: false, error: "accept_failed" } };
+    }
+    void connect(callId, sessionId, plan.update, null, { opening: "follow_up", contactNumber: null });
+    return { status: 200, body: { ok: true, sessionId, followUp: true } };
   };
 
   const incoming = async (callId: string, headers: SipHeader[], mediaSecurity: unknown): Promise<{ status: 200 | 500; body: Record<string, unknown> }> => {
@@ -242,6 +260,9 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
       callers.set(callId, dialer?.dialledNumber(outbound.callId) ?? null);
       return answerInto(callId, outbound.sessionId, outbound.callId, { kind: "outbound" });
     }
+    // A call-back Kritva placed after the principal decided: it joins its own negotiation.
+    const placed = deps.followUps?.claim(headers) ?? null;
+    if (placed) return followUp(callId, placed.sessionId);
     callers.set(callId, callerNumber(headers, settings.countryCode));
     const { route, dialled } = routeFor(headers, settings.routes, settings.countryCode);
     // Header names (not values) show which headers the provider sends; the caller's number is masked.

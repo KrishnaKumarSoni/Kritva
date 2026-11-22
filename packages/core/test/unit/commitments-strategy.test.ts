@@ -187,11 +187,15 @@ describe("Epic 7, Story 2: agreement on the current terms only", () => {
   }
 
   it("seller approves ₹18,500 with Saturday collection and the buyer confirms: agreement, payment and collection pending", async () => {
-    const { accepted, engine, sessionId, commitments } = await toAcceptance();
+    const { accepted, engine, sessionId, commitments, say } = await toAcceptance();
     expect(accepted.state.outcome.kind).toBe("pending_approval");
     expect((await commitments()).outcome).toBe("pending_approval");
     const approved = await engine.respondToApproval({ sessionId, requestId: accepted.state.pendingApproval!.requestId, decision: "approved" });
-    expect(approved.ok && approved.state.outcome.kind).toBe("agreement");
+    if (!approved.ok || !approved.reply) throw new Error("no follow-up");
+    expect(approved.state.outcome.kind).toBe("in_progress");
+    await engine.reportDelivery({ sessionId, messageId: approved.reply.messageId, channel: "text", status: "delivered" });
+    const yes = await say("Yes, still good.", { intent: "accept_stated_terms", accepts_stated_terms: true });
+    expect(yes.state.outcome.kind).toBe("agreement");
     const c = await commitments();
     expect(c.outcome).toBe("agreement");
     expect(priceOf(c.agreement!.terms)).toBe(18_500);

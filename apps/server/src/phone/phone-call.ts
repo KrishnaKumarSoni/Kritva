@@ -42,6 +42,10 @@ export interface PhoneCallDeps {
   /** Who placed the call: the counterparty ("inbound", the default) or Kritva ("outbound"). Recorded on the connection events. */
   direction?: "inbound" | "outbound";
   onEnded?: (call: PhoneCall, reason: EndReason) => void;
+  /** A call-back opens with the principal's decision instead of a greeting. */
+  opening?: "greet" | "follow_up";
+  /** The caller's number, used only if they agree to be called back on it. */
+  contactNumber?: string | null;
 }
 
 /** Events too frequent to trace one by one; they are only counted. */
@@ -106,8 +110,22 @@ export class PhoneCall {
     deps.link.onEvent = (e) => this.#observe(e);
     // The sideband lives as long as the SIP call, so its closing means the caller hung up or the line dropped.
     deps.link.onClose = () => void this.end("hung_up");
-    // After the deal went elsewhere and they answered about their number, the call ends.
-    this.#call = new RealtimeCall({ engine: deps.engine, record: deps.record, sessionId: deps.sessionId, link: this.#tap, afterSeq: deps.afterSeq, log: deps.log, pollMs: deps.pollMs, outbound: deps.direction === "outbound", onOver: () => void this.end("server") });
+    this.#call = new RealtimeCall({
+      engine: deps.engine,
+      record: deps.record,
+      sessionId: deps.sessionId,
+      link: this.#tap,
+      afterSeq: deps.afterSeq,
+      log: deps.log,
+      pollMs: deps.pollMs,
+      outbound: deps.direction === "outbound",
+      opening: deps.opening ?? "greet",
+      contactNumber: deps.contactNumber ?? null,
+      // After the wrap-up's closing line (or the agreement on a call-back) is heard, Kritva hangs up.
+      hangup: () => this.end("server"),
+      // After the deal went elsewhere and they answered about their number, the call ends too.
+      onOver: () => void this.end("server"),
+    });
     this.#playback = new ServerPlayback({ textOf: (id) => this.#call.textOf(id), report: (r) => this.#report(r), clock: deps.clock ?? realClock });
   }
 

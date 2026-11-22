@@ -11,7 +11,14 @@
 import type { NegotiationRecord, RecordedEvent, StructuredLlm, StructuredRequest, StructuredResponse } from "@kritva/core";
 import type { Model, ModelRequest, ModelResponse } from "@openai/agents";
 
-export type ScenarioTurn = { buyer: string; expect?: TurnExpect } | { seller: "approved" | "rejected" | "pause" | "resume" | "end" };
+/**
+ * A buyer message, or the seller acting from the console. A seller's decision on a pending approval
+ * may carry a message for the buyer; a counter names the new price ("price") on the negotiated term.
+ */
+export type ScenarioTurn =
+  | { buyer: string; expect?: TurnExpect }
+  | { seller: "approved" | "rejected" | "declined" | "pause" | "resume" | "end"; message?: string; expect?: TurnExpect }
+  | { seller: "countered"; price: number; message?: string; expect?: TurnExpect };
 
 /** What one turn must produce. Patterns are case-insensitive regular expressions. */
 export interface TurnExpect {
@@ -154,7 +161,13 @@ export async function playTurns(call: Call, record: NegotiationRecord, sessionId
       const state = (await call("GET", `/api/operator/sessions/${sessionId}`)).json.state;
       if (!state.pendingApproval) return { observed, error: `seller ${turn.seller}: no approval was pending (status ${state.status})` };
       const { requestId, offerId, mandateRevision } = state.pendingApproval;
-      reply = (await call("POST", `/api/operator/sessions/${sessionId}/approvals/${requestId}`, { decision: turn.seller, offerId, mandateRevision })).json.reply ?? null;
+      // A counter changes the negotiated price; the engine checks the new package against the mandate.
+      const ctx = await record.context(sessionId);
+      const term = ctx.mandate?.terms.find((t) => t.id === negotiableTermId);
+      const counterTerms = turn.seller === "countered" && term ? [{ termId: term.id, value: { type: "money", amount: turn.price, currency: term.currency } }] : undefined;
+      const res = await call("POST", `/api/operator/sessions/${sessionId}/approvals/${requestId}`, { decision: turn.seller, offerId, mandateRevision, message: turn.message, counterTerms });
+      if (res.status !== 200) return { observed, error: `seller ${turn.seller}: HTTP ${res.status}: ${res.json.message ?? res.json.error}` };
+      reply = res.json.reply ?? null;
     }
     await deliver(reply);
     const events: RecordedEvent[] = await record.read(sessionId, { viewer: "operator" });
