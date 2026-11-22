@@ -234,6 +234,11 @@ export const PAYLOADS = {
       })
       .nullable()
       .default(null),
+    /**
+     * Several counterparties: the limit Kritva's move respected when another counterparty's live offer
+     * moved it, and the amount of that offer the reply may mention. Private.
+     */
+    competition: z.strictObject({ limit: z.number().nullable(), cited: z.number().nullable() }).nullable().default(null),
     /** Validated input signals that explain which policy route ran. */
     interpretation: z.strictObject({
       intent: z.enum(["offer", "accept_stated_terms", "question", "request_change", "reject", "greeting", "other"]),

@@ -22,7 +22,8 @@ import { prepareQuestions } from "../counterparty/questions.ts";
 import { gateTerms, gateWording, type GateResult } from "../governance/gate.ts";
 import { normalizeForQuoteMatch, quoteAppearsIn } from "../schema/quotes.ts";
 import { languageCheck } from "../governance/language-check.ts";
-import { decide, type DealInput, type Interpretation, type Plan } from "./policy.ts";
+import { bestComparableRival, decide, limitFor, type DealInput, type Interpretation, type Plan } from "./policy.ts";
+import { liveOffer } from "./board.ts";
 import { checkReply, findAmounts, type ReplyViolation } from "./reply-check.ts";
 import { approvedFor, projectState, publicDealTerms, type NegotiationState } from "./state.ts";
 import { MINIMAL_GUIDANCE, type StrategyGuidance } from "../strategy/guidance.ts";
@@ -337,12 +338,47 @@ export class NegotiationEngine {
   }
 
   /**
+   * Other counterparties' live offers within the mandate's limits, for a session in a deal group.
+   * Only numbers and terms cross sessions: never who made an offer or what they said.
+   */
+  async #competition(sessionId: string, state: NegotiationState): Promise<NegotiationState["competition"]> {
+    const group = this.#groups?.groupOf(sessionId) ?? null;
+    const n = state.view.negotiable;
+    if (!group || group.concluded || !n) return null;
+    const rivals: NonNullable<NegotiationState["competition"]>["rivals"] = [];
+    for (const member of group.members) {
+      if (member.sessionId === sessionId) continue;
+      const ctx = await this.#record.context(member.sessionId);
+      const offer = liveOffer(projectState(ctx), ctx);
+      if (!offer || offer.withinLimits !== true || offer.amount === null) continue;
+      rivals.push({ amount: offer.amount, otherTerms: offer.terms.filter((t) => t.termId !== n.termId) });
+    }
+    return { rivals, mayCite: state.view.authority.mayMentionOtherOffers() };
+  }
+
+  /**
+   * Whether this reply may mention another counterparty's offer: only when the mandate allows it, a
+   * comparable live offer is better than what this counterparty offered, Kritva is holding or
+   * countering, and that value was not mentioned before in this session.
+   */
+  #chooseCitation(plan: Plan, state: NegotiationState, deal: DealInput, history: { events: RecordedEvent[] }): void {
+    const n = state.view.negotiable;
+    if (!n || !state.competition?.mayCite || (plan.move !== "counter" && plan.move !== "hold")) return;
+    const rival = bestComparableRival(state, deal.package);
+    const theirs = state.counterpartyAmounts.at(-1);
+    if (rival === null || theirs === undefined || (n.direction === "up" ? theirs >= rival : theirs <= rival)) return;
+    const citedBefore = history.events.some((e) => e.type === "decision" && (e.payload as PayloadOf<"decision">).competition?.cited === rival);
+    if (!citedBefore) plan.competingAmount = rival;
+  }
+
+  /**
    * Plans, gates and sends one action. Authority is read fresh on every attempt and again just
    * before sending; if the mandate changed meanwhile, the action is planned again under the new
    * revision. Nothing reaches the counterparty without passing both gate phases.
    */
   async #plan(writes: Writer, ctx: ActContext): Promise<Planned> {
     let state = projectState(await this.#record.context(ctx.sessionId));
+    state.competition = await this.#competition(ctx.sessionId, state);
     const deal = counterpartyDeal(state, ctx.interp);
     // Questions this message raised (prepared just now), which the strategy may ask before conceding.
     const history = await this.#record.context(ctx.sessionId);
@@ -364,6 +400,7 @@ export class NegotiationEngine {
       plan = { ...basePlan("answer", { kind: "hold", reason: "The strategy could not choose a move; nothing was offered." }, null), action: "wait", notice: "check_with_principal" };
     }
     plan.allowance = allowance;
+    this.#chooseCitation(plan, state, deal, history);
     if (state.status === "paused") plan.notice = "paused";
     if (ctx.rephrase) plan.notice ??= "rephrase";
     // Kritva introduces itself once, on its first real reply (a pause notice doesn't count).
@@ -852,6 +889,7 @@ export class NegotiationEngine {
       allowance: plan.allowance
         ? { earned: plan.allowance.earned, used: plan.allowance.used, remaining: plan.allowance.remaining, entries: plan.allowance.entries.slice(-30).map((e) => ({ offerId: e.offerId, kind: e.kind, commitment: e.commitment.slice(0, 500), earned: e.earned, used: e.used })) }
         : null,
+      competition: plan.competingAmount !== undefined || state.competition?.rivals.length ? { limit: state.view.negotiable ? limitFor(state, state.view.negotiable.termId, publicDealTerms(state)) : null, cited: plan.competingAmount ?? null } : null,
       ...(interp ? { interpretation: { intent: interp.intent, offerKind: interp.offerKind ?? null, pressure: interp.pressure ?? null, priceConcern: interp.priceConcern ?? null, asksPrivateInfo: interp.asksPrivateInfo } } : {}),
     };
   }

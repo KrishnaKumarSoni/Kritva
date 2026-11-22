@@ -11,6 +11,8 @@
  * - private_text: no passage copied from private instructions.
  * - missing_condition: an offer tied to an extra term (e.g. a day) must name it.
  * - internal_term: no internal vocabulary ("mandate", "governance", "ZOPA"…) in what the other party reads.
+ * - invented_competition: no mention of another offer or other interest unless the plan carries a real
+ *   one (`competingAmount`), and never a figure for it better for the principal than that one.
  */
 import { normalizeForQuoteMatch } from "../schema/quotes.ts";
 import type { MandateView } from "./mandate-view.ts";
@@ -18,7 +20,7 @@ import type { Plan } from "./policy.ts";
 
 export interface ReplyViolation {
   /** "style" is a conversation-quality note from the draft review, never a limit. */
-  rule: "private_amount" | "unplanned_amount" | "crosses_limit" | "missing_offer" | "missing_condition" | "false_commitment" | "private_text" | "internal_term" | "action_mismatch" | "style";
+  rule: "private_amount" | "unplanned_amount" | "crosses_limit" | "missing_offer" | "missing_condition" | "false_commitment" | "private_text" | "internal_term" | "action_mismatch" | "invented_competition" | "style";
   detail: string;
 }
 
@@ -45,6 +47,35 @@ const QUOTE_CUE = /\?\s*$|\b(you|your|you're|you've)\b/i;
 const ACKNOWLEDGED = /\b(thanks|thank you|noted|offer of|the [^.!?]{0,12}offer|mentioned|said|budget)\b/i;
 const OFFERING = /\b(i|we)(?:'ll| will| can| could)? (?:do|offer|accept|take|agree to|go (?:to|down to)|come down to)\b|\bhow about\b|\bworks\b|\bdeal\b/i;
 
+/** Words that claim another offer or other interest. The counterparty's role (from the mandate) is added per check. */
+const COMPETITION = String.raw`\b(?:another|other|second|competing|rival)\s+(?:firm\s+)?(?:offers?|bids?|quotes?)\b|\bsomeone else\s+(?:(?:has|is|also)\s+)*(?:offered|offering|interested|bidding|wants|made an offer)\b|\bother (?:people|parties|interested parties)\b|\b(?:others|people) (?:are|is) (?:also )?interested\b|\b(?:a lot of|lots of|more|other) interest\b`;
+
+/**
+ * Several counterparties: a reply may mention another offer only when code gave it a real one
+ * (plan.competingAmount), and no figure in that sentence may be better for the principal than it.
+ * Answering the counterparty's own claim about an alternative ("compare_terms", "price_pressure") is
+ * allowed.
+ */
+function competitionViolations(text: string, sentences: string[], view: MandateView, plan: Plan): ReplyViolation[] {
+  const role = view.counterpartyRole.trim().toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const mention = new RegExp(role ? `${COMPETITION}|\\b(?:another|other|more|second)\\s+(?:interested\\s+)?${role}s?\\b` : COMPETITION, "i");
+  if (!mention.test(text)) return [];
+  if (plan.competingAmount === undefined) {
+    if (plan.move === "compare_terms" || plan.move === "price_pressure") return [];
+    return [{ rule: "invented_competition", detail: "Mentions competing interest or demand." }];
+  }
+  const n = view.negotiable;
+  const out: ReplyViolation[] = [];
+  for (const sentence of sentences) {
+    if (!mention.test(sentence)) continue;
+    for (const amount of findAmounts(sentence)) {
+      const better = n ? (n.direction === "up" ? amount > plan.competingAmount : amount < plan.competingAmount) : amount !== plan.competingAmount;
+      if (better) out.push({ rule: "invented_competition", detail: "States another offer as better than the real one." });
+    }
+  }
+  return out;
+}
+
 export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
   const violations: ReplyViolation[] = [];
   if (INTERNAL_TERM.test(text) || FIELD_NAME.test(text)) violations.push({ rule: "internal_term", detail: "Uses internal vocabulary or a field name the other party should never see." });
@@ -54,8 +85,10 @@ export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
   const offered = plannedAmounts(plan);
   const publicAmounts = view.defaultPackage.flatMap((t) => ("amount" in t.value ? [t.value.amount as number] : []));
   const citedAmounts = (plan.publicTermAnswers ?? []).flatMap((t) => ("amount" in t.value ? [t.value.amount] : []));
+  if (plan.competingAmount !== undefined) citedAmounts.push(plan.competingAmount);
   const stated = ctx.statedAmounts ?? [];
   const allowed = new Set([...offered, ...publicAmounts, ...citedAmounts, ...ctx.counterpartyAmounts, ...stated, plan.referenceAmount]);
+  violations.push(...competitionViolations(text, sentences, view, plan));
 
   for (const sentence of sentences) {
     for (const amount of findAmounts(sentence)) {

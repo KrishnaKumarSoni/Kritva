@@ -25,6 +25,8 @@ export interface Authority {
   disclose(termId: string | null): Mode;
   /** Whether an exception to this limit may be requested from the principal. */
   exceptionFor(limitId: string): "not_allowed" | "with_approval";
+  /** May the agent tell a counterparty about another counterparty's real, live offer? Only an explicit grant allows it. */
+  mayMentionOtherOffers(): boolean;
 }
 
 export function readAuthority(mandate: ConfirmedMandate): Authority {
@@ -98,6 +100,9 @@ export function readAuthority(mandate: ConfirmedMandate): Authority {
     },
     disclose(termId) {
       return resolve(["disclose_information"], termId, undefined, "prohibited");
+    },
+    mayMentionOtherOffers() {
+      return resolve(["mention_other_offers"], null, undefined, "prohibited") === "autonomous";
     },
     exceptionFor(limitId) {
       const limit = mandate.limits.find((l) => l.id === limitId);

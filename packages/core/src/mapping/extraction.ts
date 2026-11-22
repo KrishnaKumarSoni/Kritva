@@ -164,6 +164,7 @@ const PERMISSION_ACTIONS = [
   "propose_terms",
   "make_concession",
   "disclose_information",
+  "mention_other_offers",
   "end_without_agreement",
   "other",
 ] as const;

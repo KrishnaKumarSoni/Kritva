@@ -202,6 +202,8 @@ export const PermissionAction = z.enum([
   "propose_terms",
   "make_concession",
   "disclose_information",
+  /** Telling a counterparty about another counterparty's real, live offer (never who made it). */
+  "mention_other_offers",
   "end_without_agreement",
   "other",
 ]);

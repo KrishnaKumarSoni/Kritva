@@ -34,7 +34,20 @@ export interface Outcome {
   approvalRequestId: string | null;
 }
 
+/**
+ * Other counterparties' live offers for the same deal (docs/Kritva_Multiple_Counterparties.md). Set
+ * by the engine for a session in a deal group; never projected from this session's own record.
+ */
+export interface Competition {
+  /** Live offers within the mandate's limits from other open sessions: the value on the negotiated term and every other term. */
+  rivals: Array<{ amount: number; otherTerms: OfferTerm[] }>;
+  /** The mandate allows telling this counterparty about one of them. */
+  mayCite: boolean;
+}
+
 export interface NegotiationState {
+  /** Other counterparties' live offers, when the session is in a deal group. */
+  competition?: Competition | null;
   sessionId: string;
   status: SessionStatus;
   mandateRevision: number;

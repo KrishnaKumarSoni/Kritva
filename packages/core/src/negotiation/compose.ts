@@ -86,6 +86,8 @@ export function composeBrief(input: ComposeInput): Record<string, unknown> {
     their_message: input.theirMessage,
     counterparty_stated_budget: amount(plan.statedBudget),
     enquired_amount: amount(plan.enquiredAmount),
+    // Another counterparty's real live offer that this reply may mention (code decided it may).
+    another_offer: amount(plan.competingAmount),
     channel: input.channel ?? "text",
     ...(languageName(input.language) ? { reply_language: languageName(input.language) } : {}),
     their_offer: plan.respondingTo !== null && plan.respondingTo !== undefined && ["counter", "hold", "state_final_terms"].includes(plan.move) ? amount(plan.respondingTo) : null,
@@ -172,6 +174,7 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
   if (price?.said_in_your_last_reply && !["counter", "state_final_terms", "confirm_agreement"].includes(plan.move) && !(payload.public_term_answers as unknown[]).length) {
     must.push(`You told them the price (${price.current}) in your last reply and it has not changed: do not repeat the number. Refer to it in other words and move the conversation forward.`);
   }
+  if (payload.another_offer) must.push(`Mention once, briefly and kindly, that you already have another offer of ${String(payload.another_offer)}, as the reason the price stays where it is. Say nothing else about it: not who made it, when, how many others there are, or any other terms, and give no other amount for it.`);
   if (plan.move === "hold" || plan.move === "price_pressure") must.push("If you mention the price, state it positively. Never say you can't go lower, can't move or can't change it \"right now\": that hints at a limit.");
   if (plan.move === "end_negotiation") {
     must.push(plan.end?.requestedBy === "principal"

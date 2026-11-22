@@ -130,6 +130,11 @@ export interface Plan {
   turnIndex?: number;
   /** The discount allowance ledger the move was decided under (private, for the decision record). */
   allowance?: AllowanceLedger | null;
+  /**
+   * Another counterparty's real live offer the reply may mention (its value on the negotiated term
+   * only). Set by code, only when the mandate allows it; the reply check holds the reply to it.
+   */
+  competingAmount?: number;
 }
 
 /** What the strategy can see beyond the turn: guidance, and questions this turn prepared. */
@@ -337,7 +342,9 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
     const ask = atLeast(state.currentAsk, n.limit) ? state.currentAsk : n.limit;
     const q = g.increment ?? niceStep(n.opening);
     const keep = packageExtras(state, extras);
-    const limit = applicableLimit(state.space, n.termId, deal.package)?.amount ?? n.limit;
+    const mandateLimit = applicableLimit(state.space, n.termId, deal.package)?.amount ?? n.limit;
+    // Another counterparty's better live offer for the same package moves the limit for Kritva's own moves.
+    const limit = limitFor(state, n.termId, deal.package);
     const settled = !findingsFor(n.termId).some((f) => f.status === "needs_clarification" && f.basis === "condition");
     if (!settled && !atLeast(amount, n.limit)) {
       return { ...plan, action: "clarify", decision: { kind: "answer", reason: "The offer depends on a detail the counterparty has not given; ask for it." } };
@@ -376,6 +383,12 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
     }
 
     if (!atLeast(amount, limit)) {
+      // Within the mandate, but another counterparty's live offer is better: hold, never walk away or
+      // ask for an exception because of it (that offer may still go).
+      const onlyCompetition = limit !== mandateLimit && atLeast(amount, mandateLimit);
+      if (onlyCompetition && (ask === limit || !countersLeft || repeated || noAllowance(context))) {
+        return holdAt(plan, view, ask, keep, `Another counterparty's live offer is better than this one; the offer stays where it is.${declineReason}`);
+      }
       if (ask === limit) {
         const binding = applicableLimit(state.space, n.termId, deal.package);
         const candidate = finalPackage(view, amount, keep);
@@ -435,7 +448,7 @@ export function decide(state: NegotiationState, interp: Interpretation, deal: De
     const keep = packageExtras(state, extras);
     const stated = state.pendingFinal ? state.pendingFinal.terms.find((t) => t.termId === n.termId) : undefined;
     const base = stated && "amount" in stated.value ? (stated.value.amount as number) : state.currentAsk;
-    const limit = applicableLimit(state.space, n.termId, finalPackage(view, base, keep))?.amount ?? n.limit;
+    const limit = limitFor(state, n.termId, finalPackage(view, base, keep));
     const at = atLeast(base, limit) ? base : atLeast(state.currentAsk, limit) ? state.currentAsk : limit;
     const why = `The counterparty changed ${extras.map((t) => nameOf(t.termId)).join(", ")}; the earlier terms no longer apply.${declineReason}`;
     return state.pendingFinal ? finalAt(plan, view, at, keep, why) : holdAt(plan, view, at, keep, why);
@@ -607,7 +620,7 @@ function towardPosition(plan: Plan, state: NegotiationState, g: StrategyGuidance
   if (plan.clarify.length > 0 || plan.unresolved.length > 0 || deal.check.findings.some((f) => f.status === "needs_clarification")) return null;
   const atLeast = (x: number, y: number) => (n.direction === "up" ? x >= y : x <= y);
   const ask = state.currentAsk;
-  const limit = applicableLimit(state.space, n.termId, deal.package)?.amount ?? n.limit;
+  const limit = limitFor(state, n.termId, deal.package);
   const target = applicableTarget(state, n.termId, deal.package);
   const closeAt = target !== null && atLeast(target, limit) && !atLeast(target, ask) ? target : ask;
   if (atLeast(position, closeAt) || atLeast(limit, ask)) return null;
@@ -695,6 +708,35 @@ export function niceStep(reference: number): number {
 }
 
 const towardSign = (n: { direction: "up" | "down" }) => (n.direction === "up" ? 1 : -1);
+
+/**
+ * The best live offer from another counterparty for a package comparable to this one (the same value
+ * on every term except the negotiated one), in the principal's favour. Null without competition.
+ */
+export function bestComparableRival(state: NegotiationState, pkg: OfferTerm[]): number | null {
+  const n = state.view.negotiable;
+  const rivals = state.competition?.rivals ?? [];
+  if (!n || rivals.length === 0) return null;
+  const others = pkg.filter((t) => t.termId !== n.termId);
+  const comparable = rivals.filter((r) => r.otherTerms.length === others.length && others.every((t) => r.otherTerms.some((o) => o.termId === t.termId && sameValue(o.value, t.value))));
+  if (comparable.length === 0) return null;
+  const amounts = comparable.map((r) => r.amount);
+  return n.direction === "up" ? Math.max(...amounts) : Math.min(...amounts);
+}
+
+/**
+ * The limit Kritva's own moves respect for this package: the mandate's applicable limit, moved toward
+ * the principal by a better comparable live offer from another counterparty. It never passes Kritva's
+ * current offer, so nothing already offered is taken back. Governance keeps the mandate's own limit.
+ */
+export function limitFor(state: NegotiationState, termId: string, pkg: OfferTerm[]): number {
+  const n = state.view.negotiable!;
+  const own = applicableLimit(state.space, termId, pkg)?.amount ?? n.limit;
+  const rival = termId === n.termId ? bestComparableRival(state, pkg) : null;
+  if (rival === null) return own;
+  const capped = state.currentAsk === null ? rival : n.direction === "up" ? Math.min(rival, state.currentAsk) : Math.max(rival, state.currentAsk);
+  return n.direction === "up" ? Math.max(own, capped) : Math.min(own, capped);
+}
 
 /** Rounds to the step in the principal's favour. */
 function roundToward(n: { direction: "up" | "down" }, value: number, step: number): number {
