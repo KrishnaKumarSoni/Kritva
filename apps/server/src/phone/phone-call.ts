@@ -42,8 +42,13 @@ export interface PhoneCallDeps {
   /** Who placed the call: the counterparty ("inbound", the default) or Kritva ("outbound"). Recorded on the connection events. */
   direction?: "inbound" | "outbound";
   onEnded?: (call: PhoneCall, reason: EndReason) => void;
-  /** A call-back opens with the principal's decision instead of a greeting. */
-  opening?: "greet" | "follow_up";
+  /**
+   * A call-back opens with the principal's decision instead of a greeting; a call the front desk
+   * handed over ("continue") goes on from the caller's last words (front-desk.ts).
+   */
+  opening?: "greet" | "follow_up" | "continue";
+  /** With "continue": the caller's last words before the hand-over. */
+  seed?: { itemId: string | null; transcript: string | null; language: string | null } | null;
   /** The caller's number, used only if they agree to be called back on it. */
   contactNumber?: string | null;
 }
@@ -121,6 +126,7 @@ export class PhoneCall {
       pollMs: deps.pollMs,
       outbound: deps.direction === "outbound",
       opening: deps.opening ?? "greet",
+      seed: deps.seed ?? null,
       contactNumber: deps.contactNumber ?? null,
       // After the wrap-up's closing line (or the agreement on a call-back) is heard, Kritva hangs up.
       hangup: () => this.end("server"),

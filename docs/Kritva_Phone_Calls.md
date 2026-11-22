@@ -101,7 +101,8 @@ Phone calls are on when `OPENAI_API_KEY` is set with realtime voice on (`KRITVA_
 | Setting | Default | Meaning |
 |---|---|---|
 | `OPENAI_WEBHOOK_SECRET` | (required) | The project webhook's signing secret, `whsec_...`. |
-| `KRITVA_PHONE_ROUTES` | (required) | `number=target` pairs, comma-separated. Target: a listing's case ID (`bed-sale` or `listing:bed-sale`) or a saved mandate (`mandate:man_...`). `*` matches any number; Vobiz needs it (section 4). Example: `+918064264194=bed-sale,*=bed-sale`. |
+| `KRITVA_PHONE_ROUTES` | (required) | `number=target` pairs, comma-separated. Target: a listing's case ID (`bed-sale` or `listing:bed-sale`), a saved mandate (`mandate:man_...`), or `code` for the front desk that asks for the listing code (section 16). `*` matches any number; Vobiz needs it (section 4). Examples: `+918064264194=bed-sale,*=bed-sale`; for a line shared by many mandates, `+918064264194=code,*=code` (the first route's number is the one shown next to each listing code). |
+| `KRITVA_PHONE_ANSWERS_FOR` | (none) | Public names the shared line may say it answers for, comma-separated (for example `ABC Corporation`), so the front desk can say yes to "Is this ABC Corporation?" before the code. Demo listings add their own public names. Never read out to callers. |
 | `OPENAI_PROJECT_ID` | (none) | `proj_...`; only used to print the SIP URI for the trunk. |
 | `KRITVA_PHONE_SIP_HOST` | `sip.api.openai.com` | OpenAI's SIP host, routed by location. `sip-in.api.openai.com` is the India edge, not yet tested since the accept fix (section 10). |
 | `KRITVA_PHONE_NOISE_REDUCTION` | `near_field` | `near_field` (a handset held to the ear), `far_field` (speakerphone or a room) or `off`. |
@@ -217,6 +218,9 @@ It prints `https://<random>.trycloudflare.com`; that host changes on every run, 
 | File | What it holds |
 |---|---|
 | `apps/server/src/phone/routes.ts` | The webhook route, routing to a listing or mandate, decline codes, the accept plan (`acceptPlan`) and retries, join, the call registry, hang-up on shutdown, `GET /api/operator/phone` (setup values and calls in progress, no secrets) and `phoneFromEnv` for `main.ts`. |
+| `apps/server/src/phone/front-desk.ts` | `FrontDesk`: the shared line before a listing is known; `find_listing`, keypad digits, quiet reports, the agent's own goodbye, and the hand-over (section 16). |
+| `apps/server/src/voice-front-desk-guide.md` | The plain-text guide that shapes how the front desk talks, and its "Once the listing is found" section, which the negotiation's instructions take over. |
+| `packages/core/src/mandate/listing-code.ts` | Listing codes: the Damm check digit, reading digits in any script, picking a free code. |
 | `apps/server/src/phone/phone-call.ts` | `PhoneCall`: wraps `RealtimeCall`, sends the `session.update`, feeds `ServerPlayback`, the silence and time-limit timers, hang-up, the call-end record, event counts and the trace, and the lines it says itself. |
 | `apps/server/src/phone/playback.ts` | `ServerPlayback`: the delivery rule of section 6. Pure, with an injectable clock. |
 | `apps/server/src/phone/sip-headers.ts` | Reading the dialled and calling numbers from SIP headers; masking numbers for logs. |
@@ -242,7 +246,7 @@ Placeholders, for the interaction design:
 
 Known limits:
 
-- With Vobiz, all numbers on one OpenAI project reach the same listing (section 4).
+- With Vobiz, all numbers on one OpenAI project reach the same route (section 4). The front desk (section 16) is how one number serves many mandates.
 - The India edge (`sip-in.api.openai.com`) has not been tried since the accept fix.
 - A hang-up and a dropped line look the same.
 - If the accept succeeds but OpenAI never connects the call, the session stays empty in the console.
@@ -324,3 +328,49 @@ Ways forward:
 - For a demo today, multiple counterparties work over **inbound** phone calls (counterparties call Kritva's number), browser voice and chat.
 
 Still open: the greeting. The engine's opening line is written for a call the counterparty started; the outbound opener (`engine.greet({ ..., outbound: true })`) comes with the multiple-counterparties work.
+
+## 16. Listing codes and the front desk
+
+One number serves every mandate. The call cannot say which mandate the caller means (Vobiz does not even pass the dialled number, section 4), so the context is printed where the caller found the number: each live mandate has a **listing code**, four digits shown next to the line's number on its listing or ad. A call on a `code` route is answered by the **front desk**, which asks for the code, and then goes on with that mandate as one conversation.
+
+### 16.1 What is decided in code, and what the agent decides
+
+| Decided in code (it must be exact) | Decided by the agent, from the plain-text guide |
+|---|---|
+| Each mandate's code: 3 digits (100 to 999) and a Damm check digit. Every single-digit error and every swap of two neighbouring digits makes a code invalid, so a misheard code is never another listing's code. | How to pick up, introduce itself, answer "Is this ABC Corporation?", ask for the code, react to a code that did not match, and say goodbye. All of it is in `apps/server/src/voice-front-desk-guide.md`; nothing Kritva says is written in code. |
+| `find_listing`: the digits (any script) are checked and looked up. The agent gets only data back: found, or `check_failed`, `wrong_length`, `not_found`, `paused`, `closed`, `busy`, `unavailable`. | Whether to ask again, digit by digit, or end the call warmly after two or three tries. |
+| On a match: the negotiation starts (or a listed counterparty's open one continues), what was said so far is recorded, the same realtime session switches to the negotiation's instructions and tools, and `PhoneCall` takes the call. | The first line after the match ("Got it, the black office chairs requirement. Would you like to give your quote?"), from the guide's "Once the listing is found" section, which is added to the negotiation's instructions. No second greeting. |
+| Quiet line: the agent is told after `KRITVA_PHONE_IDLE_SECONDS`, twice; then the call ends. Keypad presses are passed on as what was pressed. | What to say when the line is quiet; treating keypad digits like spoken ones. |
+
+Before the listing is found, the agent knows nothing about any listing, so it cannot talk about the wrong one. The only names it may confirm are those in `KRITVA_PHONE_ANSWERS_FOR` and the demo listings' public names; for any other name it neither confirms nor denies, and it never reads the list out.
+
+### 16.2 A call
+
+```
+Ring → webhook → route "code" → any live mandate with a code? (no: 480)
+     → accept with the front desk session (tools: find_listing, end_call) → the agent picks up
+Caller: Is this ABC Corporation?            Kritva: Yes! Who's calling?
+Caller: Krishna from XYZ Supplies, about the office chairs.
+Kritva: Sure, could you share the 4-digit code on the listing?
+Caller: 4821                                → find_listing("4821") → found
+     → the negotiation starts; the front desk turns are recorded in it
+     → session.update (the negotiation's instructions, plus "Once the listing is found")
+     → PhoneCall (opening "continue") → the agent answers the caller's last words
+Kritva: Got it, the black office chairs requirement. Would you like to give your quote?
+```
+
+The record of the negotiation shows the whole call: Kritva's first line, each caller turn with Kritva's answer (checked like any voice answer), and then the call as usual. The connection event is recorded when the negotiation takes the call.
+
+### 16.3 Codes on mandates
+
+- A mandate gets its code when it first goes live (confirmed in the library, or imported from a case file). Mandates saved before codes existed get theirs when the server starts.
+- The code stays through new revisions, pauses and closing, so a caller with an old ad hears that the listing is paused or closed. Deleting the mandate releases the code; released codes are reused only after all 900 have been used, oldest release first.
+- Codes live in `library_listing_codes` (append-only, like the rest of the library). `MandateLibrary.findByListingCode` gives the mandate that holds a code now.
+- The Mandates page shows the code in the list ("Code 4821 · Revision 2") and above the setup chat, with the line's number and **Copy for your ad** ("Call +91 80 6426 4194 and give listing code 4821."). `GET /api/operator/phone` gives the line's number (`line`).
+
+### 16.4 Turning it on, and what is not tried yet
+
+- Set `KRITVA_PHONE_ROUTES=+918064264194=code,*=code`, and optionally `KRITVA_PHONE_ANSWERS_FOR=ABC Corporation`. Restart the server. Copy the line from the mandate into the listing or ad.
+- **Keypad digits**: OpenAI reports DTMF on SIP calls (added November 2025; its guide calls the event `transport.dtmf.received`, its reference `input_audio_buffer.dtmf_event_received`; both are read). Whether Vobiz passes keypad tones through on the inbound trunk is not known. One call with `KRITVA_PHONE_TRACE=1`, pressing keys, shows it in the log (`front_desk_keypad`). If it works, a listing's call button can carry the code (`tel:+918064264194,4821`).
+- Not tried on a live call yet: the hand-over (`session.update` mid-call that changes tools and instructions) works on the fake connection in the tests; the first live call should be watched with the trace on.
+- Tests: `apps/server/test/phone.test.ts` ("the front desk asks for the listing code") and `packages/core/test/unit/listing-code.test.ts`.

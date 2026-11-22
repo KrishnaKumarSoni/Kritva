@@ -189,6 +189,8 @@ export function libraryView(detail: LibraryDetail, locale: string) {
     title: detail.title,
     caseId: detail.caseId,
     state: detail.state,
+    // The four digits callers give on the shared phone line to reach this mandate (null until it is first live).
+    listingCode: detail.listingCode,
     input: detail.input,
     versions: detail.versions,
     active: detail.active ? { revision: detail.active.revision, versionId: detail.active.versionId, confirmedAt: detail.active.confirmedAt, review: reviewOf(detail.active.mandate, locale) } : null,

@@ -6,8 +6,12 @@
  * secret, which is only used to verify OpenAI's signature.
  */
 
-/** Where a dialled number leads: a demo listing (by case ID) or a saved library mandate (by ID). */
-export type PhoneTarget = { kind: "listing"; caseId: string } | { kind: "mandate"; mandateId: string };
+/**
+ * Where a dialled number leads: a demo listing (by case ID), a saved library mandate (by ID), or
+ * "code": the shared line's front desk, which asks for the listing code and reaches that mandate
+ * (front-desk.ts).
+ */
+export type PhoneTarget = { kind: "listing"; caseId: string } | { kind: "mandate"; mandateId: string } | { kind: "code" };
 
 export interface PhoneRoute {
   /** Digits only, with the country code ("918071234567"), or "*" for any number not listed. */
@@ -45,6 +49,12 @@ export interface PhoneSettings {
    * bring audio on the live test either (section 15.4).
    */
   outboundCodec: "pcmu" | "pcma" | null;
+  /**
+   * Public names the shared line answers for (KRITVA_PHONE_ANSWERS_FOR, comma-separated), so the front
+   * desk can say yes to "Is this ABC Corporation?" before the code. Demo listings add their own public
+   * principal names. Never read out to callers.
+   */
+  answersFor?: string[];
 }
 
 /** OpenAI's global SIP host, routed by the caller's location (https://developers.openai.com/api/docs/guides/realtime-sip). */
@@ -64,9 +74,10 @@ export function normalizeNumber(raw: string, countryCode = "91"): string {
 
 /**
  * KRITVA_PHONE_ROUTES: comma-separated `number=target` pairs. A target is a listing's case ID
- * ("bed-sale", or "listing:bed-sale") or a saved mandate ("mandate:man_..."). "*" matches any
- * number, for a single-number setup or when the provider's headers do not carry the dialled number.
- * Example: "+918071234567=bed-sale,*=bed-sale".
+ * ("bed-sale", or "listing:bed-sale"), a saved mandate ("mandate:man_..."), or "code" for the shared
+ * line's front desk, which asks for the listing code. "*" matches any number, for a single-number
+ * setup or when the provider's headers do not carry the dialled number.
+ * Examples: "+918071234567=bed-sale,*=bed-sale", "+918071234567=code,*=code".
  */
 export function parseRoutes(value: string, countryCode = "91"): { routes: PhoneRoute[]; problems: string[] } {
   const routes: PhoneRoute[] = [];
@@ -85,6 +96,7 @@ export function parseRoutes(value: string, countryCode = "91"): { routes: PhoneR
 }
 
 function parseTarget(raw: string): PhoneTarget | null {
+  if (raw === "code") return { kind: "code" };
   if (raw.startsWith("mandate:")) return /^[\w-]{1,128}$/.test(raw.slice(8)) ? { kind: "mandate", mandateId: raw.slice(8) } : null;
   const caseId = raw.startsWith("listing:") ? raw.slice(8) : raw;
   return /^[\w-]{1,128}$/.test(caseId) ? { kind: "listing", caseId } : null;
@@ -120,8 +132,20 @@ export function phoneSettingsFromEnv(env: NodeJS.ProcessEnv = process.env): { se
     acceptMode: env.KRITVA_PHONE_ACCEPT === "full" ? "full" : "minimal",
     trace: env.KRITVA_PHONE_TRACE === "1",
     outboundCodec: env.KRITVA_PHONE_OUTBOUND_CODEC === "pcmu" ? "pcmu" : env.KRITVA_PHONE_OUTBOUND_CODEC === "pcma" ? "pcma" : null,
+    answersFor: (env.KRITVA_PHONE_ANSWERS_FOR ?? "").split(",").map((n) => n.trim().slice(0, 100)).filter(Boolean).slice(0, 20),
   };
   return { settings: webhookSecret && parsed.routes.length ? settings : null, problems };
+}
+
+/** The line's own number, for showing next to a listing code: the first route with a number, as +digits. Null with only "*". */
+export function lineNumber(settings: Pick<PhoneSettings, "routes">): string | null {
+  const route = settings.routes.find((r) => r.number !== "*");
+  return route ? `+${route.number}` : null;
+}
+
+/** Whether a call can reach the front desk that asks for listing codes. */
+export function usesListingCodes(settings: Pick<PhoneSettings, "routes">): boolean {
+  return settings.routes.some((r) => r.target.kind === "code");
 }
 
 /**

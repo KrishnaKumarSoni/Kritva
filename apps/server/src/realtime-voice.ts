@@ -200,6 +200,11 @@ export const END_CALL_TOOL = {
 } as const;
 const ENDING_GUIDE = readFileSync(new URL("./voice-ending-guide.md", import.meta.url), "utf8").trim();
 
+/** How Kritva picks and switches language on a call. Shared by every voice prompt, so a call sounds like one person throughout. */
+export const LANGUAGE_RULES = `Language: follow the language rules in "How you sound" below. Before they have spoken, use its default language${DEFAULT_LANGUAGE ? ` (${DEFAULT_LANGUAGE})` : ""}. From their first words, reply in the language they speak (your short acknowledgement before a deal turn too), in its own script (Hindi in Devanagari, never Urdu script; Tamil in Tamil script; English in English), and switch the moment they switch or ask for another language, for every turn after that, including a repeat. If they mix Hindi and English, reply in the same natural mix. Do not switch language because of an accent, a name, a filler word or one borrowed word.`;
+/** How Kritva's voice sounds on a call. */
+export const VOICE_RULES = `Voice: a friendly woman on the phone. Warm, relaxed, clear and unhurried; never salesy or over-excited. Speak English with an Indian English accent, never American or British, and every Indian language the way people in Indian cities speak it. In your own words too, use the everyday words "How you sound" gives ("Welcome!" when they thank you, "बस एक second", "Thank you", "Sorry"), never the formal ones it lists, and the feminine forms for yourself.`;
+
 export function realtimeInstructions(b: VoiceBriefing): string {
   const principal = b.principalName ? `${b.principalName} (the ${b.principalRole || "person you represent"})` : `the ${b.principalRole || "person you represent"}`;
   const facts = [...(b.subject ? [`What is offered: ${b.subject}`] : []), ...b.facts, ...b.terms];
@@ -220,9 +225,9 @@ When terms need approval: recap the exact terms, ask how long the offer stands a
 Introduce yourself only once in a call. If they just say hello, even after your greeting was cut off, greet them back warmly and invite them to talk, without introducing yourself again.
 If they ask you to repeat or say they didn't understand, say your last point again in fewer, simpler words, in the language they just used. Never replay the same sentence when they didn't understand it.
 
-Language: follow the language rules in "How you sound" below. Before they have spoken, use its default language${DEFAULT_LANGUAGE ? ` (${DEFAULT_LANGUAGE})` : ""}. From their first words, reply in the language they speak (your short acknowledgement before a deal turn too), in its own script (Hindi in Devanagari, never Urdu script; Tamil in Tamil script; English in English), and switch the moment they switch or ask for another language, for every turn after that, including a repeat. If they mix Hindi and English, reply in the same natural mix. Do not switch language because of an accent, a name, a filler word or one borrowed word.
+${LANGUAGE_RULES}
 
-Voice: a friendly woman on the phone. Warm, relaxed, clear and unhurried; never salesy or over-excited. Speak English with an Indian English accent, never American or British, and every Indian language the way people in Indian cities speak it. In your own words too, use the everyday words "How you sound" gives ("Welcome!" when they thank you, "बस एक second", "Thank you", "Sorry"), never the formal ones it lists, and the feminine forms for yourself.
+${VOICE_RULES}
 
 ${ENDING_GUIDE}
 
@@ -240,15 +245,27 @@ export interface SessionOptions {
    * uses OpenAI's defaults and a SIP call negotiates its codec in the SIP handshake.
    */
   noiseReduction?: "near_field" | "far_field" | null;
+  /**
+   * How this call began, when it did not start with Kritva's greeting: appended to the instructions.
+   * A phone call that came in on the shared line passes the front desk guide's "Once the listing is
+   * found" section (phone/front-desk.ts).
+   */
+  callStart?: string | null;
 }
 
 /** The realtime session: a browser call's `session`, and the flat body of a SIP call's accept. */
 export function realtimeSession(settings: RealtimeSettings, briefing: VoiceBriefing, options: SessionOptions = {}): Record<string, unknown> {
+  const instructions = options.callStart ? `${realtimeInstructions(briefing)}\n\n${options.callStart}` : realtimeInstructions(briefing);
+  return realtimeSessionWith(settings, { instructions, tools: [NEGOTIATE_TOOL, END_CALL_TOOL] }, options);
+}
+
+/** A realtime session with its own instructions and tools, and the call settings every Kritva call shares. */
+export function realtimeSessionWith(settings: RealtimeSettings, agent: { instructions: string; tools: unknown[] }, options: SessionOptions = {}): Record<string, unknown> {
   const noise = options.noiseReduction === undefined ? "near_field" : options.noiseReduction;
   return {
     type: "realtime",
     model: settings.model,
-    instructions: realtimeInstructions(briefing),
+    instructions: agent.instructions,
     output_modalities: ["audio"],
     audio: {
       input: {
@@ -258,7 +275,7 @@ export function realtimeSession(settings: RealtimeSettings, briefing: VoiceBrief
       },
       output: { voice: settings.voice },
     },
-    tools: [NEGOTIATE_TOOL, END_CALL_TOOL],
+    tools: agent.tools,
     tool_choice: "auto",
     reasoning: { effort: settings.reasoning },
   };
@@ -344,8 +361,14 @@ export interface CallDeps {
   afterSeq: number;
   log?: (entry: Record<string, unknown>) => void;
   pollMs?: number;
-  /** How the call opens: a greeting, or (on a call-back) the principal's decision. */
-  opening?: "greet" | "follow_up";
+  /**
+   * How the call opens: a greeting, (on a call-back) the principal's decision, or "continue": the
+   * conversation already started before this negotiation existed (the phone line's front desk found
+   * the listing), so the agent answers the caller's last words itself, as its instructions say.
+   */
+  opening?: "greet" | "follow_up" | "continue";
+  /** With "continue": the caller's last words before the hand-over (the item and, when already known, its transcript). */
+  seed?: { itemId: string | null; transcript: string | null; language: string | null } | null;
   /** On a phone call: the caller's number, used only if they agree to be called back on it. */
   contactNumber?: string | null;
   /** Ends the call (hangs up at OpenAI). Called once the reply that ends the call has been heard. */
@@ -445,6 +468,18 @@ export class RealtimeCall {
 
   /** Greets (the engine writes the line) and starts watching for engine-initiated messages. */
   async start(): Promise<void> {
+    if (this.#d.opening === "continue") {
+      // The caller has been talking with the front desk: their last words get the agent's own answer.
+      const seed = this.#d.seed ?? null;
+      if (seed?.itemId) {
+        this.#lastUserItem = seed.itemId;
+        if (seed.transcript !== null) this.#transcripts.set(seed.itemId, seed.transcript);
+      }
+      if (seed?.language) this.#language = seed.language;
+      this.#d.link.send({ type: "response.create" });
+      this.#poll = setInterval(() => void this.#watch().catch(() => undefined), this.#d.pollMs ?? 1_200);
+      return;
+    }
     this.#busy += 1;
     try {
       // A call-back opens with the principal's decision; with nothing to follow up, it greets.

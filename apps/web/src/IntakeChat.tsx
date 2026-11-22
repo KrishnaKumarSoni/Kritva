@@ -5,8 +5,8 @@
  */
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent } from "react";
-import { api, ApiError, type IntakeMessageView, type IntakeView, type LibraryExample, type MandateReview, type PrincipalSide } from "./api.ts";
-import { AlertIcon, CheckIcon, ImageIcon, LockIcon, SendIcon, SparkIcon, XIcon } from "./icons.tsx";
+import { api, ApiError, type IntakeMessageView, type IntakeView, type LibraryExample, type MandateReview, type PhoneLine, type PrincipalSide } from "./api.ts";
+import { AlertIcon, CheckIcon, CopyIcon, ImageIcon, LockIcon, PhoneIcon, SendIcon, SparkIcon, XIcon } from "./icons.tsx";
 
 const spring = { type: "spring", duration: 0.35, bounce: 0 } as const;
 const MAX_IMAGES = 4;
@@ -15,6 +15,8 @@ const MAX_EDGE = 1600;
 interface Props {
   view: IntakeView;
   examples: LibraryExample[];
+  /** The shared phone line, shown with the listing code; null when phone calls are off. */
+  line?: PhoneLine | null;
   onChange: (view: IntakeView) => void;
   /** After a mandate is created or goes live, so the list can refresh. */
   onSaved: () => void;
@@ -27,7 +29,7 @@ interface Attachment {
   url: string;
 }
 
-export function IntakeChat({ view, examples, onChange, onSaved, onUse }: Props) {
+export function IntakeChat({ view, examples, line = null, onChange, onSaved, onUse }: Props) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [pending, setPending] = useState<{ text: string; images: string[] } | null>(null);
@@ -177,6 +179,8 @@ export function IntakeChat({ view, examples, onChange, onSaved, onUse }: Props) 
         )}
       </header>
 
+      {view.mandate?.listingCode && view.state !== "new" && view.state !== "draft" && <ListingCode code={view.mandate.listingCode} line={line} state={view.state} />}
+
       <Progress view={view} settled={settled} />
 
       <div className="chat-log intake-log" ref={logRef} role="log" aria-label="Setup conversation" aria-live="polite">
@@ -322,6 +326,62 @@ function MessageBody({ message, pending = false }: { message: IntakeMessageView;
 }
 
 /** Which side the principal is on, in words, so the meaning never rests on colour. */
+/** Indian metro area codes with 8-digit numbers after them (Delhi, Pune, Mumbai, Kolkata, Hyderabad, Chennai, Ahmedabad, Bengaluru). */
+const METRO_CODES = ["11", "20", "22", "33", "40", "44", "79", "80"];
+
+/**
+ * The line's number as people write it. The line is a landline or toll-free number (a phone provider's
+ * DID), so "+918064264194" reads "+91 80 6426 4194". Anything else stays ungrouped, so it is never
+ * grouped wrongly.
+ */
+function formatNumber(e164: string): string {
+  const digits = e164.replace(/\D/g, "");
+  if (digits.length !== 12 || !digits.startsWith("91")) return e164;
+  const n = digits.slice(2);
+  if (METRO_CODES.includes(n.slice(0, 2))) return `+91 ${n.slice(0, 2)} ${n.slice(2, 6)} ${n.slice(6)}`;
+  return `+91 ${n}`;
+}
+
+/**
+ * The listing code: the four digits a caller gives on Kritva's shared phone line so the call reaches
+ * this mandate. "Copy for your ad" copies the line to paste next to the listing.
+ */
+function ListingCode({ code, line, state }: { code: string; line: PhoneLine | null; state: IntakeView["state"] }) {
+  const [copied, setCopied] = useState(false);
+  const number = line?.listingCodes && line.number ? formatNumber(line.number) : null;
+  const ad = number ? `Call ${number} and give listing code ${code}.` : `Listing code: ${code}`;
+  useEffect(() => {
+    if (!copied) return;
+    const t = window.setTimeout(() => setCopied(false), 1600);
+    return () => window.clearTimeout(t);
+  }, [copied]);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(ad);
+      setCopied(true);
+    } catch {
+      /* the clipboard is unavailable; the code stays on screen to copy by hand */
+    }
+  };
+  const resting = state === "paused" || state === "closed";
+  return (
+    <div className={`listing-code${resting ? " is-resting" : ""}`} role="group" aria-label="Listing code">
+      <PhoneIcon width={16} height={16} className="listing-code-icon" aria-hidden="true" />
+      <span className="listing-code-text">
+        <span className="listing-code-label">Listing code</span>
+        <span className="listing-code-digits tabular" aria-label={`Listing code ${[...code].join(" ")}`}>
+          {code}
+        </span>
+        <span className="listing-code-hint">{resting ? `Callers hear it's ${state}.` : number ? `Callers dial ${number} and give this code.` : "Callers give this code on Kritva's phone line."}</span>
+      </span>
+      <button type="button" className="button button-ghost button-small listing-code-copy" onClick={() => void copy()} aria-live="polite">
+        {copied ? <CheckIcon width={14} height={14} /> : <CopyIcon width={14} height={14} />}
+        {copied ? "Copied" : "Copy for your ad"}
+      </button>
+    </div>
+  );
+}
+
 export function SideChip({ side }: { side: PrincipalSide | null | undefined }) {
   if (!side) return null;
   return <span className="state-chip side-chip">{side === "pays" ? "Buying" : "Selling"}</span>;

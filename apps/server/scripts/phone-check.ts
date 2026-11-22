@@ -34,7 +34,7 @@ console.log("  transport TLS (chosen in the Vobiz console), trunk Secure (SRTP) 
 console.log(`OpenAI webhook URL:     https://<public host>${WEBHOOK_PATH}   (event: realtime.call.incoming)`);
 if (settings) {
   console.log("\nNumbers:");
-  for (const r of settings.routes) console.log(`  ${r.number === "*" ? "* (any number)" : `+${r.number}`} -> ${r.target.kind === "listing" ? `listing ${r.target.caseId}` : `mandate ${r.target.mandateId}`}`);
+  for (const r of settings.routes) console.log(`  ${r.number === "*" ? "* (any number)" : `+${r.number}`} -> ${r.target.kind === "listing" ? `listing ${r.target.caseId}` : r.target.kind === "mandate" ? `mandate ${r.target.mandateId}` : "front desk (asks for the listing code)"}`);
   console.log(`Silence check after ${settings.idleMs / 1000} s, time limit ${settings.maxCallMs / 60_000} min, at most ${settings.maxCalls} calls at once.`);
 }
 

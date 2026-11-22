@@ -33,6 +33,9 @@ const mappingLlm = createMappingLlmFromEnv();
 const libraryMappingLlm = createMappingLlmFromEnv({ ...process.env, KRITVA_MAPPING_REASONING_EFFORT: process.env.KRITVA_INTAKE_MAPPING_REASONING_EFFORT ?? "low" });
 const library = new MandateLibrary({ backend: new SqliteLibraryBackend(join(dataDir, "kritva.sqlite")), mappingLlm: libraryMappingLlm });
 const { mandates, examples, listings, guidanceByCase, defaultGuidance, subjectFacts, listingDetails } = loadCaseRuntime(ROOT, library);
+// Every live mandate has the listing code callers give on the shared phone line; mandates saved before codes existed get one now.
+const coded = library.ensureListingCodes();
+if (coded) console.log(`Listing codes: gave ${coded} saved mandate(s) their code.`);
 // Kritva runs each turn as an agent (OpenAI Agents SDK); the turn model reviews its wording.
 const engine = new NegotiationEngine({
   record,

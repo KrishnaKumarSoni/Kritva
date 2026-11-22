@@ -6,7 +6,7 @@
  */
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiError, type IntakeDraftSummary, type IntakeView, type LibraryExample, type LibrarySummary, type LifecycleStep, type MandateState, type PrincipalSide } from "./api.ts";
+import { api, ApiError, type IntakeDraftSummary, type IntakeView, type LibraryExample, type LibrarySummary, type LifecycleStep, type MandateState, type PhoneLine, type PrincipalSide } from "./api.ts";
 import { ArchiveIcon, PauseIcon, PlayIcon, PlusIcon, RefreshIcon, TrashIcon } from "./icons.tsx";
 import { IntakeChat, SideChip, StateChip } from "./IntakeChat.tsx";
 import { Menu, type MenuItem } from "./Menu.tsx";
@@ -48,6 +48,7 @@ export function MandatesPage({ onUse, initialId = null }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Deleting | null>(null);
+  const [line, setLine] = useState<PhoneLine | null>(null);
   const reduced = useReducedMotion();
 
   const loadList = useCallback(async () => {
@@ -77,6 +78,8 @@ export function MandatesPage({ onUse, initialId = null }: Props) {
   useEffect(() => {
     void loadList();
     api.library.examples().then(setExamples).catch(() => undefined);
+    // The shared phone line, shown with each listing code (absent when phone calls are off).
+    api.phone().then((p) => setLine(p.line ?? null)).catch(() => setLine(null));
   }, [loadList]);
 
   useEffect(() => {
@@ -221,7 +224,7 @@ export function MandatesPage({ onUse, initialId = null }: Props) {
           </p>
         )}
         {view ? (
-          <IntakeChat key={view.id} view={view} examples={view.mandateId ? [] : examples} onChange={onChange} onSaved={() => void loadList()} onUse={onUse} />
+          <IntakeChat key={view.id} view={view} examples={view.mandateId ? [] : examples} line={line} onChange={onChange} onSaved={() => void loadList()} onUse={onUse} />
         ) : (
           <section className="panel intake intake-loading" aria-busy={opening}>
             <span className="spinner" aria-hidden="true" />
@@ -254,7 +257,7 @@ export function MandatesPage({ onUse, initialId = null }: Props) {
 function metaFor(m: LibrarySummary): string {
   const when = relative(m.updatedAt);
   if (m.state === "draft") return `Not live yet · ${when}`;
-  return `Revision ${m.activeRevision}${m.hasOpenDraft ? " · changes pending" : ""} · ${when}`;
+  return `${m.listingCode ? `Code ${m.listingCode} · ` : ""}Revision ${m.activeRevision}${m.hasOpenDraft ? " · changes pending" : ""} · ${when}`;
 }
 
 function relative(iso: string): string {
