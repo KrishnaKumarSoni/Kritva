@@ -38,7 +38,8 @@ export function realtimeSettingsFromEnv(env: NodeJS.ProcessEnv = process.env): R
     transcribeModel: env.KRITVA_REALTIME_TRANSCRIBE_MODEL ?? "gpt-transcribe",
     languages: (env.KRITVA_VOICE_LANGUAGES ?? "en,hi,ta,kn,te,ml,mr,bn").split(",").map((l) => l.trim()).filter((l) => /^[a-z]{2,3}$/.test(l)),
     eagerness: eagerness === "low" || eagerness === "medium" || eagerness === "auto" ? eagerness : "high",
-    reasoning: env.KRITVA_REALTIME_REASONING === "minimal" || env.KRITVA_REALTIME_REASONING === "medium" ? env.KRITVA_REALTIME_REASONING : "low",
+    // Minimal by default: at low effort the model announced its thinking aloud ("let me think about how to respond to that").
+    reasoning: env.KRITVA_REALTIME_REASONING === "low" || env.KRITVA_REALTIME_REASONING === "medium" ? env.KRITVA_REALTIME_REASONING : "minimal",
   };
 }
 
@@ -211,6 +212,12 @@ export const VOICE_RULES = `Voice: a friendly woman on the phone. Warm, relaxed,
  */
 export const ACCENT = `Accent: you are a woman from Bangalore, India. Always speak with a natural Indian accent and Indian intonation and rhythm, in English too: Indian English, the way an educated professional in Bangalore speaks it. Never an American or British accent, not even for one word.`;
 
+/**
+ * The guide's mistakes, minus its quoted narration examples ("let me think about how to respond to that"):
+ * the voice model repeats a quoted sentence aloud, so on a call the sound before a deal turn is a fixed list instead.
+ */
+const VOICE_MISTAKES = CONVERSATION_MISTAKES.split("\n").filter((line) => !/^- (A reaction before your answer|A filler while you think)/.test(line)).join("\n");
+
 /** Why Kritva is on the call and how it runs it, so it leads toward the price instead of waiting to be asked. */
 function callPlan(b: VoiceBriefing, principal: string): string {
   const buying = b.principalSide === "pays";
@@ -218,13 +225,14 @@ function callPlan(b: VoiceBriefing, principal: string): string {
   const want = b.subject ? ` (${b.subject})` : "";
   const ask = buying ? "their best price" : selling ? "what they would offer" : "their price";
   return `Why you are on this call: you are ${buying ? "buying" : selling ? "selling" : "making a deal"}${want} on behalf of ${principal}, and your job is to get ${principal} the best price and terms. You already know everything you need: the public facts below say what is needed, and the negotiation engine holds the strategy, the limits and every amount.
-How you run the call: you lead it, like a confident professional negotiator. Never wait for them to drive it.
-- Once they say it is a good time, say in one short sentence what ${principal} needs (only the key public facts) and ask whether they have it. Ask for ${ask} only after they confirm they have what is needed.
+How you run the call: you lead it, like a confident professional negotiator. Never wait for them to drive it. Leading shows only in what you ask in your own conversation turns. It never shows in the sound before a deal turn: that sound is only one item from the list below, in their language.
+- ${selling ? `Once they say it is a good time, say in one short sentence what is on offer (only the key public facts) and ask whether it is what they are looking for. Ask for ${ask} only after they say it is.` : `Once they say it is a good time, say in one short sentence what ${principal} needs (only the key public facts) and ask whether they have it. Ask for ${ask} only after they confirm they have what is needed.`}
 - Ask for ${ask} once. If they ask a question instead, just answer it and stop; never end every turn with the price ask.
 - Never ask "What would you like to know?", "What do you need from your side?", "Any requirements from your side?" or "What details do you need?". Never re-list facts you already said.
 - If they ask why you called or what you need from this call, say it in one short sentence and ask for ${ask}.
-- When they confirm they have it or can meet the needs, move to the price: if they have not given a price yet, ask for ${ask}; if they have, it is a deal turn.
-- Once the needs are settled the call is about the price and the deal. Every turn moves it forward. Never stall on small talk or specifications.`;
+- When they confirm ${selling ? "it is what they want" : "they have it or can meet the needs"}, move to the price: if they have not given a price yet, ask for ${ask}; if they have, it is a deal turn.
+- Once the needs are settled, the call is about the price and the deal. Never stall on small talk or specifications.
+- Any question about the price or an amount ("what's the price?", "कितने का है?") is always a deal turn, even when a price was said before. Never say a price or amount yourself.`;
 }
 
 export function realtimeInstructions(b: VoiceBriefing): string {
@@ -240,8 +248,8 @@ Public facts you may state:
 ${facts.map((f) => `- ${f}`).join("\n") || "- (none)"}
 
 Every turn is one of two kinds.
-1. Conversation turns you answer yourself: greetings, small talk, checking they can hear you, repeating or explaining something you already said, whether you are an AI, why you are calling and what you need, asking for their price, and questions fully answered by the public facts above. Answer what they asked briefly and warmly as "How you sound" below describes, then lead the call forward as "How you run the call" says. Do not list every fact.
-2. Deal turns go to the negotiation engine: anything about price or any amount, offers, discounts, budgets, payment, delivery or pickup arrangements, availability or holding the item, agreeing, confirming or walking away from the deal, anything not in the public facts, and anything you are unsure about. A goodbye once nothing is left to settle is not a deal turn: "Ending the call" below says what to do. For a deal turn, first say one short sound in their language, chosen from exactly these: "Hmm, okay.", "Right.", "I see.", "अच्छा।", "हम्म।", "ठीक है।" or "சரி.". Nothing else and nothing longer: never a sentence, never "let me think", "let me check", "one second" or anything about what you are doing or will do. Then call negotiate with their exact words as you heard them, never paraphrased or translated. Never answer a deal turn yourself.
+1. Conversation turns you answer yourself: greetings, small talk, checking they can hear you, repeating or explaining something you already said, whether you are an AI, why you are calling and what you need, asking them for their price (never stating one), and questions fully answered by the public facts above, except anything about a price or an amount. Answer what they asked briefly and warmly as "How you sound" below describes, then lead the call forward as "How you run the call" says. Do not list every fact.
+2. Deal turns go to the negotiation engine: anything about price or any amount, offers, discounts, budgets, payment, delivery or pickup arrangements, availability or holding the item, agreeing, confirming or walking away from the deal, anything not in the public facts, and anything you are unsure about. A goodbye once nothing is left to settle is not a deal turn: "Ending the call" below says what to do. For a deal turn, say exactly one of these sounds, in their language: "Hmm, okay.", "Right.", "I see.", "अच्छा।", "हम्म।", "ठीक है।" or "சரி.". Then stop speaking and call negotiate immediately, in the same turn. The sound is the only word you say before negotiate: no sentence after it, nothing about yourself, the reply or the deal. Then call negotiate with their exact words as you heard them, never paraphrased or translated. Never answer a deal turn yourself.
 When you are given a reply to say, say exactly that reply, word for word, and nothing else.
 
 Rules for your own words: never ask them to wait or hold on; never say any amount or price; never agree, accept, approve, promise, hold, reserve or confirm anything; never invent a detail; never mention tools, checks, engines, rules or handing anything over.
@@ -261,7 +269,7 @@ How you sound. This is the same guide that every reply you are given follows, so
 ${CONVERSATION_TONE}
 
 Mistakes to avoid:
-${CONVERSATION_MISTAKES}`;
+${VOICE_MISTAKES}`;
 }
 
 /** Each language in its own script, and every number as digits so amounts are read exactly. */
@@ -989,7 +997,7 @@ export class RealtimeCall {
   }
 
   #lineInstructions(kind: LineKind): string {
-    return `${ACCENT}\n\n${LINES_INTRO}\n\nNow: ${LINES[kind].instruction}\n\nSpeak ${languageLabel(this.#language)}.${kind === "break_in" ? "" : `\n\nHow you sound:\n${CONVERSATION_TONE}`}\n\nMistakes to avoid:\n${CONVERSATION_MISTAKES}`;
+    return `${ACCENT}\n\n${LINES_INTRO}\n\nNow: ${LINES[kind].instruction}\n\nSpeak ${languageLabel(this.#language)}.${kind === "break_in" ? "" : `\n\nHow you sound:\n${CONVERSATION_TONE}`}\n\nMistakes to avoid:\n${VOICE_MISTAKES}`;
   }
 
   /** What the agent said for a short line: kept as a fragment when it passes; otherwise the fallback, word for word, once. */
@@ -1091,7 +1099,7 @@ export class RealtimeCall {
       response: {
         conversation: "none",
         input: [],
-        instructions: `${ACCENT}\n\n${WAITING_GUIDE}\n\nSpeak ${language}. Never use dashes.\n\nNow: ${situation}${last}\n\nHow you sound:\n${CONVERSATION_TONE}\n\nMistakes to avoid:\n${CONVERSATION_MISTAKES}`,
+        instructions: `${ACCENT}\n\n${WAITING_GUIDE}\n\nSpeak ${language}. Never use dashes.\n\nNow: ${situation}${last}\n\nHow you sound:\n${CONVERSATION_TONE}\n\nMistakes to avoid:\n${VOICE_MISTAKES}`,
         tools: [STAY_QUIET_TOOL],
         tool_choice: "auto",
         metadata: { kritva: "wait", situation: "working" },
@@ -1121,7 +1129,7 @@ export class RealtimeCall {
       response: {
         conversation: "none",
         input: [],
-        instructions: `${ACCENT}\n\n${ENDING_GUIDE}\n\nSpeak ${languageLabel(this.#language)}. Never use dashes.\n\nNow: the negotiation has ${over}, and the line has been quiet for ${quiet} seconds.${last} If the call is over, say your goodbye and call end_call. If they may still want something, warmly ask if there is anything else. If speaking now would be awkward, call stay_quiet.\n\nHow you sound:\n${CONVERSATION_TONE}\n\nMistakes to avoid:\n${CONVERSATION_MISTAKES}`,
+        instructions: `${ACCENT}\n\n${ENDING_GUIDE}\n\nSpeak ${languageLabel(this.#language)}. Never use dashes.\n\nNow: the negotiation has ${over}, and the line has been quiet for ${quiet} seconds.${last} If the call is over, say your goodbye and call end_call. If they may still want something, warmly ask if there is anything else. If speaking now would be awkward, call stay_quiet.\n\nHow you sound:\n${CONVERSATION_TONE}\n\nMistakes to avoid:\n${VOICE_MISTAKES}`,
         tools: [END_CALL_TOOL, STAY_QUIET_TOOL],
         tool_choice: "auto",
         metadata: { kritva: "wait", situation: "over" },
