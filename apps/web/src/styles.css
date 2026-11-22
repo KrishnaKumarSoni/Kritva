@@ -2009,6 +2009,14 @@ input {
   box-shadow: inset 0 0 0 1px var(--color-accent-border);
   color: var(--color-accent-text);
 }
+/* Which side the principal is on: a quiet filled tag, a step below the state pill beside it,
+   so the state reads first and the accent stays with "Live". */
+.side-chip {
+  color: var(--color-text-secondary);
+  background: var(--color-bg-subtle);
+  box-shadow: none;
+  font-weight: 500;
+}
 .state-paused,
 .state-closed {
   color: var(--color-text-secondary);

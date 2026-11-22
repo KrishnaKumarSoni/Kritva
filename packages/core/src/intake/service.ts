@@ -235,7 +235,7 @@ function readyCard(detail: LibraryDetail, mode: ReadyCard["mode"]): ReadyCard {
 }
 
 function sameFields(a: LibraryInput, b: LibraryInput): boolean {
-  return a.title === b.title && a.principalRole === b.principalRole && a.counterpartyRole === b.counterpartyRole && a.publicText === b.publicText && a.privateText === b.privateText;
+  return a.title === b.title && a.principalRole === b.principalRole && a.counterpartyRole === b.counterpartyRole && (a.principalSide ?? null) === (b.principalSide ?? null) && a.publicText === b.publicText && a.privateText === b.privateText;
 }
 
 /** Blocker text in a conversational register. */

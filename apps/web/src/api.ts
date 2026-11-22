@@ -259,9 +259,13 @@ export interface LibraryInput {
   counterpartyRole: string;
   publicText: string;
   privateText: string;
+  principalSide?: PrincipalSide | null;
 }
 
 export type MandateState = "draft" | "live" | "paused" | "closed";
+
+/** Whether the principal receives the negotiated amount (selling) or pays it (buying). */
+export type PrincipalSide = "receives" | "pays";
 
 export interface LibrarySummary {
   mandateId: string;
@@ -271,6 +275,7 @@ export interface LibrarySummary {
   hasOpenDraft: boolean;
   state: MandateState;
   updatedAt: string;
+  principalSide: PrincipalSide | null;
 }
 
 export type LifecycleStep = "pause" | "resume" | "close" | "reopen";
@@ -327,6 +332,7 @@ export interface ReviewItem {
 
 export interface MandateReview {
   parties: { you: string; other: string };
+  side: PrincipalSide | null;
   sources: Array<{ id: string; label: string; private: boolean }>;
   sections: Array<{ id: string; title: string; empty: string; items: ReviewItem[] }>;
   issues: Array<{ id: string; kind: string; message: string; blocking: boolean }>;

@@ -1052,3 +1052,61 @@ describe("Code keeps limits; the conversation guide shapes the wording", () => {
   });
 });
 
+describe("Buying or selling: the principal's side sets which way a better deal goes", () => {
+  /** The principal pays: 20,000 is their opening offer; with `max`, the most they will pay. */
+  const payingMandate = (max: number | null) => buildMandate({
+    instructions: `You can negotiate the price${max === null ? "" : `, but don't pay more than ₹${max.toLocaleString("en-IN")}`}. Ask me before accepting any offer.`,
+    build: (d) => {
+      (d as { principalSide?: string }).principalSide = "pays";
+      if (max !== null) d.limits.push({ id: "limit_max", status: "stated", disclosure: "private", sourceRefs: [{ sourceId: "instructions", quote: `don't pay more than ₹${max.toLocaleString("en-IN")}` }], partyId: "seller", termId: "term_price", kind: "maximum", value: { type: "money", amount: max, currency: "INR" }, conditionIds: [] });
+    },
+  });
+
+  it("a principal who pays never takes a higher price as meeting the offer, even with no limit set", async () => {
+    const { say, events } = await setup(payingMandate(null));
+    const turn = await say("I can let it go for ₹23,000.", offer(23_000));
+    expect(turn.events.findLast((e) => e.type === "decision")?.payload).not.toMatchObject({ kind: "state_final_terms" });
+    expect((await events()).filter((e) => e.type === "offer_proposed").map((e) => priceOf((e.payload as { terms: OfferTerm[] }).terms)).every((a) => a <= 20_000)).toBe(true);
+  });
+
+  it("with a maximum, a counter moves up toward their price and never past the maximum", async () => {
+    const { say, events } = await setup(payingMandate(22_000));
+    await say("It's ₹26,000.", offer(26_000));
+    const counters = (await events()).filter((e) => e.type === "offer_proposed").map((e) => priceOf((e.payload as { terms: OfferTerm[] }).terms));
+    expect(counters.length).toBeGreaterThan(0);
+    for (const amount of counters) {
+      expect(amount).toBeGreaterThanOrEqual(20_000);
+      expect(amount).toBeLessThanOrEqual(22_000);
+    }
+  });
+
+  it("the brief says which side the principal is on", async () => {
+    const { say, llm } = await setup(payingMandate(22_000));
+    await say("What's your offer?", { intent: "question" });
+    const brief = JSON.parse(llm.seen.findLast((r) => r.purpose === "compose_reply")!.messages[0]!.content);
+    expect(brief.principal_side).toBe("pays");
+  });
+
+  it("the checked fallback speaks of our offer, never an asking amount, when the principal pays", async () => {
+    const { say } = await setup(payingMandate(22_000));
+    const texts: string[] = [];
+    await say("Hello.", { intent: "other" });
+    for (const amount of [24_000, 23_000]) {
+      const turn = await say(`Would you pay ₹${amount.toLocaleString("en-IN")}?`, offer(amount, { intent: "question", offer_kind: "enquiry" }), { composed: "Which price would you like to know?" });
+      texts.push(turn.reply?.text ?? "");
+    }
+    expect(texts.join(" ")).toMatch(/(Our current offer is|Our offer is still) ₹20,000/);
+    expect(texts.join(" ")).not.toMatch(/asking/i);
+  });
+
+  it("a limit that points the other way is a conflict to resolve before confirming", async () => {
+    const { withPrincipalSide, principalSideOf, blockers } = await import("../../src/mandate/library.ts");
+    const selling = listingOnlyDeliveryMandate(18_000);
+    const draft = { ...selling, approval: { status: "unapproved" as const } };
+    expect(principalSideOf(draft)).toBe("receives");
+    const flipped = withPrincipalSide(draft as never, "pays");
+    expect(flipped.principalSide).toBe("pays");
+    expect(blockers(flipped).join(" ")).toMatch(/paying, or being paid/);
+    expect(withPrincipalSide(draft as never, "receives").issues.some((i) => i.id === "issue_principal_side")).toBe(false);
+  });
+});

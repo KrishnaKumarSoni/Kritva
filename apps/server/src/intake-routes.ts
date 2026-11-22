@@ -112,5 +112,5 @@ export function intakeView(c: IntakeConversation, library: MandateLibrary, local
 }
 
 function sameInput(a: IntakeConversation["fields"], b: IntakeConversation["fields"]): boolean {
-  return a.title === b.title && a.principalRole === b.principalRole && a.counterpartyRole === b.counterpartyRole && a.publicText === b.publicText && a.privateText === b.privateText;
+  return a.title === b.title && a.principalRole === b.principalRole && a.counterpartyRole === b.counterpartyRole && (a.principalSide ?? null) === (b.principalSide ?? null) && a.publicText === b.publicText && a.privateText === b.privateText;
 }

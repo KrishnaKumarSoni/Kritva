@@ -6,6 +6,7 @@
 import type { Hono } from "hono";
 import {
   formatValue,
+  principalSideOf,
   type ConfirmedMandate,
   type Correction,
   type LibraryDetail,
@@ -71,7 +72,7 @@ export function registerLibraryRoutes(app: Hono, deps: LibraryDeps): void {
 
   app.post("/api/operator/library", async (c) => {
     const body = await c.req.json<Record<string, string>>().catch(() => ({}) as Record<string, string>);
-    const result = await library.create({ title: body.title ?? "", principalRole: body.principalRole ?? "", counterpartyRole: body.counterpartyRole ?? "", publicText: body.publicText ?? "", privateText: body.privateText ?? "" });
+    const result = await library.create({ title: body.title ?? "", principalRole: body.principalRole ?? "", principalSide: body.principalSide === "receives" || body.principalSide === "pays" ? body.principalSide : null, counterpartyRole: body.counterpartyRole ?? "", publicText: body.publicText ?? "", privateText: body.privateText ?? "" });
     if (!result.ok) return c.json({ error: result.code, message: result.message }, result.code === "invalid_input" ? 400 : 422);
     return c.json(libraryView(result.value, locale), 201);
   });
@@ -112,7 +113,7 @@ export function registerLibraryRoutes(app: Hono, deps: LibraryDeps): void {
   /** Edited text becomes the next draft version. The active revision does not change. */
   app.post("/api/operator/library/:id/drafts", async (c) => {
     const body = await c.req.json<Record<string, string>>().catch(() => ({}) as Record<string, string>);
-    const result = await library.remap(c.req.param("id"), { title: body.title ?? "", principalRole: body.principalRole ?? "", counterpartyRole: body.counterpartyRole ?? "", publicText: body.publicText ?? "", privateText: body.privateText ?? "" });
+    const result = await library.remap(c.req.param("id"), { title: body.title ?? "", principalRole: body.principalRole ?? "", principalSide: body.principalSide === "receives" || body.principalSide === "pays" ? body.principalSide : null, counterpartyRole: body.counterpartyRole ?? "", publicText: body.publicText ?? "", privateText: body.privateText ?? "" });
     if (!result.ok) return c.json({ error: result.code, message: result.message }, result.code === "not_found" ? 404 : result.code === "invalid_input" ? 400 : 422);
     return c.json(libraryView(result.value, locale));
   });
@@ -245,6 +246,8 @@ function reviewOf(m: MandateDraft | ConfirmedMandate, locale: string) {
 
   return {
     parties: { you: principal?.role ?? "", other: other?.role ?? "" },
+    /** Whether the principal receives or pays the negotiated amount, which sets the direction Kritva pushes. */
+    side: principalSideOf(m),
     sources: m.sources.map((s) => ({ id: s.id, label: s.label ?? s.id, private: s.disclosure === "private" })),
     sections: [
       {

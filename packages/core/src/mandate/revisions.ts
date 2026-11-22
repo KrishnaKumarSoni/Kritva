@@ -87,7 +87,8 @@ export class MandateRevisions {
     if (!mapped.ok) return { ok: false, error: mapped.error };
     const appended = await this.#record.append(
       input.sessionId,
-      { id: newEventId(), type: "mandate_draft_proposed", channel: null, payload: { draft: mapped.draft, basedOnRevision: ctx.mandateRevision, instructions: input.instructions.trim() } },
+      // A revision keeps which side the principal is on; only the instructions changed.
+      { id: newEventId(), type: "mandate_draft_proposed", channel: null, payload: { draft: { ...mapped.draft, principalSide: mandate.principalSide ?? null }, basedOnRevision: ctx.mandateRevision, instructions: input.instructions.trim() } },
       { kind: "principal", partyId: principalId },
     );
     if (!appended.ok) return { ok: false, error: { code: appended.error.code, message: appended.error.message, validationErrors: appended.error.errors } };

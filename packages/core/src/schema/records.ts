@@ -242,12 +242,21 @@ export const Issue = z.strictObject({
 export type Issue = z.infer<typeof Issue>;
 
 /**
+ * Whether the principal receives the negotiated amount (selling, letting, providing a service) or pays
+ * it (buying, renting, hiring). It sets which way a better deal moves for the principal.
+ */
+export const PrincipalSide = z.enum(["receives", "pays"]);
+export type PrincipalSide = z.infer<typeof PrincipalSide>;
+
+/**
  * A mandate draft. Mapping produces only unapproved drafts; approval and activation
  * belong to a later confirmation flow and cannot be expressed here.
  */
 const mandateBody = {
   schemaVersion: z.literal(SCHEMA_VERSION),
   caseId: Id,
+  /** Null on older mandates: the side is then read from the principal's limit (a minimum receives, a maximum pays). */
+  principalSide: PrincipalSide.nullable().default(null),
   parties: z.array(Party).min(1).max(20),
   sources: z.array(Source).min(1).max(50),
   terms: z.array(Term).max(200),

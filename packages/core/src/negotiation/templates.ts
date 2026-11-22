@@ -101,24 +101,28 @@ export function templateReply(view: MandateView, plan: Plan, locale: string, sub
   // A clarifying question goes last, after the statements it follows.
   const clarifying = plan.clarify.length > 0 ? `Which ${joinNames(plan.clarify)} did you have in mind?` : null;
 
+  // When the principal pays, the amount on the table is what we offer, never an asking price.
+  const pays = view.principalSide === "pays";
+  const current = (amount: string) => (pays ? `Our current offer is ${amount}.` : `The current asking amount is ${amount}.`);
+  const still = (amount: string) => (pays ? `Our offer is still ${amount}.` : `The asking amount is still ${amount}.`);
   switch (plan.move) {
     case "explore_objection":
       parts.push(plan.ask ? "I hear your concern about the price." : "I hear your concern. The current terms still stand.");
       break;
     case "explain_price":
-      if (reference) parts.push(pick([`The current asking amount is ${reference}.`, `${reference} is the current asking amount.`], turn));
+      if (reference) parts.push(pick([current(reference), pays ? `${reference} is what we can offer right now.` : `${reference} is the current asking amount.`], turn));
       for (const fact of plan.explanationFacts ?? []) parts.push(/[.!?]$/.test(fact) ? fact : `${fact}.`);
       parts.push("I don't have a market comparison to say how that amount compares.");
       break;
     case "acknowledge_budget":
       if (budget) parts.push(`I hear your budget is capped at ${budget}.`);
-      if (reference) parts.push(`The current asking amount is ${reference}.`);
+      if (reference) parts.push(current(reference));
       break;
     case "answer_enquiry": {
       const enquired = n && plan.enquiredAmount !== undefined ? formatValue(numericValue(n, plan.enquiredAmount), locale) : null;
-      if (enquired && reference) parts.push(pick([`You asked about ${enquired}. The current asking amount is ${reference}.`, `You asked about ${enquired}; the asking amount is still ${reference} for now.`], turn));
+      if (enquired && reference) parts.push(pick([`You asked about ${enquired}. ${current(reference)}`, `You asked about ${enquired}. ${still(reference)}`], turn));
       else if (enquired) parts.push(`You asked about ${enquired}.`);
-      else if (reference) parts.push(`The current asking amount is ${reference}.`);
+      else if (reference) parts.push(current(reference));
       if (!options.offerInvitedRecently) parts.push("If you'd like to make an offer, I can consider it.");
       break;
     }
@@ -126,11 +130,11 @@ export function templateReply(view: MandateView, plan: Plan, locale: string, sub
       // The last reply already said the price: keep the position without the number.
       if (reference && options.priceJustSaid) parts.push(pick(["I'd like to stay where I am for now.", "That's where I am on it for now."], turn));
       else if (reference && options.offerInvitedRecently && !plan.ask) parts.push(pick([`For now the price stays at ${reference}.`, `${reference} is still where it stands for now.`], turn));
-      else if (reference) parts.push(pick([`The current asking amount is ${reference}.`, `The asking amount is still ${reference}.`], turn));
+      else if (reference) parts.push(pick([current(reference), still(reference)], turn));
       if (!plan.ask && !options.offerInvitedRecently) parts.push(pick(["I can consider a firm offer on the current terms.", "I can take a look if you have a firm offer."], turn));
       break;
     case "compare_terms":
-      if (reference) parts.push(pick([`The current asking amount is ${reference}.`, `${reference} is the current asking amount.`], turn));
+      if (reference) parts.push(pick([current(reference), pays ? `${reference} is what we can offer right now.` : `${reference} is the current asking amount.`], turn));
       for (const fact of plan.explanationFacts ?? []) parts.push(/[.!?]$/.test(fact) ? fact : `${fact}.`);
       break;
     case "answer_public_terms":

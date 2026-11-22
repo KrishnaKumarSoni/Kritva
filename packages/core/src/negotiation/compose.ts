@@ -80,6 +80,7 @@ export function composeBrief(input: ComposeInput): Record<string, unknown> {
     open_for_discussion: plan.openForDiscussion === true,
     listing_available: plan.listingAvailable ?? null,
     // The price and the other terms, separately: the guide decides when the price is worth saying again.
+    principal_side: view.principalSide,
     price: priceNow(input),
     other_terms: input.publicTerms.filter((term) => term.termId !== n?.termId).map((term) => ({ term: nameOf(term.termId), value: formatValue(term.value, locale) })),
     public_term_answers: (plan.publicTermAnswers ?? []).map((term) => ({ term: nameOf(term.termId), value: formatValue(term.value, locale), basis: term.basis })),
@@ -158,7 +159,8 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
   const price = payload.price as { current: string; said_in_your_last_reply: boolean } | null;
   // They asked about the price: explain it even if the last reply named it.
   if (n && current && "amount" in current.value && current.value.amount !== n.opening) {
-    must.push(`${formatValue(current.value, input.locale)} is your current offer to them, down from the original ${formatValue(numericValue(n, n.opening), input.locale)}: say so in a friendly sentence.`);
+    const moved = input.view.principalSide === "pays" ? "up from your first offer of" : "down from the original";
+    must.push(`${formatValue(current.value, input.locale)} is your current offer to them, ${moved} ${formatValue(numericValue(n, n.opening), input.locale)}: say so in a friendly sentence.`);
   }
   for (const d of (payload.declined as Array<{ term: string }>) ?? []) must.push(`Say plainly that the ${d.term} stays as it is.`);
   if (payload.ask || payload.question_objective) must.push(`Ask exactly one question, at the end, serving: ${String(payload.question_objective ?? payload.ask)}. If their message or the conversation already answers it (for example they just said the reason), do not ask it: ask nothing and say why in skip_question_because.`);
@@ -294,6 +296,7 @@ function priceNow(input: ComposeInput): { current: string; original: string | nu
   if (!n || !term || !("amount" in term.value)) return null;
   const amount = term.value.amount as number;
   const lastReply = [...input.conversation].reverse().find((m) => m.speaker === "agent");
+  // "lowered" means moved toward the other party: down when the principal receives, up when they pay.
   const lowered = amount !== n.opening;
   return {
     current: formatValue(term.value, input.locale),
