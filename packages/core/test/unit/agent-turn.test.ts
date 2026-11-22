@@ -184,7 +184,7 @@ describe("Agentic turn: the tool contract", () => {
       { fail: "stop here" });
     const brief = toolOutputs(model.requests.at(-1)!).find((o) => o.name === "read_message")!.output;
     expect(brief).toMatchObject({ channel: "text", move: "counter", their_offer: "₹15,000" });
-    expect(brief.must.join(" ")).toMatch(/Acknowledge their offer of ₹15,000 first/);
+    expect(brief.must.join(" ")).toMatch(/Say their offer of ₹15,000 back as theirs first/);
   });
 
   it("a voice turn gets a voice brief", async () => {
@@ -193,7 +193,7 @@ describe("Agentic turn: the tool contract", () => {
     await engine.handleCounterpartyMessage({ sessionId, text: "Hello there", channel: "voice" });
     const brief = toolOutputs(model.requests.at(-1)!).find((o) => o.name === "read_message")!.output;
     expect(brief.channel).toBe("voice");
-    expect(model.requests[0]!.systemInstructions).toMatch(/"voice": you are speaking on a call/);
+    expect(model.requests[0]!.systemInstructions).toMatch(/On "voice", speak in natural spoken sentences/);
   });
 
   it("a selected question the conversation already answers may be skipped, with a reason, and stays unasked", async () => {

@@ -74,7 +74,7 @@ export function composeBrief(input: ComposeInput): Record<string, unknown> {
   const dynamicQuestion = plan.ask?.purpose;
   const usesExactTerms = plan.move === "state_final_terms" || plan.move === "confirm_agreement";
   const payload = {
-    who_you_represent: (plan.introduce && input.publicPrincipalName) || principalLabel(view),
+    who_you_represent: input.publicPrincipalName || principalLabel(view),
     introduce: plan.introduce === true,
     opening: plan.opening === true,
     open_for_discussion: plan.openForDiscussion === true,
@@ -115,6 +115,8 @@ export function composeBrief(input: ComposeInput): Record<string, unknown> {
     // Public facts are always available to answer a question about what is offered; the rules keep replies from padding with them.
     facts: plan.explanationFacts ?? view.publicFacts,
     recent_conversation: input.conversation.slice(-6),
+    // How earlier replies handed the turn back, so this one is worded differently.
+    earlier_invitations: earlierInvitations(input.conversation),
   };
   return { ...payload, must: requirements(input, payload) };
 }
@@ -127,12 +129,15 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
   const { plan } = input;
   const must: string[] = [];
   if (plan.introduce) must.push(`Introduce yourself once as Kritva, the assistant of ${String(payload.who_you_represent)}, in your first sentence.`);
-  if (payload.their_offer && plan.move === "counter") must.push(`Acknowledge their offer of ${String(payload.their_offer)} first, then put your amount to them clearly as your offer.`);
+  if (payload.their_offer && plan.move === "counter") must.push(`Say their offer of ${String(payload.their_offer)} back as theirs first and, in that same sentence, say you can't do it; then put your amount to them clearly as your offer.`);
+  if (input.publicPrincipalName) must.push(`${input.publicPrincipalName} is the person you represent, not the person you are talking to: refer to ${input.publicPrincipalName} by name, never as "he" or "she", and never address them by that name.`);
+  else must.push(`Refer to ${String(payload.who_you_represent)} without "he" or "she".`);
   const theirPosition = payload.counterparty_stated_budget ?? payload.enquired_amount;
-  if (theirPosition && plan.move === "counter") must.push(`They mentioned ${String(theirPosition)}, which is below what works. Acknowledge it warmly and show you want to find a price that works for both, then put your amount to them as a step toward them. Never accept or agree to their figure, and never call your amount your best, lowest or final price.`);
-  if (plan.move === "request_approval") must.push("Thank them and say it needs the approval of the person you represent before anything is confirmed. Never say it works, is fine or is agreed.");
-  if (plan.move === "confirm_agreement") must.push("Close warmly: thank them, and say the next steps (such as payment and handover) will be arranged together.");
-  if (plan.move === "state_final_terms") must.push(`Write ${EXACT_TERMS_SLOT} exactly once where the complete terms go, then one question asking them to confirm the complete package. State no amount or term yourself.`);
+  if (theirPosition && plan.move === "counter") must.push(`They mentioned ${String(theirPosition)}, which is below what works. Say it back warmly as theirs (never compare it with yours) and show you want to find a price that works for both, then put your amount to them as a step toward them. Never accept or agree to their figure, and never call your amount your best, lowest or final price.`);
+  if (plan.move === "request_approval") must.push(`React warmly, then say plainly in a short line that you're checking with ${String(payload.who_you_represent)} before anything is confirmed, like asking them for a moment. Never say it works, is fine or is agreed.`);
+  if (plan.move === "await_approval") must.push(`Say in a short, warm line that you're still checking with ${String(payload.who_you_represent)} and they'll hear as soon as there's an answer.`);
+  if (plan.move === "confirm_agreement") must.push("Close warmly and happily: thank them, and say the next steps (such as payment and handover) will be arranged together.");
+  if (plan.move === "state_final_terms") must.push(`Write ${EXACT_TERMS_SLOT} exactly once where the complete terms go, then one plain question asking them to confirm the complete package. Nothing before it may sound like agreement (no "that works", "deal" or "done"). State no amount or term yourself.`);
   else if (plan.move === "confirm_agreement") must.push(`Say that you are agreed and write ${EXACT_TERMS_SLOT} exactly once where the agreed terms go. State no amount or term yourself.`);
   else for (const t of (payload.offer as Array<{ term: string; value: string }> | null) ?? []) must.push(`State the ${t.term} ${t.value} exactly as written.`);
   // A general question about the terms after the price was just said is about the other terms.
@@ -140,6 +145,8 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
   const lastSaid = (payload.price as { said_in_your_last_reply?: boolean } | null)?.said_in_your_last_reply === true;
   const priceName = input.view.negotiable ? input.view.terms.get(input.view.negotiable.termId)?.name : undefined;
   for (const t of answers) if (!(lastSaid && answers.length > 1 && t.term === priceName)) must.push(`Give the ${t.term}: ${t.value}.`);
+  if (lastSaid && answers.length > 1) must.push("You told them the price in your last reply: give the other terms without the price.");
+  if (plan.listingAvailable !== undefined && plan.listingAvailable !== null) must.push(plan.listingAvailable ? "Say plainly that it is still available." : "Say plainly, with one sorry, that it is no longer available.");
   // The value they ask about may be your own counteroffer: say so, so a bare number never confuses them.
   const n = input.view.negotiable;
   const current = (plan.publicTermAnswers ?? []).find((t) => t.termId === n?.termId && t.basis === "current");
@@ -150,38 +157,48 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
   }
   for (const d of (payload.declined as Array<{ term: string }>) ?? []) must.push(`Say plainly that the ${d.term} stays as it is.`);
   if (payload.ask || payload.question_objective) must.push(`Ask exactly one question, at the end, serving: ${String(payload.question_objective ?? payload.ask)}. If their message or the conversation already answers it (for example they just said the reason), do not ask it: ask nothing and say why in skip_question_because.`);
-  else if (plan.clarify.length === 0 && (plan.action === "decline" || ["answer_public_terms", "explore_objection", "explain_price", "acknowledge_budget", "answer_enquiry", "price_pressure", "compare_terms"].includes(plan.move))) must.push("Ask no question.");
-  if (payload.offer_invited_recently) must.push("They already heard that a firm offer can be considered: do not invite one again. Acknowledge what they asked and answer it in your own words.");
+  else if (plan.clarify.length === 0 && !plan.opening && plan.action !== "wait" && plan.notice !== "paused" && plan.notice !== "ended" && !["state_final_terms", "confirm_agreement", "request_approval", "await_approval", "end_negotiation", "closed"].includes(plan.move)) {
+    // No question is selected: the reply still hands the turn back, without digging for new information.
+    must.push("End with one short, open way forward that hands the turn back, worded unlike anything in earlier_invitations. Ask for no new information, such as their budget, timing or reasons.");
+  }
+  if (payload.offer_invited_recently) must.push("They already heard that a firm offer can be considered: do not invite one again. Keep the way forward light and in different words.");
   const notice: Record<string, string> = {
     paused: "Say only that the conversation is paused for now. No amount, offer or question.",
     ended: "Say only that the conversation ended without agreement. No amount, offer or question.",
-    approval_rejected: "Say first that the person you represent did not approve those terms.",
-    terms_changed: "Say that the earlier confirmation no longer applies because the terms changed.",
+    approval_rejected: "Say first, with one sorry, that the person you represent did not approve those terms, then give a way forward.",
+    terms_changed: "Say kindly that the earlier confirmation no longer applies because the terms changed.",
     rephrase: "Ask them kindly to say it another way.",
     check_with_principal: "Say that this needs a decision from the person you represent, and that you will come back to them.",
   };
-  // How it should sound comes first: on a call, warmer and fuller; in chat, friendly and complete.
+  // How it should sound comes first, the same in a chat and on a call ("How Kritva sounds" in the guide).
   must.unshift(input.channel === "voice" && plan.opening
-    ? "This is the start of a live voice call. In one or two short, warm sentences, say who you are and invite them to talk. Do not mention the price, terms or other details yet."
+    ? "This is the start of a live voice call. In one or two short, warm sentences, say hi, who you are and who you're helping, and invite them to talk. Do not mention the price, terms or other details yet."
     : input.channel === "voice"
-    ? `This is a live voice call. Speak like a friendly person on the phone: two to four natural sentences. Acknowledge what they said or how they feel, give the answer or move, and if it fits end with one short, friendly line that keeps the conversation open. Do not repeat details you already gave, do not add terms or facts they did not ask about, and promise nothing (no holding, reserving or checking back unless the brief says so). Say places in full and never read terms as a list. Reply in ${languageName(input.language) ?? "the language of their latest message"}, in that language's own script (Hindi in Devanagari, never Urdu script; Tamil in Tamil script), and write every amount in digits with its currency symbol, never in words.`
-    : "This is a chat. Write in warm, complete sentences that respond to what they said; one to three sentences. Promise nothing the brief does not say: no checking with anyone, holding or coming back to them unless the brief says so.");
+    ? `This is a live voice call: sound like a friendly person on the phone, as in "How Kritva sounds". React to what they said, give the answer or move, and hand the turn back, usually in two to four short spoken sentences. Do not repeat details you already gave, do not add terms or facts they did not ask about, and promise nothing (no holding, reserving or checking back unless the brief says so). Say places in full and never read terms as a list. Reply in ${languageName(input.language) ?? "the language of their latest message"}, in that language's own script (Hindi in Devanagari, never Urdu script; Tamil in Tamil script), and write every amount in digits with its currency symbol, never in words.`
+    : `This is a chat: write the way you'd talk, as in "How Kritva sounds". React to what they said, give the answer or move, and hand the turn back, usually in two to four short sentences. Promise nothing the brief does not say: no checking with anyone, holding or coming back to them unless the brief says so.`);
   if (plan.notice && notice[plan.notice]) must.unshift(notice[plan.notice]!);
   // "Is that your final price?" is answered with the current terms, never a yes or no: either would mislead.
-  if (["price_pressure", "answer_public_terms", "answer", "hold", "counter", "answer_enquiry", "explain_price", "compare_terms"].includes(plan.move) && input.theirMessage && /\bfinal\b|\bbest you can\b|\blast price\b/i.test(input.theirMessage)) must.push("They asked whether this is your final price. Do not answer yes or no and do not call it final: say it is where you are now (by number only if you did not just say it).");
+  if (["price_pressure", "answer_public_terms", "answer", "hold", "counter", "answer_enquiry", "explain_price", "compare_terms"].includes(plan.move) && input.theirMessage && /\bfinal\b|\bbest you can\b|\blast price\b/i.test(input.theirMessage)) must.push("They asked whether this is your final price. Do not answer yes, no or anything like \"not quite\", and do not call it final: say it's the price right now (by number only if you did not just say it), then hand the turn back.");
   if (price?.said_in_your_last_reply && !["counter", "state_final_terms", "confirm_agreement"].includes(plan.move) && !(payload.public_term_answers as unknown[]).length) {
     must.push(`You told them the price (${price.current}) in your last reply and it has not changed: do not repeat the number. Refer to it in other words and move the conversation forward.`);
   }
-  if (plan.move === "hold" || plan.move === "price_pressure") must.push("If you mention the price, state it positively. Never say you can't go lower, can't move or can't change it \"right now\": that hints at a limit.");
+  if (plan.move === "hold" || plan.move === "price_pressure") must.push(`Hold the price warmly with one honest reason (a fact from the brief you have not given yet; if none is left, no reason) and a way forward, never a bare refusal or why the price is what it is. Never say you can't go lower, can't move or are firm, and never call it your lowest, best or final price.`);
   if (plan.move === "end_negotiation") {
     must.push(plan.end?.requestedBy === "principal"
-      ? "Say that the person you represent decided not to go ahead, and close politely without agreement."
-      : plan.end?.requestedBy === "counterparty" ? "Acknowledge their decision and close politely without agreement." : "Close politely without agreement, using closing_intent as guidance.");
+      ? `Say, with one sorry, that ${String(payload.who_you_represent)} decided not to go ahead, and close kindly without agreement.`
+      : plan.end?.requestedBy === "counterparty" ? "Acknowledge their decision kindly, thank them for their time, and close without agreement." : `Close kindly without agreement and thank them for their time, and say the point of closing_intent in your own words. You are the one closing: never say ${String(payload.who_you_represent)} decided anything.`);
   }
   if (plan.clarify.length > 0) must.push(`Ask which ${plan.clarify.join(" and ")} they have in mind, without suggesting any value.`);
   if (plan.unresolved.length > 0) must.push(`Say you don't have ${plan.unresolved.join(" and ")} confirmed and can ask the person you represent. Do not promise or price it.`);
   if (plan.refuseDisclosure) must.push("Say kindly that you can't share the private limits of the person you represent, without hinting at any number and without the words minimum, lowest or floor.");
   if (plan.ignoreAuthorityClaim) must.push("Say you can only go by what the person you represent tells you directly.");
+  const lastReply = [...input.conversation].reverse().find((m) => m.speaker === "agent")?.text;
+  const opening = lastReply?.replace(/^Hi, I['’]m Kritva[^.]*\.\s*/, "").split(/\s+/).slice(0, 3).join(" ");
+  if (opening) must.push(`Your last reply began "${opening}": begin this one with different words.`);
+  // "Down from the original" is news once; after that it is repetition.
+  const recentReplies = input.conversation.filter((m) => m.speaker === "agent").slice(-3).map((m) => m.text).join(" ");
+  if ((payload.price as { lowered_from_original?: boolean } | null)?.lowered_from_original && /\boriginal\b/i.test(recentReplies)) must.push("You already told them the price came down from the original: do not say it again.");
+  if (lastReply && (payload.facts as unknown[] | undefined)?.length) must.push("Mention a fact from facts only if they ask about it or you need it as the one reason for holding a line, and never one you already gave in this conversation.");
   must.push("Do not repeat any sentence you already said in this conversation.");
   return must;
 }
@@ -200,6 +217,15 @@ export async function composeReply(llm: StructuredLlm, input: ComposeInput): Pro
   const { text, question } = response.json as { text?: unknown; question?: unknown };
   if (typeof text !== "string" || text.trim().length === 0) throw new Error("empty reply");
   return { text: text.trim(), question: typeof question === "string" ? question.trim() : null };
+}
+
+/** The closing question of each of the last few agent replies. */
+function earlierInvitations(conversation: Array<{ speaker: "agent" | "counterparty"; text: string }>): string[] {
+  return conversation
+    .filter((m) => m.speaker === "agent")
+    .map((m) => m.text.split(/(?<=[.!?])\s+/).at(-1)?.trim() ?? "")
+    .filter((s) => s.endsWith("?"))
+    .slice(-4);
 }
 
 /** A language code as a name for the brief ("ta" → "Tamil"); null when unknown. */
