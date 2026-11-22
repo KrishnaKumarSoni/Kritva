@@ -299,3 +299,35 @@ describe("Mandate lifecycle: live, paused, closed and deleted", () => {
     expect((await call("GET", `/api/operator/intake/${started.id}`)).status).toBe(404);
   });
 });
+
+describe("Intake agent: who Kritva contacts", () => {
+  it("people named in the chat are held until the mandate exists, then join its list once each, a later number filling in", async () => {
+    const { call, agent, llm, library } = setup();
+    const started = (await call("POST", "/api/operator/intake")).json;
+    const partial = { ...all("known"), limit: "missing" } as Checklist;
+    agent.turns.push(() => ({ reply: "Got it. What's the lowest you'd take?", fields: fullInput, checklist: partial, ready: false, counterparties: [{ name: "Ravi", phone: null }, { name: "Asha", phone: "+91 98450 12345" }] }));
+    const first = (await call("POST", `/api/operator/intake/${started.id}/messages`, { text: "Selling my bed. Ravi and Asha (+91 98450 12345) were interested.", images: [] })).json;
+    expect(first.mandateId).toBeNull();
+    expect(first.counterparties).toEqual([{ name: "Ravi", hasPhone: false }, { name: "Asha", hasPhone: true }]);
+    // The view says only whether a number is known, never the number.
+    expect(JSON.stringify(first.counterparties)).not.toContain("98450");
+
+    agent.turns.push(() => ({ reply: "Putting it together.", fields: fullInput, checklist: all("known"), ready: true, counterparties: [{ name: "ravi", phone: "+91 98450 99999" }] }));
+    await call("POST", `/api/operator/intake/${started.id}/messages`, { text: "18k lowest. Ravi's number is 98450 99999", images: [] });
+    expect(JSON.stringify(agent.inputs[1]!.context)).toContain('"counterparties_on_list"');
+    expect(JSON.stringify(agent.inputs[1]!.context)).toContain("Asha");
+
+    llm.mappings.push(bedMapping());
+    const prepared = (await call("POST", `/api/operator/intake/${started.id}/prepare`)).json;
+    expect(prepared.mandateId).toBeTruthy();
+    const listed = library.counterparties(prepared.mandateId);
+    expect(listed.map((e) => e.name)).toEqual(["Ravi", "Asha"]);
+    expect(listed[0]!.phone).toBeTruthy();
+    expect(prepared.counterparties).toEqual([{ name: "Ravi", hasPhone: true }, { name: "Asha", hasPhone: true }]);
+
+    // Once the mandate exists, a newly named person goes straight onto its list; a repeat is ignored.
+    agent.turns.push(() => ({ reply: "Added Vikram.", fields: fullInput, checklist: all("known"), ready: false, counterparties: [{ name: "Asha", phone: "+91 98450 12345" }, { name: "Vikram", phone: null }] }));
+    await call("POST", `/api/operator/intake/${started.id}/messages`, { text: "Also try Vikram", images: [] });
+    expect(library.counterparties(prepared.mandateId).map((e) => e.name)).toEqual(["Ravi", "Asha", "Vikram"]);
+  });
+});

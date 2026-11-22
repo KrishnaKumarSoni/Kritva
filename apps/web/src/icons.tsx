@@ -159,3 +159,29 @@ export const XIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M6 6l12 12M18 6 6 18" />
   </svg>
 );
+export const BackIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M19 12H5" />
+    <path d="m11 6-6 6 6 6" />
+  </svg>
+);
+export const EyeIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
+    <circle cx="12" cy="12" r="2.75" />
+  </svg>
+);
+export const ArrowUpRightIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M7 17 17 7" />
+    <path d="M8 7h9v9" />
+  </svg>
+);
+export const BeakerIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M9 3h6" />
+    <path d="M10 3v6.5L4.8 18.2A1.8 1.8 0 0 0 6.4 21h11.2a1.8 1.8 0 0 0 1.6-2.8L14 9.5V3" />
+    <path d="M7.5 15h9" />
+  </svg>
+);
+

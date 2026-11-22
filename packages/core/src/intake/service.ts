@@ -14,7 +14,7 @@ import { randomUUID } from "node:crypto";
 import type { ConfirmedMandate } from "../schema/records.ts";
 import type { LibraryDetail, LibraryInput, MandateLibrary } from "../mandate/library.ts";
 import type { IntakeAgent, IntakeTurnOutput } from "./agent.ts";
-import { CHECKLIST_ITEMS, EMPTY_CHECKLIST, EMPTY_FIELDS, type Checklist, type IntakeConversation, type IntakeMessage, type IntakeStore, type ReadyCard } from "./store.ts";
+import { CHECKLIST_ITEMS, EMPTY_CHECKLIST, EMPTY_FIELDS, type Checklist, type IntakeConversation, type IntakeCounterparty, type IntakeMessage, type IntakeStore, type ReadyCard } from "./store.ts";
 
 export type IntakeResult<T> = { ok: true; value: T } | { ok: false; code: string; message: string };
 
@@ -34,7 +34,10 @@ export class IntakeService {
   readonly #preparing = new Map<string, Promise<IntakeResult<IntakeConversation>>>();
 
   /** defaultCurrency: what a bare amount means where the principal lives, for example "euros". */
-  constructor(options: { store: IntakeStore; agent: IntakeAgent; library: MandateLibrary; defaultCurrency?: string | null; now?: () => Date }) {
+  /** How many counterparties one mandate may list (the deployment's cap, KRITVA_MAX_COUNTERPARTIES). */
+  readonly #counterpartyCap: number;
+  constructor(options: { store: IntakeStore; agent: IntakeAgent; library: MandateLibrary; defaultCurrency?: string | null; now?: () => Date; counterpartyCap?: number }) {
+    this.#counterpartyCap = Math.max(1, Math.floor(options.counterpartyCap ?? 5));
     this.#defaultCurrency = options.defaultCurrency ?? null;
     this.#store = options.store;
     this.#agent = options.agent;
@@ -103,6 +106,7 @@ export class IntakeService {
       return { ok: false, code: "agent_failed", message: "I couldn't reply just now. Your message wasn't saved; send it again." };
     }
     this.#apply(next, out.fields, out.checklist);
+    this.#takeCounterparties(next, out.counterparties ?? []);
     next.readyToPrepare = readyAfter(out);
     next.messages.push(message("assistant", out.reply, this.#now().toISOString()));
     next.updatedAt = this.#now().toISOString();
@@ -135,6 +139,8 @@ export class IntakeService {
       detail = result.value;
       next.mandateId = detail.mandateId;
       next.preparedFields = { ...next.fields };
+      // The people named before the mandate existed join its counterparty list now.
+      this.#takeCounterparties(next, []);
       // Link the conversation to its mandate now, so an interrupted turn never maps it into a second one.
       next.updatedAt = this.#now().toISOString();
       this.#store.save(next);
@@ -158,6 +164,7 @@ export class IntakeService {
     }
     const changed = !sameFields(out.fields, next.fields);
     this.#apply(next, out.fields, out.checklist);
+    this.#takeCounterparties(next, out.counterparties ?? []);
     next.readyToPrepare = out.ready;
     const card = latest.blockers.length === 0 && !changed ? readyCard(detail!, detail!.active ? "update" : "new") : null;
     next.messages.push({ ...message("assistant", out.reply, this.#now().toISOString()), card });
@@ -211,7 +218,45 @@ export class IntakeService {
     return {
       mandate: detail ? { state: detail.state, live_revision: detail.active?.revision ?? null, changing_a_live_mandate: Boolean(detail.active) } : "new, nothing saved yet",
       default_currency: this.#defaultCurrency ?? "none: ask which currency if they give a bare amount",
+      counterparties_on_list: this.counterpartiesOf(c).map((p) => ({ name: p.name, has_phone: Boolean(p.phone) })),
+      counterparty_cap: this.#counterpartyCap,
     };
+  }
+
+  /** Who Kritva will contact for this conversation: the mandate's list once it exists, else those named so far. */
+  counterpartiesOf(c: IntakeConversation): IntakeCounterparty[] {
+    return c.mandateId ? this.#library.counterparties(c.mandateId).map((e) => ({ name: e.name, phone: e.phone ?? null })) : [...(c.pendingCounterparties ?? [])];
+  }
+
+  /**
+   * People the principal named: onto the mandate's list once the mandate exists (with any held before),
+   * otherwise held on the conversation. The same person is never added twice; a number given later
+   * fills in one that was missing. The list stops at the cap.
+   */
+  #takeCounterparties(c: IntakeConversation, named: IntakeCounterparty[]) {
+    const digits = (p: string | null) => (p ?? "").replace(/\D/g, "");
+    const same = (a: { name: string; phone: string | null }, b: { name: string; phone: string | null }) =>
+      a.name.trim().toLowerCase() === b.name.trim().toLowerCase() || (digits(a.phone).length >= 6 && digits(a.phone) === digits(b.phone));
+    const incoming = [...(c.mandateId ? (c.pendingCounterparties ?? []) : []), ...named];
+    if (!c.mandateId) {
+      const held = [...(c.pendingCounterparties ?? [])];
+      for (const p of incoming) {
+        const known = held.find((h) => same(h, p));
+        if (known) known.phone ??= p.phone;
+        else if (held.length < this.#counterpartyCap) held.push({ name: p.name, phone: p.phone });
+      }
+      c.pendingCounterparties = held;
+      return;
+    }
+    for (const p of incoming) {
+      const known = this.#library.counterparties(c.mandateId).find((e) => same({ name: e.name, phone: e.phone ?? null }, p));
+      if (known) {
+        if (!known.phone && p.phone) this.#library.updateCounterparty(c.mandateId, known.id, { name: known.name, phone: p.phone, note: known.note ?? null });
+        continue;
+      }
+      this.#library.addCounterparty(c.mandateId, { name: p.name, phone: p.phone }, this.#counterpartyCap);
+    }
+    c.pendingCounterparties = [];
   }
 }
 

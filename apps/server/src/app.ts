@@ -52,6 +52,7 @@ import {
   type DealGroups,
 } from "@kritva/core";
 import { registerGroupRoutes, startNegotiation, type Dialer } from "./group-routes.ts";
+import { registerNegotiationLog } from "./negotiation-log.ts";
 import type { LiveCalls } from "./live-calls.ts";
 
 export interface MandateEntry {
@@ -127,6 +128,7 @@ export function createApp(deps: AppDeps): Hono {
   if (deps.library) registerLibraryRoutes(app, { library: deps.library, record, engine, locale, examples: deps.examples ?? [], protectedIds: (deps.listings ?? []).map((l) => l.libraryId), groups: deps.groups ?? null });
   if (deps.library && deps.groups) registerGroupRoutes(app, { record, library: deps.library, groups: deps.groups, locale, liveCalls: deps.liveCalls?.sessions ? () => deps.liveCalls!.sessions!() : undefined, dialer: deps.dialer ?? null, boardCalls: deps.boardCalls === true });
   if (deps.library && deps.intake) registerIntakeRoutes(app, { intake: deps.intake, library: deps.library, record, engine, locale });
+  registerNegotiationLog(app, { record, library: deps.library ?? null, groups: deps.groups ?? null, mandates, liveCalls: deps.liveCalls?.sessions ? () => deps.liveCalls!.sessions!() : undefined });
   registerVoiceRoutes(app, {
     record,
     engine,

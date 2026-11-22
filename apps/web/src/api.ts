@@ -311,6 +311,23 @@ export interface IntakeView {
   next: "prepare" | null;
   mandate: LibraryDetailView | null;
   appliedToSessions?: string[];
+  /** Who Kritva will contact: the mandate's list, or the people named in the chat before it was saved. */
+  counterparties?: Array<{ name: string; hasPhone: boolean }>;
+}
+
+/** One negotiation in the principal's log (GET /api/operator/negotiations). */
+export interface NegotiationLogRow {
+  sessionId: string;
+  startedAt: string;
+  lastAt: string;
+  mandate: { id: string | null; title: string };
+  counterparty: string | null;
+  origin: "test" | "link" | "listing" | "phone_in" | "phone_out";
+  channels: Array<"chat" | "voice" | "phone">;
+  calls: { count: number; seconds: number };
+  messages: number;
+  status: "active" | "paused" | "awaiting_approval" | "agreed" | "no_agreement" | "ended";
+  live: boolean;
 }
 
 export interface LibraryExample extends LibraryInput {
@@ -473,6 +490,7 @@ export const api = {
   hasSellerKey: () => Boolean(sessionStorage.getItem(sellerKeyStorage)),
   rememberSellerKey: (key: string) => sessionStorage.setItem(sellerKeyStorage, key),
   listSessions: () => call<SessionRow[]>("GET", "/api/operator/sessions"),
+  negotiations: () => call<NegotiationLogRow[]>("GET", "/api/operator/negotiations"),
   listMandates: () => call<MandateOption[]>("GET", "/api/operator/mandates"),
   startSession: (mandateId: string, previousSessionId: string | null) =>
     call<{ session: SessionRow }>("POST", "/api/operator/sessions", { mandateId, previousSessionId }),

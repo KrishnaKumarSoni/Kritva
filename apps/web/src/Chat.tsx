@@ -1,7 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { BuyerMessage, BuyerView, Roles, TermView } from "./api.ts";
-import { AlertIcon, CheckIcon, ClockIcon, SendIcon } from "./icons.tsx";
+import { AlertIcon, BackIcon, CheckIcon, ClockIcon, EyeIcon, SendIcon } from "./icons.tsx";
 import { VoiceBar } from "./VoiceBar.tsx";
 
 const spring = { type: "spring", duration: 0.35, bounce: 0 } as const;
@@ -18,10 +18,16 @@ interface ChatProps {
   disclose?: boolean;
   /** Browser voice for this session (Epic 13). Omit to offer text only. */
   voice?: { sessionId: string | null; startRequest?: number; onTurn: () => void } | null;
-  /** Content shown above the conversation, such as the demo listing. */
+  /** The principal's console: the panel's own title and line, and a way back to the log. */
+  heading?: { title: string; subtitle: string; onBack: (() => void) | null } | null;
+  /**
+   * A real negotiation the principal is watching: the conversation is shown as it happened, and the
+   * principal never writes or speaks as the other side.
+   */
+  readOnly?: boolean;
 }
 
-export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplayed, voice = null, disclose = false }: ChatProps) {
+export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplayed, voice = null, disclose = false, heading = null, readOnly = false }: ChatProps) {
   const [draft, setDraft] = useState("");
   const [voiceOn, setVoiceOn] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
@@ -64,24 +70,31 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
 
   return (
     <section className="panel" aria-labelledby="chat-title">
-      <header className="panel-header">
-        <div>
+      <header className="panel-header chat-header">
+        {heading?.onBack && (
+          <button type="button" className="icon-button back-button" onClick={heading.onBack} aria-label="All negotiations">
+            <BackIcon />
+          </button>
+        )}
+        <div className="chat-heading">
           <h2 className="panel-title" id="chat-title">
-            Conversation
+            {heading?.title ?? "Conversation"}
           </h2>
-          <p className="panel-subtitle">{disclose ? `Kritva is an AI negotiating for the ${roles.principal}. Anything agreed is confirmed with them.` : `You write as the ${roles.counterparty}. Kritva replies for the ${roles.principal}.`}</p>
+          <p className="panel-subtitle">
+            {heading?.subtitle ?? (disclose ? `Kritva is an AI negotiating for the ${roles.principal}. Anything agreed is confirmed with them.` : `You write as the ${roles.counterparty}. Kritva replies for the ${roles.principal}.`)}
+          </p>
         </div>
       </header>
 
       <div className="chat-log" ref={logRef} role="log" aria-label="Conversation" aria-live="polite">
         {messages.length === 0 && !unsaved ? (
           <div className="empty">
-            <p>{disclose ? "Send a message to start." : `Write the first message as the ${roles.counterparty}.`}</p>
+            <p>{readOnly ? "Nothing has been said yet." : disclose ? "Send a message to start." : `Write the first message as the ${roles.counterparty}.`}</p>
           </div>
         ) : null}
         <AnimatePresence initial={false}>
           {bubbles.map((m) => (
-            <Bubble key={m.id} message={m} enter={enter} roles={roles} />
+            <Bubble key={m.id} message={m} enter={enter} roles={roles} theirs={readOnly ? cap(roles.counterparty) : "You"} />
           ))}
           {sending && (
             <motion.div key="typing" className="typing" {...enter} exit={{ opacity: 0 }} transition={spring}>
@@ -95,12 +108,19 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
           )}
           {view && view.outcome.kind !== "in_progress" && (
             <motion.div key={`outcome-${view.outcome.kind}`} {...enter} exit={{ opacity: 0 }} transition={spring}>
-              <OutcomeCard outcome={view.outcome} roles={roles} />
+              <OutcomeCard outcome={view.outcome} roles={roles} watching={readOnly} />
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
+      {readOnly ? (
+        <p className="watching">
+          <EyeIcon />
+          Kritva negotiates this one for you. You're seeing it as it happens.
+        </p>
+      ) : (
+        <>
       {voice?.sessionId && <VoiceBar sessionId={voice.sessionId} messages={messages} paused={view?.paused ?? false} startRequest={voice.startRequest} onActiveChange={setVoiceOn} onTurn={voice.onTurn} />}
 
       <form className="composer" onSubmit={submit} aria-disabled={voiceOn}>
@@ -141,11 +161,14 @@ export function Chat({ view, pending, sending, error, onSend, onRetry, onDisplay
           Press Enter to send, Shift+Enter for a new line.
         </p>
       </form>
+        </>
+      )}
     </section>
   );
 }
 
-function Bubble({ message, enter, roles }: { message: BuyerMessage | { id: string; text: string }; enter: object; roles: Roles }) {
+/** One message. "theirs" labels the other side's messages: "You" in a test, their role when watching. */
+function Bubble({ message, enter, roles, theirs }: { message: BuyerMessage | { id: string; text: string }; enter: object; roles: Roles; theirs: string }) {
   const saved = "at" in message;
   const time = saved ? new Date(message.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : null;
   return (
@@ -154,7 +177,7 @@ function Bubble({ message, enter, roles }: { message: BuyerMessage | { id: strin
       <span className="bubble-meta">
         {saved ? (
           <>
-            {message.from === "agent" ? `Kritva for the ${roles.principal}` : "You"}
+            {message.from === "agent" ? `Kritva for the ${roles.principal}` : theirs}
             {message.channel === "voice" ? " · voice" : ""} · <time dateTime={message.at}>{time}</time>
           </>
         ) : "Sending…"}
@@ -163,7 +186,7 @@ function Bubble({ message, enter, roles }: { message: BuyerMessage | { id: strin
   );
 }
 
-export function OutcomeCard({ outcome, roles }: { outcome: BuyerView["outcome"]; roles: Roles }) {
+export function OutcomeCard({ outcome, roles, watching = false }: { outcome: BuyerView["outcome"]; roles: Roles; watching?: boolean }) {
   const { kind, terms } = outcome;
   if (kind === "agreement") {
     return (
@@ -230,7 +253,7 @@ export function OutcomeCard({ outcome, roles }: { outcome: BuyerView["outcome"];
         </dl>
       )}
       <p className="outcome-note">
-        {summary?.endedBy === "counterparty" ? "You ended the conversation." : summary?.endedBy === "principal" ? `The ${roles.principal} decided not to go ahead.` : "No terms worked for both sides."} Nothing was agreed.
+        {summary?.endedBy === "counterparty" ? (watching ? `The ${roles.counterparty} ended the conversation.` : "You ended the conversation.") : summary?.endedBy === "principal" ? `The ${roles.principal} decided not to go ahead.` : "No terms worked for both sides."} Nothing was agreed.
       </p>
     </section>
   );

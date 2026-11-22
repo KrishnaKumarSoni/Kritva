@@ -57,7 +57,7 @@ const engine = new NegotiationEngine({
 });
 const revisions = new MandateRevisions({ record, engine, mappingLlm });
 // The intake agent: a separate chat agent that gathers a new or changed mandate before any negotiation.
-const intake = new IntakeService({ store: new SqliteIntakeStore(join(dataDir, "kritva.sqlite")), agent: createIntakeAgentFromEnv(), library, defaultCurrency: process.env.KRITVA_DEFAULT_CURRENCY ?? "Indian rupees (₹)" });
+const intake = new IntakeService({ store: new SqliteIntakeStore(join(dataDir, "kritva.sqlite")), agent: createIntakeAgentFromEnv(), library, defaultCurrency: process.env.KRITVA_DEFAULT_CURRENCY ?? "Indian rupees (₹)", counterpartyCap: maxCounterparties(process.env.KRITVA_MAX_COUNTERPARTIES) });
 // Phone calls (docs/Kritva_Phone_Calls.md), and Kritva's outbound dialer, shared by the phone routes and the counterparties' board.
 const phone = phoneFromEnv();
 dialer = outboundDialer(phone, engine);

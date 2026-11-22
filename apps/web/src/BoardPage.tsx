@@ -5,9 +5,9 @@
  * counterparty list; and the header counters. Everything here is private to the principal.
  */
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, type BoardRowView, type BoardView, type CounterpartyListView, type LibrarySummary } from "./api.ts";
-import { AlertIcon, CheckIcon, ClockIcon, CopyIcon, PhoneIcon, PlusIcon, StarIcon, TrashIcon } from "./icons.tsx";
+import { AlertIcon, ArrowUpRightIcon, CheckIcon, ClockIcon, PhoneIcon, StarIcon } from "./icons.tsx";
 import { Select } from "./Select.tsx";
 
 const POLL_MS = 2500;
@@ -17,6 +17,8 @@ const iconSpring = { type: "spring", duration: 0.3, bounce: 0 } as const;
 interface Props {
   /** Opens one counterparty's negotiation in the console. */
   onOpen: (sessionId: string) => void;
+  /** Opens the mandate, where its counterparties are listed and called. */
+  onManage: (libraryId: string) => void;
 }
 
 const STATUS: Record<BoardRowView["status"], { label: string; tone: "live" | "wait" | "done" | "stop" | "plain" }> = {
@@ -50,7 +52,7 @@ function formatTime(ms: number): string {
 
 const ORDER: Record<string, number> = { live: 0, paused: 1, closed: 2 };
 
-export function BoardPage({ onOpen }: Props) {
+export function BoardPage({ onOpen, onManage }: Props) {
   // Every confirmed saved mandate has a deal board: live ones first, then paused, then closed (an
   // agreed deal closes its mandate, and its board stays here to show the outcome).
   const [saved, setSaved] = useState<LibrarySummary[] | null>(null);
@@ -146,6 +148,12 @@ export function BoardPage({ onOpen }: Props) {
     <main className="board-page">
       <header className="board-header">
         <div className="board-heading">
+          {/* The deal is the page's filter: it sits above the title it changes. */}
+          {deals.length > 0 && (
+            <div className="board-filter">
+              <Select label="Deal" value={mandateId} align="start" options={deals.map((d) => ({ value: d.id, label: d.title, description: d.state === "live" ? "Live" : d.state === "paused" ? "Paused" : "Closed" }))} onChange={setMandateId} />
+            </div>
+          )}
           <h1 className="board-title">{board?.title ?? deals.find((d) => d.id === mandateId)?.title ?? "Deal"}</h1>
           <p className="board-counters tabular" aria-live="polite">
             {board ? (
@@ -162,7 +170,6 @@ export function BoardPage({ onOpen }: Props) {
           </p>
         </div>
         <div className="board-actions">
-          {deals.length > 1 && <Select label="Deal" value={mandateId} options={deals.map((d) => ({ value: d.id, label: d.title, description: d.state === "live" ? "Live" : d.state === "paused" ? "Paused" : "Closed" }))} onChange={setMandateId} />}
           <button
             type="button"
             className="button button-accent"
@@ -192,7 +199,7 @@ export function BoardPage({ onOpen }: Props) {
             </div>
           </div>
           {board && board.rows.length === 0 ? (
-            <p className="board-none">No negotiations yet. Add counterparties, then start negotiations, or share the listing.</p>
+            <p className="board-none">No negotiations yet. Add counterparties on the mandate, then start negotiations, or share the listing.</p>
           ) : (
             <ol className="board-list">
               <AnimatePresence initial={false}>
@@ -240,7 +247,7 @@ export function BoardPage({ onOpen }: Props) {
               );
             })}
           </AnimatePresence>
-          {libraryId && <CounterpartyList mandateId={libraryId} list={list} board={board} busy={busy} onChange={setList} act={act} />}
+          {libraryId && <CounterpartySummary list={list} onManage={() => onManage(libraryId)} />}
         </div>
       </div>
     </main>
@@ -306,81 +313,35 @@ function Row({ row, winner, reduced, onOpen }: { row: BoardRowView; winner: stri
   );
 }
 
-function CounterpartyList({ mandateId, list, board, busy, onChange, act }: {
-  mandateId: string;
-  list: CounterpartyListView | null;
-  board: BoardView | null;
-  busy: string | null;
-  onChange: (l: CounterpartyListView) => void;
-  act: (key: string, run: () => Promise<unknown>, timing?: { action: string; sessionId: string | null }) => Promise<void>;
-}) {
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [copied, setCopied] = useState<string | null>(null);
-  const full = list ? list.entries.length >= list.max : false;
-
-  const add = (event: FormEvent) => {
-    event.preventDefault();
-    if (!name.trim()) return;
-    void act("add", async () => {
-      onChange(await api.deals.addCounterparty(mandateId, { name: name.trim(), phone: phone.trim() || null }));
-      setName("");
-      setPhone("");
-    }, { action: "edit_list", sessionId: null });
-  };
-
-  const copy = async (sessionId: string) => {
-    const row = board?.rows.find((r) => r.sessionId === sessionId);
-    await navigator.clipboard.writeText(`${window.location.origin}${row?.link ?? `/?view=buyer#session=${sessionId}`}`).catch(() => undefined);
-    setCopied(sessionId);
-    window.setTimeout(() => setCopied((c) => (c === sessionId ? null : c)), 1600);
-  };
-
+/** The counterparty list lives on the mandate; the board shows who is on it and links there. */
+function CounterpartySummary({ list, onManage }: { list: CounterpartyListView | null; onManage: () => void }) {
+  const entries = list?.entries ?? [];
   return (
     <section className="panel board-people" aria-labelledby="people-title">
       <div className="panel-header">
         <div>
-          <h2 id="people-title" className="panel-title">Your counterparties</h2>
-          <p className="panel-subtitle">{list ? `${list.entries.length} of ${list.max}. ${board?.canCall ? "Kritva calls everyone with a number when you start; the others get a private link." : "Each gets a private link; a call from their number continues their negotiation."}` : "Loading…"}</p>
+          <h2 id="people-title" className="panel-title">On the list</h2>
+          <p className="panel-subtitle">{list ? `${entries.length} of ${list.max} counterparties. Add, call or remove them on the mandate.` : "Loading…"}</p>
         </div>
       </div>
-      <ul className="people-list">
-        {(list?.entries ?? []).map((e) => (
-          <li key={e.id} className="people-row">
-            <span className="people-who">
-              <span className="board-name">{e.name}</span>
-              <span className="board-meta">{e.phone ? `Phone ···${e.phone.slice(-4)}` : "No phone"}{e.open ? " · negotiating" : e.sessionId ? " · finished" : ""}</span>
-            </span>
-            {board?.canCall && e.phone && !board.concluded && (
-              <button type="button" className="button button-ghost button-small" disabled={busy === `call:${e.id}`} onClick={() => void act(`call:${e.id}`, () => api.deals.callCounterparty(mandateId, e.id), { action: "call", sessionId: e.sessionId })} aria-label={`Call ${e.name}`}>
-                <PhoneIcon width={14} height={14} />
-                Call
-              </button>
-            )}
-            {e.sessionId && (
-              <button type="button" className="button button-ghost button-small" onClick={() => void copy(e.sessionId!)} aria-label={`Copy ${e.name}'s link`}>
-                {copied === e.sessionId ? <CheckIcon width={14} height={14} /> : <CopyIcon width={14} height={14} />}
-                {copied === e.sessionId ? "Copied" : "Link"}
-              </button>
-            )}
-            {!e.sessionId && (
-              <button type="button" className="button button-ghost button-small" disabled={busy === `remove:${e.id}`} onClick={() => void act(`remove:${e.id}`, async () => onChange(await api.deals.removeCounterparty(mandateId, e.id)), { action: "edit_list", sessionId: null })} aria-label={`Remove ${e.name}`}>
-                <TrashIcon width={14} height={14} />
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
-      <form className="people-add" onSubmit={add}>
-        <label className="visually-hidden" htmlFor="cp-name">Name</label>
-        <input id="cp-name" className="text-input" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} disabled={full} maxLength={100} autoComplete="off" />
-        <label className="visually-hidden" htmlFor="cp-phone">Phone (optional)</label>
-        <input id="cp-phone" className="text-input" placeholder="Phone (optional)" value={phone} onChange={(e) => setPhone(e.target.value)} disabled={full} inputMode="tel" autoComplete="off" />
-        <button type="submit" className="button button-secondary" disabled={full || !name.trim() || busy === "add"}>
-          <PlusIcon width={16} height={16} />
-          {full ? "List is full" : "Add"}
+      {entries.length > 0 && (
+        <ul className="people-list">
+          {entries.map((e) => (
+            <li key={e.id} className="people-row">
+              <span className="people-who">
+                <span className="board-name">{e.name}</span>
+                <span className="board-meta">{e.phone ? `Phone ···${e.phone.replace(/\D/g, "").slice(-4)}` : "No number"}{e.open ? " · negotiating" : e.sessionId ? " · finished" : ""}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="people-manage">
+        <button type="button" className="button button-secondary button-small" onClick={onManage}>
+          Manage counterparties
+          <ArrowUpRightIcon width={13} height={13} />
         </button>
-      </form>
+      </div>
     </section>
   );
 }

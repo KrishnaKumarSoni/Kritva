@@ -108,6 +108,8 @@ export function intakeView(c: IntakeConversation, library: MandateLibrary, local
     progress: intakeProgress(c.checklist, { draftReady, live: settled }),
     next: c.readyToPrepare ? ("prepare" as const) : null,
     mandate,
+    // Who Kritva will contact: the mandate's list once it exists, else the people named so far in the chat.
+    counterparties: (c.mandateId ? library.counterparties(c.mandateId) : (c.pendingCounterparties ?? [])).map((p) => ({ name: p.name, hasPhone: Boolean(p.phone) })),
   };
 }
 

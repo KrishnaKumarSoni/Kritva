@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { api, ApiError, type BuyerView, type Decision, type MandateOption, type OperatorView, type TermValue } from "./api.ts";
+import { api, ApiError, type BuyerView, type Decision, type MandateOption, type NegotiationLogRow, type OperatorView, type TermValue } from "./api.ts";
+import { NegotiationLog, howOf, whoOf } from "./NegotiationLog.tsx";
+import { BeakerIcon } from "./icons.tsx";
 import { Chat } from "./Chat.tsx";
 import { InsightsPanel } from "./InsightsPanel.tsx";
 import { MandatesPage } from "./MandatesPage.tsx";
@@ -37,6 +39,10 @@ export function App() {
   const [mandateId, setMandateId] = useState<string | null>(null);
   const [view, setView] = useState<"deals" | "negotiation" | "instructions">("negotiation");
   const reducedMotion = useReducedMotion();
+  // The Negotiation tab shows the log of every negotiation, or one negotiation opened from it.
+  const [negMode, setNegMode] = useState<"log" | "session">(sessionFromHash() ? "session" : "log");
+  // What the log knows about the open negotiation: who it is with, and whether it is a test.
+  const [openRow, setOpenRow] = useState<NegotiationLogRow | null>(null);
   const [openMandate, setOpenMandate] = useState<string | null>(null);
 
   const loadMandates = useCallback(() => {
@@ -61,24 +67,39 @@ export function App() {
   }, [counterpartyOnly]);
   useEffect(() => { if (api.hasSellerKey()) void loadMandates(); }, [loadMandates]);
 
-  // Reopen the latest negotiation when none is named in the address.
   useEffect(() => {
-    if (!access || sessionId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const sessions = await api.listSessions();
-        if (!cancelled && !currentSession.current) setSessionId(sessions.at(-1)?.id ?? null);
-      } catch (e) {
-        setConsoleError(e instanceof ApiError ? e.message : "Unable to load negotiations.");
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [access, sessionId]);
-
-  useEffect(() => {
-    if (sessionId) window.history.replaceState(null, "", `${window.location.search}#session=${sessionId}`);
+    window.history.replaceState(null, "", sessionId ? `${window.location.search}#session=${sessionId}` : window.location.search || window.location.pathname);
   }, [sessionId]);
+
+  // An opened negotiation the log has not described yet (opened from a board, a mandate or the address): look it up.
+  useEffect(() => {
+    if (!access || !sessionId || negMode !== "session" || openRow?.sessionId === sessionId) return;
+    let cancelled = false;
+    api.negotiations().then((rows) => {
+      if (!cancelled) setOpenRow(rows.find((r) => r.sessionId === sessionId) ?? null);
+    }, () => undefined);
+    return () => { cancelled = true; };
+  }, [access, sessionId, negMode, openRow?.sessionId]);
+
+  /** Opens one negotiation in the Negotiation tab. */
+  const openNegotiation = useCallback((id: string, row: NegotiationLogRow | null = null) => {
+    reported.current.clear();
+    setChat(null);
+    setOperator(null);
+    setError(null);
+    setOpenRow(row);
+    setSessionId(id);
+    setNegMode("session");
+    setView("negotiation");
+  }, []);
+
+  const backToLog = useCallback(() => {
+    setSessionId(null);
+    setChat(null);
+    setOperator(null);
+    setOpenRow(null);
+    setNegMode("log");
+  }, []);
 
   const refresh = useCallback(async (id: string) => {
     try {
@@ -202,17 +223,15 @@ export function App() {
     setView("instructions");
   };
 
+  /** A test: the principal plays the other side, by chat or voice, against the chosen mandate. */
   const newNegotiation = async () => {
     if (!mandateId) return;
     setStarting(true);
     try {
-      const { session } = await api.startSession(mandateId, sessionId);
-      reported.current.clear();
-      setChat(null);
-      setOperator(null);
-      setError(null);
-      setSessionId(session.id);
-      setView("negotiation");
+      const { session } = await api.startSession(mandateId, null);
+      const title = mandates.find((m) => m.id === mandateId)?.title ?? "Test";
+      const now = new Date().toISOString();
+      openNegotiation(session.id, { sessionId: session.id, startedAt: now, lastAt: now, mandate: { id: mandateId, title }, counterparty: null, origin: "test", channels: [], calls: { count: 0, seconds: 0 }, messages: 0, status: "active", live: false });
     } catch (e) {
       setConsoleError(e instanceof ApiError ? e.message : "Unable to start a negotiation.");
     } finally {
@@ -245,6 +264,8 @@ export function App() {
                 className="view-switch-item"
                 aria-current={view === v ? "page" : undefined}
                 onClick={() => {
+                  // The Negotiation tab again, from an open negotiation: back to the log.
+                  if (v === "negotiation" && view === "negotiation" && negMode === "session") backToLog();
                   setView(v);
                   if (v === "negotiation" || v === "deals") loadMandates();
                   if (v !== "negotiation") setOpenMandate(null);
@@ -261,14 +282,14 @@ export function App() {
           {access && view === "negotiation" && (
             <>
               <Select
-                label="Mandate for a new negotiation"
+                label="Mandate to test"
                 value={mandateId}
                 options={mandates.map((m) => ({ value: m.id, label: m.title, description: m.description }))}
                 onChange={setMandateId}
               />
               <button type="button" className="button button-neutral" onClick={newNegotiation} disabled={starting || !mandateId}>
-                {starting && <span className="spinner" aria-hidden="true" />}
-                New negotiation
+                {starting ? <span className="spinner" aria-hidden="true" /> : <BeakerIcon />}
+                Test negotiation
               </button>
             </>
           )}
@@ -283,9 +304,10 @@ export function App() {
 
       {access && view === "deals" && (
         <BoardPage
-          onOpen={(id) => {
-            setSessionId(id);
-            setView("negotiation");
+          onOpen={(id) => openNegotiation(id)}
+          onManage={(id) => {
+            setOpenMandate(id);
+            setView("instructions");
           }}
         />
       )}
@@ -297,9 +319,11 @@ export function App() {
             setView("negotiation");
             loadMandates();
           }}
+          onOpenNegotiation={(id) => openNegotiation(id)}
         />
       )}
-      <main className={access ? "layout" : "layout layout-single"} hidden={access && view !== "negotiation"}>
+      {access && view === "negotiation" && negMode === "log" && <NegotiationLog onOpen={(row) => openNegotiation(row.sessionId, row)} />}
+      <main className={access ? "layout" : "layout layout-single"} hidden={access && (view !== "negotiation" || negMode !== "session")}>
         <h1 className="visually-hidden">Kritva</h1>
         <Chat
           key={sessionId ?? "none"}
@@ -312,6 +336,9 @@ export function App() {
           onRetry={retry}
           onDisplayed={onDisplayed}
           voice={{ sessionId, onTurn: refreshCurrent }}
+          heading={access ? conversationHeading(openRow, chat, backToLog) : null}
+          // A real negotiation is watched, never joined: only a test lets the principal play the other side.
+          readOnly={access && (openRow ? openRow.origin !== "test" : true)}
         />
         {!counterpartyOnly && consoleError && !access && <p className="composer-error" role="alert">{consoleError}</p>}
         {access && (
@@ -331,3 +358,12 @@ export function App() {
     </div>
   );
 }
+
+/** The conversation panel's title and line in the console: who it is with and how it came in, or a test. */
+function conversationHeading(row: NegotiationLogRow | null, chat: BuyerView | null, onBack: () => void): { title: string; subtitle: string; onBack: () => void } {
+  const roles = chat?.roles ?? { principal: "principal", counterparty: "other party" };
+  if (!row) return { title: "Conversation", subtitle: "Loading…", onBack };
+  if (row.origin === "test") return { title: "Test negotiation", subtitle: `You play the ${roles.counterparty}. Kritva replies for you. ${row.mandate.title}.`, onBack };
+  return { title: whoOf(row), subtitle: `${howOf(row)} · ${row.mandate.title}`, onBack };
+}
+

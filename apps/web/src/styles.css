@@ -3043,6 +3043,329 @@ input {
   }
 }
 
+/* ---------- Conversation header in the console: back to the log, who it is with ---------- */
+.chat-header {
+  align-items: center;
+  justify-content: flex-start;
+}
+.chat-heading {
+  min-width: 0;
+}
+.chat-heading .panel-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.back-button {
+  margin-inline-start: -6px;
+}
+/* A real negotiation is watched, never joined: a quiet footer in place of the composer. */
+.watching {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3) var(--space-5);
+  border-block-start: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: var(--text-ui);
+}
+.watching svg {
+  flex: none;
+  color: var(--color-text-tertiary);
+}
+
+/* ---------- Tabs (negotiation panel) ---------- */
+.tabs {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.tab-list {
+  position: sticky;
+  top: calc(-1 * var(--space-4));
+  z-index: 1;
+  display: flex;
+  gap: var(--space-4);
+  margin-block-start: calc(-1 * var(--space-4));
+  padding-block-start: var(--space-3);
+  background: var(--color-bg-surface);
+  box-shadow: inset 0 -1px 0 var(--color-border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tab {
+  position: relative;
+  flex: none;
+  min-height: 32px;
+  padding: 0 0 var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--text-ui);
+  font-weight: 550;
+  white-space: nowrap;
+  cursor: pointer;
+  transition-property: color;
+  transition-duration: 150ms;
+  transition-timing-function: var(--ease-out);
+}
+.tab[aria-selected="true"] {
+  color: var(--color-text-primary);
+}
+@media (hover: hover) {
+  .tab[aria-selected="false"]:hover {
+    color: var(--color-text-primary);
+  }
+}
+.tab:focus-visible {
+  outline-offset: 0;
+  border-radius: 4px;
+}
+/* The current tab's underline: one element that springs between tabs (motion layoutId). */
+.tab-underline {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--color-text-primary);
+}
+.tab-panel {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.tab-panel .block + .block {
+  padding-block-start: var(--space-4);
+}
+@media (pointer: coarse) {
+  .tab {
+    min-height: 44px;
+  }
+}
+
+/* ---------- Negotiation log ---------- */
+.log-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--color-bg-subtle);
+  box-shadow: inset 0 0 0 1px var(--color-border);
+}
+.log-live-count {
+  color: var(--color-accent-text);
+  font-weight: 550;
+}
+.log-panel {
+  container-type: inline-size;
+}
+.log-head,
+.log-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.1fr) 9.5rem minmax(0, 0.8fr) 7.5rem;
+  align-items: center;
+  gap: var(--space-3);
+}
+.log-head {
+  padding: 10px calc(var(--space-2) + var(--space-3)) 8px;
+  border-block-end: 1px solid var(--color-border);
+  color: var(--color-text-tertiary);
+  font-size: var(--text-caption);
+  font-weight: 500;
+}
+.log-head-when {
+  text-align: end;
+}
+.log-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-2);
+  display: grid;
+  gap: 2px;
+}
+.log-row {
+  width: 100%;
+  padding: 10px var(--space-3);
+  border: 0;
+  /* Concentric with the panel: radius-xl minus the list's space-2 padding. */
+  border-radius: var(--radius-md);
+  background: transparent;
+  text-align: start;
+  cursor: pointer;
+  transition-property: background-color, scale;
+  transition-duration: 150ms;
+  transition-timing-function: var(--ease-out);
+}
+.log-row:active {
+  scale: 0.995;
+}
+@media (hover: hover) {
+  .log-row:hover {
+    background: var(--color-bg-subtle);
+  }
+  .log-row:hover .log-chevron {
+    opacity: 1;
+    translate: 2px 0;
+  }
+}
+.log-who {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.log-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--text-ui);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.log-name svg {
+  flex: none;
+  color: var(--color-text-tertiary);
+}
+.log-meta {
+  color: var(--color-text-secondary);
+  font-size: var(--text-caption);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.log-how {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-secondary);
+  font-size: var(--text-ui);
+}
+.log-row > .pill {
+  justify-self: start;
+}
+.log-calls {
+  color: var(--color-text-secondary);
+  font-size: var(--text-ui);
+}
+.log-when {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  color: var(--color-text-tertiary);
+  font-size: var(--text-caption);
+}
+.log-chevron {
+  rotate: -90deg;
+  opacity: 0.5;
+  transition-property: opacity, translate;
+  transition-duration: 150ms;
+  transition-timing-function: var(--ease-out);
+}
+/* The log stacks by its own width: who and status on top, then how and when. */
+@container (max-width: 44rem) {
+  .log-head {
+    display: none;
+  }
+  .log-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "who status"
+      "how when"
+      "calls calls";
+    row-gap: 4px;
+  }
+  .log-who { grid-area: who; }
+  .log-row > .pill { grid-area: status; justify-self: end; }
+  .log-how { grid-area: how; }
+  .log-when { grid-area: when; }
+  .log-calls { grid-area: calls; font-size: var(--text-caption); }
+}
+
+/* ---------- Deals: the deal filter above the title ---------- */
+.board-filter .select-label {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+}
+.board-filter .select-trigger {
+  min-height: var(--control-h-sm);
+  padding-inline: 12px 8px;
+  font-size: var(--text-caption);
+}
+.select-list-start {
+  inset-inline-start: 0;
+  inset-inline-end: auto;
+  transform-origin: top left;
+}
+.people-manage {
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+.people-list:empty + .people-manage {
+  padding-block-start: 0;
+}
+
+/* ---------- Mandate workspace: the chat and who Kritva contacts ---------- */
+.mandate-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+@media (min-width: 80rem) {
+  .mandate-workspace {
+    grid-template-columns: minmax(0, 1fr) minmax(19rem, 23rem);
+  }
+  .mandate-workspace .counterparties {
+    position: sticky;
+    top: calc(var(--topbar-h) + var(--space-5));
+    max-height: calc(100dvh - var(--topbar-h) - 2 * var(--space-5));
+    overflow-y: auto;
+  }
+}
+.counterparties .people-list:empty {
+  display: none;
+}
+.counterparties .people-add {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.counterparties .people-add .button {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+.counterparties .people-row {
+  gap: 2px;
+}
+.counterparties-start {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border-block-start: 1px solid var(--color-border);
+}
+.counterparties-hint {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-caption);
+  text-wrap: pretty;
+}
+.counterparties-note {
+  margin: 0 var(--space-4) var(--space-4);
+  color: var(--color-text-secondary);
+  font-size: var(--text-caption);
+}
+.counterparties-message {
+  margin: 0 var(--space-4) var(--space-4);
+}
+
 /* Disclosures: a chevron that turns as the section opens, in place of the browser's triangle. */
 details > summary {
   list-style: none;

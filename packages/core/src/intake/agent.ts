@@ -10,7 +10,7 @@
  */
 import { Agent, Runner, assistant, system, tool, user, type AgentInputItem, type ModelSettings } from "@openai/agents";
 import type { LibraryInput } from "../mandate/library.ts";
-import { CHECKLIST_ITEMS, type Checklist, type ChecklistStatus, type IntakeMessage } from "./store.ts";
+import { CHECKLIST_ITEMS, type Checklist, type ChecklistStatus, type IntakeCounterparty, type IntakeMessage } from "./store.ts";
 
 export const INTAKE_PROMPT_VERSION = "intake/1";
 export const MAX_INTAKE_AGENT_TURNS = 6;
@@ -62,6 +62,12 @@ Rules
 - After mark_ready the app maps the brief and tells you the result in a system event. If it reports problems, ask about them in plain words, one question at a time, update the brief, and call mark_ready again. If it reports the brief is ready, write a short, warm line saying it's ready to go live, mention any assumption you made in a few words, and invite them to make it live or tell you what to change. Never say it is already live: only the person's own button makes it live.
 - When the person is changing a mandate that is already live, update the brief with their change and call mark_ready once the change is captured. Keep everything else as it was.
 
+Who Kritva contacts (optional)
+- When they name people or businesses Kritva should negotiate with (vendors to get quotes from, someone who already showed interest), with or without phone numbers, call add_counterparties with each name and number exactly as given. Kritva can then call or message them. Add each person once; "counterparties_on_list" in the current state shows who is already there.
+- When the deal is one where they would want Kritva to reach out (buying, hiring, getting quotes), ask once, lightly, near the end, whether there is anyone specific to contact. Never make it a condition for being ready, and never ask again after they decline.
+- Names and numbers never go into public_text or private_text.
+- The list holds at most "counterparty_cap" people. If they give more, say so briefly.
+
 How to talk
 - Warm, friendly and brief, like a capable friend helping out. One or two short sentences per message, plus at most one question (two only if they are tiny and closely related).
 - Plain words. No jargon, no lists unless they ask, no markdown headings, no em dashes.
@@ -92,6 +98,26 @@ const RECORD_SCHEMA = {
 
 const MARK_READY_SCHEMA = { type: "object" as const, properties: {}, required: [] as string[], additionalProperties: false as const };
 
+const COUNTERPARTIES_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    counterparties: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "The person's or business's name, as they gave it." },
+          phone: { type: ["string", "null"], description: "Their phone number exactly as given, or null." },
+        },
+        required: ["name", "phone"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["counterparties"],
+  additionalProperties: false as const,
+};
+
 export interface IntakeTurnInput {
   conversation: IntakeMessage[];
   fields: LibraryInput;
@@ -107,6 +133,8 @@ export interface IntakeTurnOutput {
   fields: LibraryInput;
   checklist: Checklist;
   ready: boolean;
+  /** People the principal named this turn for Kritva to contact. */
+  counterparties?: IntakeCounterparty[];
 }
 
 /** The intake agent as a dependency, so routes and tests can supply a scripted one. */
@@ -150,6 +178,22 @@ export class OpenAIIntakeAgent implements IntakeAgent {
     let fields = { ...input.fields };
     let checklist = { ...input.checklist };
     let ready = false;
+    const counterparties: IntakeCounterparty[] = [];
+    const addCounterparties = tool({
+      name: "add_counterparties",
+      description: "Add people or businesses the person wants Kritva to negotiate with, each with their phone number if given.",
+      parameters: COUNTERPARTIES_SCHEMA as never,
+      strict: true,
+      execute: async (args: unknown) => {
+        const a = (typeof args === "string" ? JSON.parse(args) : args) as { counterparties?: Array<{ name?: unknown; phone?: unknown }> };
+        for (const c of a.counterparties ?? []) {
+          const name = typeof c.name === "string" ? c.name.trim().slice(0, 100) : "";
+          const phone = typeof c.phone === "string" && c.phone.trim() ? c.phone.trim().slice(0, 40) : null;
+          if (name) counterparties.push({ name, phone });
+        }
+        return JSON.stringify({ added: counterparties.length });
+      },
+    });
     const recordDetails = tool({
       name: "record_details",
       description: "Save the complete current brief and checklist. Call whenever you learn or change anything.",
@@ -186,12 +230,12 @@ export class OpenAIIntakeAgent implements IntakeAgent {
       instructions: INTAKE_INSTRUCTIONS,
       model: this.#options.model,
       modelSettings: { ...this.#options.modelSettings, parallelToolCalls: false },
-      tools: [recordDetails, markReady],
+      tools: [recordDetails, markReady, addCounterparties],
     });
     const runner = new Runner({ tracingDisabled: process.env.KRITVA_AGENT_TRACING !== "1", workflowName: "kritva-intake" });
     const result = await runner.run(agent, intakeInputItems(input), { maxTurns: MAX_INTAKE_AGENT_TURNS, signal });
     const reply = typeof result.finalOutput === "string" ? result.finalOutput.trim() : "";
-    return { reply: reply || "Sorry, I lost my train of thought there. Could you say that again?", fields, checklist, ready };
+    return { reply: reply || "Sorry, I lost my train of thought there. Could you say that again?", fields, checklist, ready, counterparties };
   }
 }
 

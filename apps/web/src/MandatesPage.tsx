@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, type IntakeDraftSummary, type IntakeView, type LibraryExample, type LibrarySummary, type LifecycleStep, type MandateState, type PrincipalSide } from "./api.ts";
 import { ArchiveIcon, PauseIcon, PlayIcon, PlusIcon, RefreshIcon, TrashIcon } from "./icons.tsx";
 import { IntakeChat, SideChip, StateChip } from "./IntakeChat.tsx";
+import { CounterpartiesPanel } from "./CounterpartiesPanel.tsx";
 import { Menu, type MenuItem } from "./Menu.tsx";
 
 const spring = { type: "spring", duration: 0.35, bounce: 0 } as const;
@@ -18,6 +19,8 @@ interface Props {
   onUse: (mandateOptionId: string) => void;
   /** Open this saved mandate first (for example from the console's "Change instructions"). */
   initialId?: string | null;
+  /** Opens one negotiation in the Negotiation tab. */
+  onOpenNegotiation: (sessionId: string) => void;
 }
 
 type Selection = { kind: "mandate"; id: string } | { kind: "intake"; id: string };
@@ -38,7 +41,7 @@ const DONE: Record<LifecycleStep, string> = {
   reopen: "Reopened and live.",
 };
 
-export function MandatesPage({ onUse, initialId = null }: Props) {
+export function MandatesPage({ onUse, initialId = null, onOpenNegotiation }: Props) {
   const [mandates, setMandates] = useState<LibrarySummary[]>([]);
   const [drafts, setDrafts] = useState<IntakeDraftSummary[]>([]);
   const [examples, setExamples] = useState<LibraryExample[]>([]);
@@ -220,14 +223,17 @@ export function MandatesPage({ onUse, initialId = null }: Props) {
             {error}
           </p>
         )}
-        {view ? (
-          <IntakeChat key={view.id} view={view} examples={view.mandateId ? [] : examples} onChange={onChange} onSaved={() => void loadList()} onUse={onUse} />
-        ) : (
-          <section className="panel intake intake-loading" aria-busy={opening}>
-            <span className="spinner" aria-hidden="true" />
-            <span>Opening</span>
-          </section>
-        )}
+        <div className="mandate-workspace">
+          {view ? (
+            <IntakeChat key={view.id} view={view} examples={view.mandateId ? [] : examples} onChange={onChange} onSaved={() => void loadList()} onUse={onUse} />
+          ) : (
+            <section className="panel intake intake-loading" aria-busy={opening}>
+              <span className="spinner" aria-hidden="true" />
+              <span>Opening</span>
+            </section>
+          )}
+          {view && <CounterpartiesPanel mandateId={view.mandateId} state={view.state} pending={view.counterparties ?? []} onOpen={onOpenNegotiation} />}
+        </div>
       </div>
 
       <AnimatePresence>

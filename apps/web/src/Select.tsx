@@ -24,9 +24,11 @@ interface SelectProps {
   disabled?: boolean;
   /** Shown when nothing is selected. */
   placeholder?: string;
+  /** Which edge the list lines up with: the trigger's end (default) or its start, for a trigger on the leading edge. */
+  align?: "start" | "end";
 }
 
-export function Select({ label, value, options, onChange, disabled = false, placeholder = "Choose…" }: SelectProps) {
+export function Select({ label, value, options, onChange, disabled = false, placeholder = "Choose…", align = "end" }: SelectProps) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -127,7 +129,7 @@ export function Select({ label, value, options, onChange, disabled = false, plac
             id={listId}
             role="listbox"
             aria-labelledby={labelId}
-            className="select-list"
+            className={`select-list${align === "start" ? " select-list-start" : ""}`}
             initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: -4 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.98, y: -2 }}

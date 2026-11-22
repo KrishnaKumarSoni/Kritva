@@ -1,4 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { Decision, OperatorView, TermValue } from "./api.ts";
 import { ApprovalCard, FollowUpStatus } from "./ApprovalCard.tsx";
 import { CheckIcon, ClockIcon, LockIcon } from "./icons.tsx";
@@ -32,8 +33,28 @@ function splitTerm(line: string): [string, string] {
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
+type Tab = "price" | "strategy" | "said" | "record";
+const TAB_KEY = "kritva.insights.tab";
+function savedTab(): Tab {
+  try {
+    const t = window.localStorage.getItem(TAB_KEY);
+    return t === "strategy" || t === "said" || t === "record" ? t : "price";
+  } catch {
+    return "price";
+  }
+}
+
 export function InsightsPanel({ view, responding, sessionId, onDecide, onPause, onEditInstructions }: InsightsPanelProps) {
   const reduced = useReducedMotion();
+  const [tab, setTabState] = useState<Tab>(savedTab);
+  const setTab = (t: Tab) => {
+    setTabState(t);
+    try {
+      window.localStorage.setItem(TAB_KEY, t);
+    } catch {
+      /* the choice just isn't remembered */
+    }
+  };
   if (!view) {
     return (
       <section className="panel" aria-labelledby="insights-title">
@@ -60,7 +81,7 @@ export function InsightsPanel({ view, responding, sessionId, onDecide, onPause, 
   const ours = new Map((commitments.currentPrincipalOffer?.terms ?? view.dealSpace.terms.filter((t) => t.value && !t.valueIsPrivate).map((t) => `${t.name}: ${t.value}`)).map(splitTerm));
   const theirs = new Map((commitments.currentCounterpartyOffer?.terms ?? []).map(splitTerm));
   const termNames = [...new Set([...ours.keys(), ...theirs.keys()])];
-  const signals = counterparty.items.slice(-4).reverse();
+  const signals = counterparty.items.slice().reverse();
   const openQuestions = counterparty.questions.filter((q) => q.status === "open" || q.status === "asked");
   const zone = insights ? zoneSentence(insights, roles) : null;
   const s = insights?.strategy;
@@ -130,7 +151,20 @@ export function InsightsPanel({ view, responding, sessionId, onDecide, onPause, 
           )}
         </AnimatePresence>
 
-        {insights && (
+        <Tabs
+          label="Negotiation details"
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { id: "price", label: "Price" },
+            { id: "strategy", label: "Strategy & terms" },
+            { id: "said", label: "What they said" },
+            { id: "record", label: "Record" },
+          ]}
+        >
+          {tab === "price" && (
+            <>
+        {insights ? (
           <section className="block" aria-labelledby="band-title">
             <div className="block-head">
               <h3 className="section-title" id="band-title">{cap(insights.term.name)}</h3>
@@ -151,8 +185,13 @@ export function InsightsPanel({ view, responding, sessionId, onDecide, onPause, 
               </p>
             )}
           </section>
+        ) : (
+          <p className="muted">No price yet. The {roles.counterparty} hasn't said anything about it.</p>
         )}
-
+            </>
+          )}
+          {tab === "strategy" && (
+            <>
         <section className="block" aria-labelledby="strategy-title">
           <h3 className="section-title" id="strategy-title">Strategy</h3>
           {last ? (
@@ -235,33 +274,37 @@ export function InsightsPanel({ view, responding, sessionId, onDecide, onPause, 
           </section>
         )}
 
-        <section className="block" aria-labelledby="signals-title">
-          <h3 className="section-title" id="signals-title">What the {roles.counterparty} said</h3>
-          {signals.length === 0 && openQuestions.length === 0 ? (
-            <p className="muted">Nothing noted yet.</p>
-          ) : (
-            <ul className="signals">
-              {signals.map((item) => (
-                <li key={item.id}>
-                  <span className="signal-kind">{cap(item.kind.replace(/_/g, " "))}</span>
-                  <span className="signal-text">{item.summary}</span>
-                  <q className="signal-quote">{item.quote}</q>
-                </li>
-              ))}
-              {openQuestions.map((q) => (
-                <li key={q.id}>
-                  <span className="signal-kind">Asked</span>
-                  <span className="signal-text">{q.text}</span>
-                </li>
-              ))}
-            </ul>
+            </>
           )}
-        </section>
-
-        <details className="record">
-          <summary>
+          {tab === "said" && (
+            <section className="block" aria-labelledby="signals-title">
+              <h3 className="section-title" id="signals-title">What the {roles.counterparty} said</h3>
+              {signals.length === 0 && openQuestions.length === 0 ? (
+                <p className="muted">Nothing noted yet.</p>
+              ) : (
+                <ul className="signals">
+                  {signals.map((item) => (
+                    <li key={item.id}>
+                      <span className="signal-kind">{cap(item.kind.replace(/_/g, " "))}</span>
+                      <span className="signal-text">{item.summary}</span>
+                      <q className="signal-quote">{item.quote}</q>
+                    </li>
+                  ))}
+                  {openQuestions.map((q) => (
+                    <li key={q.id}>
+                      <span className="signal-kind">Asked</span>
+                      <span className="signal-text">{q.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
+          {tab === "record" && (
+        <section className="block" aria-labelledby="record-title">
+          <h3 className="section-title" id="record-title">
             Full record <span className="tabular muted">{view.events.length}</span>
-          </summary>
+          </h3>
           <ol className="record-list">
             {view.events.slice().reverse().map((e) => (
               <li key={e.id}>
@@ -281,7 +324,9 @@ export function InsightsPanel({ view, responding, sessionId, onDecide, onPause, 
               </li>
             ))}
           </ol>
-        </details>
+        </section>
+          )}
+        </Tabs>
       </div>
     </section>
   );
@@ -303,6 +348,53 @@ function Figure({ label, value }: { label: string; value: string }) {
     <div className="figure">
       <dt>{label}</dt>
       <dd className="tabular">{value}</dd>
+    </div>
+  );
+}
+
+/**
+ * Tabs in the WAI-ARIA pattern: arrow keys, Home and End move between tabs (roving focus), and the
+ * current tab's underline springs to the next one.
+ */
+function Tabs<T extends string>({ label, value, onChange, tabs, children }: { label: string; value: T; onChange: (t: T) => void; tabs: Array<{ id: T; label: string }>; children: ReactNode }) {
+  const base = useId();
+  const reduced = useReducedMotion();
+  const refs = useRef(new Map<T, HTMLButtonElement>());
+  const move = (event: KeyboardEvent<HTMLDivElement>) => {
+    const i = tabs.findIndex((t) => t.id === value);
+    const next = event.key === "ArrowRight" ? (i + 1) % tabs.length : event.key === "ArrowLeft" ? (i - 1 + tabs.length) % tabs.length : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : null;
+    if (next === null) return;
+    event.preventDefault();
+    const t = tabs[next]!.id;
+    onChange(t);
+    refs.current.get(t)?.focus();
+  };
+  return (
+    <div className="tabs">
+      <div className="tab-list" role="tablist" aria-label={label} onKeyDown={move}>
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            ref={(el) => {
+              if (el) refs.current.set(t.id, el);
+            }}
+            type="button"
+            role="tab"
+            id={`${base}-tab-${t.id}`}
+            aria-selected={value === t.id}
+            aria-controls={`${base}-panel`}
+            tabIndex={value === t.id ? 0 : -1}
+            className="tab"
+            onClick={() => onChange(t.id)}
+          >
+            {t.label}
+            {value === t.id && <motion.span layoutId={`${base}-underline`} className="tab-underline" transition={reduced ? { duration: 0 } : { type: "spring", duration: 0.3, bounce: 0 }} aria-hidden="true" />}
+          </button>
+        ))}
+      </div>
+      <div className="tab-panel" role="tabpanel" id={`${base}-panel`} aria-labelledby={`${base}-tab-${value}`}>
+        {children}
+      </div>
     </div>
   );
 }

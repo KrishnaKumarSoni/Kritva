@@ -66,6 +66,16 @@ export interface IntakeConversation {
   readyToPrepare: boolean;
   /** The fields as last mapped, so an unchanged input is not mapped twice. */
   preparedFields: LibraryInput | null;
+  /**
+   * People the principal named for Kritva to negotiate with, held until the mandate exists and then
+   * moved to its counterparty list. Numbers stay here and on that list, never in the brief.
+   */
+  pendingCounterparties?: IntakeCounterparty[];
+}
+
+export interface IntakeCounterparty {
+  name: string;
+  phone: string | null;
 }
 
 export interface IntakeStore {
