@@ -202,7 +202,7 @@ export const END_CALL_TOOL = {
 const ENDING_GUIDE = readFileSync(new URL("./voice-ending-guide.md", import.meta.url), "utf8").trim();
 
 /** How Kritva picks and switches language on a call. Shared by every voice prompt, so a call sounds like one person throughout. */
-export const LANGUAGE_RULES = `Language: follow the language rules in "How you sound" below. Before they have spoken, use its default language${DEFAULT_LANGUAGE ? ` (${DEFAULT_LANGUAGE})` : ""}. From their first words, reply in the language they speak (your short acknowledgement before a deal turn too), in its own script (Hindi in Devanagari, never Urdu script; Tamil in Tamil script; English in English), and switch the moment they switch or ask for another language, for every turn after that, including a repeat. If they mix Hindi and English, reply in the same natural mix. Do not switch language because of an accent, a name, a filler word or borrowed English words. On a call in Hindi (or another Indian language), English words inside it ("mesh back", "price", "delivery", "okay", "yes") are still that language: keep speaking it. Switch to English only when they speak whole sentences in English or ask for English.`;
+export const LANGUAGE_RULES = `Language: follow the language rules in "How you sound" below. Before they have spoken, use its default language${DEFAULT_LANGUAGE ? ` (${DEFAULT_LANGUAGE})` : ""}. From their first words, reply in the language they speak (your short acknowledgement before a deal turn too), in its own script (Hindi in Devanagari, never Urdu script; Tamil in Tamil script; English in English), and switch the moment they switch or ask for another language, for every turn after that, including a repeat. If they mix Hindi and English, reply in the same natural mix. Do not switch language because of an accent, a name, a filler word or borrowed English words. On a call in Hindi (or another Indian language), English words inside it ("mesh back", "price", "delivery", "okay", "yes") are still that language: keep speaking it. Once they have spoken Hindi (or another Indian language) on the call, stay in it for the rest of the call, even when they then say English words or whole English sentences: switch to English only if they ask for English.`;
 /** How Kritva's voice sounds on a call. */
 export const VOICE_RULES = `Voice: a friendly woman on the phone. Warm, relaxed, clear and unhurried; never salesy or over-excited. Speak English with an Indian English accent, never American or British, and every Indian language the way people in Indian cities speak it. In your own words too, use the everyday words "How you sound" gives ("Welcome!" when they thank you, "बस एक second", "Thank you", "Sorry"), never the formal ones it lists, and the feminine forms for yourself.`;
 
@@ -343,9 +343,11 @@ export function isGreetingOnly(text: string): boolean {
  * The language to answer in after their words: their script is a fact, but a few English words ("yes",
  * "mesh back") on a call in another language are not a switch. Whole English sentences, or asking for English, are.
  */
-export function heardLanguage(text: string, current: string): string {
+export function heardLanguage(text: string, current: string, spokeIndian = false): string {
   const language = scriptLanguage(text);
   if (language !== "en" || current === "en") return language;
+  // Once they have spoken an Indian language on this call, English sentences do not switch it: only asking for English does.
+  if (spokeIndian) return /english|angrezi|अंग्रेज़ी|अंग्रेजी|इंग्लिश/i.test(text) ? "en" : current;
   const words = text.match(/\p{L}+/gu)?.length ?? 0;
   return words >= 5 || /\b(english|angrezi)\b/i.test(text) ? "en" : current;
 }
@@ -499,6 +501,8 @@ export class RealtimeCall {
   #transcriptWaiters = new Map<string, Array<(text: string) => void>>();
   #lastUserItem: string | null = null;
   #language = defaultLanguageCode();
+  /** They have spoken Hindi or another Indian language on this call: from then on only asking for English switches it. */
+  #spokeIndian = false;
   #busy = 0;
   #poll: ReturnType<typeof setInterval> | null = null;
   #status: string | null = null;
@@ -911,7 +915,8 @@ export class RealtimeCall {
       this.#log({ kind: "heard", source: heard === transcript ? "transcript" : "voice_model", transcript, modelWords });
       // The script they were transcribed in is a fact; the model's own label is a guess (it took Telugu for
       // Tamil, and English asked for mid-call for Hindi). Only with nothing heard does the label count.
-      this.#language = heard ? heardLanguage(heard, this.#language) : /^[a-z]{2,3}$/.test(args.language ?? "") ? args.language! : this.#language;
+      if (heard && scriptLanguage(heard) !== "en") this.#spokeIndian = true;
+      this.#language = heard ? heardLanguage(heard, this.#language, this.#spokeIndian) : /^[a-z]{2,3}$/.test(args.language ?? "") ? args.language! : this.#language;
       if (acknowledgement) {
         this.#lastOwnWords = acknowledgement;
         const problems = await this.#d.engine.checkVoiceWords(this.#d.sessionId, acknowledgement, heard);
@@ -961,7 +966,8 @@ export class RealtimeCall {
       const itemId = this.#lastUserItem;
       const theirs = (await this.#transcript(itemId)) || "(not transcribed)";
       const said = theirs === "(not transcribed)" ? spoken : theirs;
-      if (!isGreetingOnly(said)) this.#language = heardLanguage(said, this.#language);
+      if (scriptLanguage(said) !== "en") this.#spokeIndian = true;
+      if (!isGreetingOnly(said)) this.#language = heardLanguage(said, this.#language, this.#spokeIndian);
       const recorded = await this.#d.engine.recordVoiceAnswer({
         sessionId: this.#d.sessionId,
         buyerText: theirs,
