@@ -22,7 +22,7 @@ export interface PhoneSettings {
   webhookSecret: string;
   /** The OpenAI project ID ("proj_..."), the user part of the SIP URI. Only used to print the setup values. */
   projectId: string | null;
-  /** OpenAI's SIP host. Default: the India edge, for callers in India. */
+  /** OpenAI's SIP host. Default: the global host, which Vobiz documents and which worked on the first live calls (GeoIP-routed). */
   sipHost: string;
   routes: PhoneRoute[];
   /** Country code assumed for numbers written without one ("080 7123 4567" in India). */
@@ -34,9 +34,15 @@ export interface PhoneSettings {
   maxCallMs: number;
   /** Calls at once; more are declined as busy. */
   maxCalls: number;
+  /** "minimal": accept with model, instructions and voice, then send the session as session.update (default). "full": all in the accept. */
+  acceptMode: "minimal" | "full";
+  /** Log every sideband event type and the masked SIP headers of each call (KRITVA_PHONE_TRACE=1), for diagnosing a call. */
+  trace: boolean;
 }
 
-/** The India edge of OpenAI's SIP endpoint (https://developers.openai.com/api/docs/guides/realtime-sip). */
+/** OpenAI's global SIP host, routed by the caller's location (https://developers.openai.com/api/docs/guides/realtime-sip). */
+export const GLOBAL_SIP_HOST = "sip.api.openai.com";
+/** The India edge. Untested with Vobiz since the accept was fixed; KRITVA_PHONE_SIP_HOST selects it. */
 export const INDIA_SIP_HOST = "sip-in.api.openai.com";
 
 /** A phone number as digits with its country code: "+91 80 7123 4567", "080 7123 4567" and "8071234567" all become "918071234567". */
@@ -97,13 +103,15 @@ export function phoneSettingsFromEnv(env: NodeJS.ProcessEnv = process.env): { se
   const settings: PhoneSettings = {
     webhookSecret,
     projectId,
-    sipHost: env.KRITVA_PHONE_SIP_HOST?.trim() || INDIA_SIP_HOST,
+    sipHost: env.KRITVA_PHONE_SIP_HOST?.trim() || GLOBAL_SIP_HOST,
     routes: parsed.routes,
     countryCode,
     noiseReduction: noise === "far_field" ? "far_field" : noise === "off" ? null : "near_field",
     idleMs: seconds(env.KRITVA_PHONE_IDLE_SECONDS, 30, 10, 300) * 1000,
     maxCallMs: seconds(env.KRITVA_PHONE_MAX_MINUTES, 15, 1, 120) * 60_000,
     maxCalls: Math.round(seconds(env.KRITVA_PHONE_MAX_CALLS, 5, 1, 100)),
+    acceptMode: env.KRITVA_PHONE_ACCEPT === "full" ? "full" : "minimal",
+    trace: env.KRITVA_PHONE_TRACE === "1",
   };
   return { settings: webhookSecret && parsed.routes.length ? settings : null, problems };
 }

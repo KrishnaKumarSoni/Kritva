@@ -20,7 +20,7 @@ import {
 } from "@kritva/core";
 import { createApp } from "../src/app.ts";
 import { loadConfirmedMandates, loadExamples, loadListings } from "../src/main-helpers.ts";
-import { INDIA_SIP_HOST, normalizeNumber, parseRoutes, phoneSettingsFromEnv, sipUri, type PhoneSettings } from "../src/phone/config.ts";
+import { GLOBAL_SIP_HOST, normalizeNumber, parseRoutes, phoneSettingsFromEnv, sipUri, type PhoneSettings } from "../src/phone/config.ts";
 import { heardPart, ServerPlayback, type Clock, type PlaybackReport } from "../src/phone/playback.ts";
 import { callerNumber, dialledNumbers, maskNumber, routeFor } from "../src/phone/sip-headers.ts";
 import { signWebhook, verifyWebhook, WebhookSignatureError } from "../src/phone/webhook-signature.ts";
@@ -51,12 +51,12 @@ describe("Phone: settings", () => {
     expect(problems).toHaveLength(1);
   });
 
-  it("is off without the webhook secret or routes, and defaults to the India SIP edge", () => {
+  it("is off without the webhook secret or routes, and defaults to the global SIP host", () => {
     expect(phoneSettingsFromEnv({}).settings).toBeNull();
     expect(phoneSettingsFromEnv({ OPENAI_WEBHOOK_SECRET: SECRET }).settings).toBeNull();
     const { settings } = phoneSettingsFromEnv({ OPENAI_WEBHOOK_SECRET: SECRET, KRITVA_PHONE_ROUTES: `${NUMBER}=bed-sale`, OPENAI_PROJECT_ID: "proj_abc" });
-    expect(settings).toMatchObject({ sipHost: INDIA_SIP_HOST, noiseReduction: "near_field", idleMs: 30_000, maxCallMs: 15 * 60_000, maxCalls: 5 });
-    expect(sipUri(settings!)).toBe("sip:proj_abc@sip-in.api.openai.com:5061");
+    expect(settings).toMatchObject({ sipHost: GLOBAL_SIP_HOST, noiseReduction: "near_field", idleMs: 30_000, maxCallMs: 15 * 60_000, maxCalls: 5 });
+    expect(sipUri(settings!)).toBe("sip:proj_abc@sip.api.openai.com:5061");
   });
 });
 
@@ -202,8 +202,9 @@ describe("Phone: server-side delivery", () => {
     expect(t.reports[0]).toMatchObject({ status: "interrupted", reason: "no_end_event" });
   });
 
-  it("fallback without playback events: delivered once the window passes with no speech", () => {
+  it("fallback without playback events: delivered once the window passes with no speech, when the caller has been heard on the call", () => {
     const t = setup();
+    t.p.observe({ type: "input_audio_buffer.speech_started" });
     t.say();
     t.p.observe({ type: "response.output_audio_transcript.delta", response_id: "resp_1", item_id: "item_1", delta: "The" });
     t.clock.advance(1_500);
@@ -215,6 +216,28 @@ describe("Phone: server-side delivery", () => {
     // Speech after the window is their reply, not an interruption.
     t.p.observe({ type: "input_audio_buffer.speech_started" });
     expect(t.reports).toHaveLength(1);
+  });
+
+  it("fallback: before the caller has been heard, a reply waits for proof that audio flows; their first words make it delivered", () => {
+    const t = setup();
+    t.say();
+    t.p.observe({ type: "response.output_audio_transcript.delta", response_id: "resp_1", item_id: "item_1", delta: "The" });
+    t.done();
+    t.clock.advance(10_000);
+    expect(t.reports).toHaveLength(0);
+    expect(t.p.busy).toBe(false);
+    t.p.observe({ type: "input_audio_buffer.speech_started" });
+    expect(t.reports[0]).toMatchObject({ status: "delivered", source: "estimate", reason: "window_passed" });
+  });
+
+  it("fallback: on a call whose audio never connected, no reply counts as heard", () => {
+    const t = setup();
+    t.say();
+    t.p.observe({ type: "response.output_audio_transcript.delta", response_id: "resp_1", item_id: "item_1", delta: "The" });
+    t.done();
+    t.clock.advance(10_000);
+    t.p.end();
+    expect(t.reports[0]).toMatchObject({ status: "interrupted", heardText: "", reason: "no_caller_audio" });
   });
 
   it("fallback without playback events: speech inside the window interrupts the reply", () => {
@@ -334,7 +357,7 @@ function setup(options: { library?: boolean; settings?: Partial<PhoneSettings> }
   const listings = loadListings(CASES, mandates, examples, library);
   const engine = new NegotiationEngine({ record, llm, locale: "en-IN", subjectFacts: new Map([["bed-sale", "fact_f_item"]]), listingDetails: new Map(listings.map((l) => [l.caseId, l])) });
   const connector = new FakeConnector();
-  const settings: PhoneSettings = { webhookSecret: SECRET, projectId: "proj_test", sipHost: INDIA_SIP_HOST, routes: parseRoutes(`${NUMBER}=bed-sale`).routes, countryCode: "91", noiseReduction: "near_field", idleMs: 60_000, maxCallMs: 600_000, maxCalls: 5, ...options.settings };
+  const settings: PhoneSettings = { webhookSecret: SECRET, projectId: "proj_test", sipHost: GLOBAL_SIP_HOST, routes: parseRoutes(`${NUMBER}=bed-sale`).routes, countryCode: "91", noiseReduction: "near_field", idleMs: 60_000, maxCallMs: 600_000, maxCalls: 5, acceptMode: "minimal", trace: false, ...options.settings };
   const logs: Array<Record<string, unknown>> = [];
   const app = createApp({
     record,
@@ -351,7 +374,7 @@ function setup(options: { library?: boolean; settings?: Partial<PhoneSettings> }
   let n = 0;
   /** OpenAI's webhook for an incoming call, signed with the project's secret. */
   const ring = async (callId: string, to = NUMBER, signature?: string, body?: string) => {
-    const raw = body ?? JSON.stringify({ id: `evt_${callId}`, object: "event", type: "realtime.call.incoming", created_at: 1, data: { call_id: callId, sip_headers: [{ name: "From", value: "<sip:+919876543210@203.0.113.5>;tag=1" }, { name: "To", value: `<sip:${to}@${INDIA_SIP_HOST}>` }] } });
+    const raw = body ?? JSON.stringify({ id: `evt_${callId}`, object: "event", type: "realtime.call.incoming", created_at: 1, data: { call_id: callId, sip_headers: [{ name: "From", value: "<sip:+919876543210@203.0.113.5>;tag=1" }, { name: "To", value: `<sip:${to}@${GLOBAL_SIP_HOST}>` }] } });
     const ts = Math.floor(Date.now() / 1000);
     const id = `wh_${(n += 1)}`;
     const res = await app.request("/api/webhooks/openai", { method: "POST", headers: { "content-type": "application/json", "webhook-id": id, "webhook-timestamp": String(ts), "webhook-signature": signature ?? signWebhook(raw, id, ts, SECRET) }, body: raw });
@@ -420,20 +443,26 @@ describe("Phone: incoming calls", () => {
     expect([...(await paused.sessions()), ...(await missing.sessions())]).toHaveLength(0);
   });
 
-  it("answers with the browser call's session settings (flat body, no audio format, phone noise reduction), joins the call and greets", async () => {
+  it("answers with the basics (model, instructions, voice), then applies the browser call's full session before the greeting", async () => {
     const t = setup();
     const res = await t.ring("rtc_ok1");
     expect(res.status).toBe(200);
-    const { session } = t.connector.accepted[0]!;
-    expect(session.type).toBe("realtime");
-    expect(session.model).toBe("gpt-realtime-2.1");
+    const accept = t.connector.accepted[0]!.session;
+    expect(Object.keys(accept).sort()).toEqual(["audio", "instructions", "model", "type"]);
+    expect(accept).toMatchObject({ type: "realtime", model: "gpt-realtime-2.1", audio: { output: { voice: "marin" } } });
+    expect(accept.instructions).not.toMatch(/18,000|18000/);
+    await until(() => t.link.says().length === 1);
+    // The full session goes first on the sideband, before the greeting's response.create.
+    const [update] = t.link.sent;
+    expect(update!.type).toBe("session.update");
+    const session = update!.session;
+    expect(session.model).toBeUndefined();
     expect(session.tools[0].name).toBe("negotiate");
     expect(session.audio.input.noise_reduction).toEqual({ type: "near_field" });
     expect(session.audio.input.turn_detection.type).toBe("semantic_vad");
     expect(session.audio.input.transcription.languages).not.toContain("ur");
-    expect(JSON.stringify(session)).not.toMatch(/"format"/);
+    expect(JSON.stringify([accept, session])).not.toMatch(/"format"/);
     expect(session.instructions).not.toMatch(/18,000|18000/);
-    await until(() => t.link.says().length === 1);
     const sessionId = res.json.sessionId;
     const greeting = (await t.messages(sessionId)).find((m) => m.direction === "outbound")!;
     expect(t.link.says()[0]).toEqual({ text: greeting.text, messageId: greeting.id });
@@ -442,6 +471,14 @@ describe("Phone: incoming calls", () => {
     expect(((await op.json()) as any).mandateSource).toEqual({ mandateId: "man_bed-sale-listing", revision: 1 });
     // The caller's number is never logged in full.
     expect(JSON.stringify(t.logs)).not.toContain("9876543210");
+  });
+
+  it("with KRITVA_PHONE_ACCEPT=full the whole session goes in the accept and no update follows", async () => {
+    const t = setup({ settings: { acceptMode: "full" } });
+    await t.ring("rtc_full");
+    expect(t.connector.accepted[0]!.session.tools[0].name).toBe("negotiate");
+    await until(() => t.link.says().length === 1);
+    expect(t.link.sent.some((e) => e.type === "session.update")).toBe(false);
   });
 
   it("a retried webhook for the same call answers it once", async () => {
@@ -494,7 +531,7 @@ describe("Phone: incoming calls", () => {
     await until(() => t.connector.attached === 1);
     await until(async () => ((await (await t.app.request("/api/operator/phone")).json()) as any).calls.length === 1);
     const status = (await (await t.app.request("/api/operator/phone")).json()) as any;
-    expect(status.sipUri).toBe("sip:proj_test@sip-in.api.openai.com:5061");
+    expect(status.sipUri).toBe("sip:proj_test@sip.api.openai.com:5061");
     expect(status.routes).toEqual([{ number: NUMBER, target: { kind: "listing", caseId: "bed-sale" } }]);
     expect(JSON.stringify(status)).not.toContain(SECRET);
   });
@@ -551,6 +588,8 @@ describe("Phone: during a call", () => {
     expect(op.state.voiceInterrupted).toBe(true);
     expect(op.events.at(-1).title).toBe("Phone call ended");
     expect(((await (await t.app.request("/api/operator/phone")).json()) as any).calls).toHaveLength(0);
+    // The end of a call logs how many of each event the sideband sent, to diagnose a call.
+    expect(t.logs.find((l) => l.kind === "phone_ended")).toMatchObject({ reason: "hung_up", events: { "output_audio_buffer.started": 1 } });
   });
 
   it("after a silence Kritva checks they are still there, and after another it says goodbye and hangs up", async () => {

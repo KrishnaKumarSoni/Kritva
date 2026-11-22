@@ -1,7 +1,7 @@
 /**
  * Phone calls into Kritva (docs/Kritva_Phone_Calls.md).
  *
- *   Caller → Vobiz number → Vobiz SIP trunk (TLS + SRTP) → OpenAI SIP, India edge (sip-in.api.openai.com)
+ *   Caller → Vobiz number → Vobiz SIP trunk (TLS + SRTP) → OpenAI SIP (sip.api.openai.com, routed by location)
  *                                                                    │ webhook: realtime.call.incoming
  *                                                                    ▼
  *   POST /api/webhooks/openai → verify signature → route the dialled number to a listing or mandate
@@ -15,6 +15,7 @@
  *   404 the number has no route · 480 the listing is paused or closed, or its mandate is missing or
  *   not live · 486 busy (KRITVA_PHONE_MAX_CALLS calls already) · 500 a session could not start.
  */
+import { appendFileSync } from "node:fs";
 import type { Hono } from "hono";
 import type { ConfirmedMandate, MandateLibrary, NegotiationEngine, NegotiationRecord } from "@kritva/core";
 import type { ListingConfig } from "../main-helpers.ts";
@@ -45,7 +46,25 @@ export interface PhoneDeps {
   pollMs?: number;
   /** Waits before each accept attempt (tests use none). */
   acceptBackoffMs?: number[];
+  /** Hang up live calls when the process is stopped or restarted (the running server sets it; tests do not). */
+  hangUpOnExit?: boolean;
 }
+
+/**
+ * How a call is answered. "minimal" (the default, as in Vobiz's working sample): the accept carries
+ * only the model, instructions and voice, and the full session follows as `session.update` over
+ * the sideband before anything is said. A field OpenAI rejects then shows up as an `error` event in
+ * the log instead of silently leaving a connected call without audio. "full" sends the whole
+ * session in the accept, as OpenAI's guide shows.
+ */
+export function acceptPlan(full: Record<string, any>, mode: PhoneSettings["acceptMode"]): { accept: Record<string, unknown>; update: Record<string, unknown> | null } {
+  if (mode === "full") return { accept: full, update: null };
+  const { model, ...session } = full;
+  return { accept: { type: "realtime", model, instructions: full.instructions, audio: { output: full.audio?.output } }, update: session };
+}
+
+/** SIP header values for a trace, with every phone number masked. */
+const maskedHeaders = (headers: SipHeader[]) => headers.map((h) => `${h.name}: ${h.value.replace(/\+?\d{10,15}/g, (n) => maskNumber(n.replace(/\D/g, "")) ?? "")}`.slice(0, 300));
 
 /** What starting a negotiation for a call needs: the confirmed mandate and where it came from. */
 type Resolved = { ok: true; mandate: ConfirmedMandate; source: { mandateId: string; revision: number } } | { ok: false; sip: number; reason: string };
@@ -109,7 +128,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
   };
 
   /** After the accept: join the call and run it. A call that cannot be joined is hung up at once. */
-  const connect = async (callId: string, sessionId: string) => {
+  const connect = async (callId: string, sessionId: string, sessionUpdate: Record<string, unknown> | null) => {
     connecting += 1;
     try {
       let link;
@@ -122,7 +141,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
         return;
       }
       const afterSeq = (await record.context(sessionId)).events.at(-1)?.seq ?? 0;
-      const call = new PhoneCall({ engine, record, sessionId, callId, link, control: deps.connector, settings, afterSeq, log, pollMs: deps.pollMs, onEnded: () => calls.delete(callId) });
+      const call = new PhoneCall({ engine, record, sessionId, callId, link, control: deps.connector, settings, afterSeq, log, pollMs: deps.pollMs, sessionUpdate, trace: settings.trace, onEnded: () => calls.delete(callId) });
       calls.set(callId, call);
       await call.start().catch(async (error) => {
         log({ kind: "phone_start_failed", callId, sessionId, error: String(error) });
@@ -133,10 +152,11 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
     }
   };
 
-  const incoming = async (callId: string, headers: SipHeader[]): Promise<{ status: 200 | 500; body: Record<string, unknown> }> => {
+  const incoming = async (callId: string, headers: SipHeader[], mediaSecurity: unknown): Promise<{ status: 200 | 500; body: Record<string, unknown> }> => {
     const { route, dialled } = routeFor(headers, settings.routes, settings.countryCode);
     // Header names (not values) show which headers the provider sends; the caller's number is masked.
-    log({ kind: "phone_incoming", callId, dialled, caller: maskNumber(callerNumber(headers, settings.countryCode)), headerNames: headers.map((h) => h.name), route: route ? { number: route.number, target: route.target } : null });
+    log({ kind: "phone_incoming", callId, dialled, caller: maskNumber(callerNumber(headers, settings.countryCode)), mediaSecurity: mediaSecurity ?? null, headerNames: headers.map((h) => h.name), route: route ? { number: route.number, target: route.target } : null });
+    if (settings.trace) log({ kind: "phone_trace_headers", callId, headers: maskedHeaders(headers) });
     if (!route) return reject(callId, 404, "no_route");
     if (calls.size + connecting >= settings.maxCalls) return reject(callId, 486, "busy");
     const target = resolve(route.target);
@@ -152,7 +172,8 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
     const briefing = await engine.voiceBriefing(sessionId);
     if (!briefing || briefing.status !== "active") return reject(callId, 480, "not_active");
 
-    const accepted = await acceptWithRetry(callId, realtimeSession(deps.realtime, briefing, { noiseReduction: settings.noiseReduction }));
+    const plan = acceptPlan(realtimeSession(deps.realtime, briefing, { noiseReduction: settings.noiseReduction }), settings.acceptMode);
+    const accepted = await acceptWithRetry(callId, plan.accept);
     if (!accepted.ok) {
       log({ kind: accepted.gone ? "phone_gone" : "phone_accept_failed", callId, sessionId, error: accepted.error });
       // If an accept went through unseen (a timeout), hanging up keeps the caller from an unsupervised voice.
@@ -160,8 +181,8 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
       // Acknowledged either way: a retried webhook would come after the caller stopped waiting.
       return { status: 200, body: { ok: false, error: accepted.gone ? "call_gone" : "accept_failed" } };
     }
-    log({ kind: "phone_accepted", callId, sessionId, target: route.target, attempts: accepted.attempts });
-    void connect(callId, sessionId);
+    log({ kind: "phone_accepted", callId, sessionId, target: route.target, attempts: accepted.attempts, acceptMode: settings.acceptMode });
+    void connect(callId, sessionId, plan.update);
     return { status: 200, body: { ok: true, sessionId } };
   };
 
@@ -174,7 +195,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
       log({ kind: "phone_webhook_unverified", error: error.message });
       return c.json({ error: "invalid_signature" }, 400);
     }
-    let event: { type?: string; data?: { call_id?: unknown; sip_headers?: unknown } };
+    let event: { type?: string; data?: { call_id?: unknown; sip_headers?: unknown; sip_media_security?: unknown } };
     try {
       event = JSON.parse(raw);
     } catch {
@@ -187,7 +208,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
     if (handled.has(callId)) return c.json({ ok: true, duplicate: true });
     const headers = (Array.isArray(event.data?.sip_headers) ? event.data.sip_headers : []).filter((h): h is SipHeader => typeof h?.name === "string" && typeof h?.value === "string");
 
-    if (!inFlight.has(callId)) inFlight.set(callId, incoming(callId, headers).catch((error) => {
+    if (!inFlight.has(callId)) inFlight.set(callId, incoming(callId, headers, event.data?.sip_media_security).catch((error) => {
       log({ kind: "phone_incoming_failed", callId, error: String(error) });
       return { status: 500 as const, body: { error: "internal_error" } };
     }));
@@ -214,19 +235,30 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
     }),
   );
 
-  return {
-    calls,
-    endAll: async () => {
-      await Promise.all([...calls.values()].map((call) => call.end("server")));
-    },
+  const endAll = async () => {
+    await Promise.all([...calls.values()].map((call) => call.end("server")));
   };
+
+  if (deps.hangUpOnExit) {
+    // A stopped or restarted server (node --watch restarts on every saved file) would otherwise
+    // leave its calls connected to a voice nobody supervises. Hang them up first, for at most 3 s.
+    const stop = (signal: NodeJS.Signals) => {
+      if (calls.size === 0) process.exit(0);
+      log({ kind: "phone_shutdown", signal, calls: calls.size });
+      void Promise.race([endAll(), new Promise((r) => setTimeout(r, 3_000))]).finally(() => process.exit(0));
+    };
+    process.once("SIGTERM", stop);
+    process.once("SIGINT", stop);
+  }
+
+  return { calls, endAll };
 }
 
 /**
  * Phone settings for the running server, or null (with the reason logged) when phone calls are off.
  * Needs OPENAI_API_KEY with realtime voice on, OPENAI_WEBHOOK_SECRET and KRITVA_PHONE_ROUTES.
  */
-export function phoneFromEnv(env: NodeJS.ProcessEnv = process.env, print: (line: string) => void = console.log): { settings: PhoneSettings; connector: RealtimeConnector & RealtimeCallControl; log: (entry: Record<string, unknown>) => void } | null {
+export function phoneFromEnv(env: NodeJS.ProcessEnv = process.env, print: (line: string) => void = console.log): { settings: PhoneSettings; connector: RealtimeConnector & RealtimeCallControl; log: (entry: Record<string, unknown>) => void; hangUpOnExit: boolean } | null {
   const apiKey = env.OPENAI_API_KEY;
   const { settings, problems } = phoneSettingsFromEnv(env);
   if (!apiKey || (env.KRITVA_VOICE_MODE ?? "realtime") !== "realtime") {
@@ -240,5 +272,17 @@ export function phoneFromEnv(env: NodeJS.ProcessEnv = process.env, print: (line:
   }
   for (const problem of problems) print(`Phone calls: ${problem}`);
   print(`Phone calls: on. SIP URI for the trunk: ${sipUri(settings)} (TLS). OpenAI webhook: https://<public host>${WEBHOOK_PATH}`);
-  return { settings, connector: new OpenAIRealtimeConnector(apiKey), log: (entry) => console.log("[phone]", JSON.stringify(entry)) };
+  // KRITVA_PHONE_LOG_FILE also appends each log line to a file, so a call can be followed outside the server's console.
+  const file = env.KRITVA_PHONE_LOG_FILE?.trim() || null;
+  const log = (entry: Record<string, unknown>) => {
+    const line = JSON.stringify(entry);
+    console.log("[phone]", line);
+    if (!file) return;
+    try {
+      appendFileSync(file, `${new Date().toISOString()} ${line}\n`);
+    } catch (error) {
+      console.error("[phone] could not write the log file", error);
+    }
+  };
+  return { settings, connector: new OpenAIRealtimeConnector(apiKey), log, hangUpOnExit: true };
 }

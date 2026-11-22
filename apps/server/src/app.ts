@@ -71,7 +71,7 @@ export interface AppDeps {
   /** Realtime voice (docs/Kritva_Realtime_Voice.md). Without a connector the browser uses turn-based voice. */
   realtime?: { connector: RealtimeConnector | null; settings?: RealtimeSettings; log?: (entry: Record<string, unknown>) => void } | null;
   /** Phone calls through a SIP trunk into OpenAI (docs/Kritva_Phone_Calls.md). Off when absent. */
-  phone?: { settings: PhoneSettings; connector: RealtimeConnector & RealtimeCallControl; log?: (entry: Record<string, unknown>) => void; pollMs?: number; acceptBackoffMs?: number[] } | null;
+  phone?: { settings: PhoneSettings; connector: RealtimeConnector & RealtimeCallControl; log?: (entry: Record<string, unknown>) => void; pollMs?: number; acceptBackoffMs?: number[]; hangUpOnExit?: boolean } | null;
   /** Required by the network server. In-process tools can call the app as the operator. */
   operatorKey?: string;
 }
@@ -119,7 +119,7 @@ export function createApp(deps: AppDeps): Hono {
 
   registerRealtimeRoutes(app, { record, engine, connector: deps.realtime?.connector ?? null, settings: deps.realtime?.settings ?? realtimeSettingsFromEnv(), log: deps.realtime?.log });
   if (deps.phone) {
-    registerPhoneRoutes(app, { record, engine, library: deps.library ?? null, listings: deps.listings ?? [], connector: deps.phone.connector, settings: deps.phone.settings, realtime: deps.realtime?.settings ?? realtimeSettingsFromEnv(), log: deps.phone.log, pollMs: deps.phone.pollMs, acceptBackoffMs: deps.phone.acceptBackoffMs });
+    registerPhoneRoutes(app, { record, engine, library: deps.library ?? null, listings: deps.listings ?? [], connector: deps.phone.connector, settings: deps.phone.settings, realtime: deps.realtime?.settings ?? realtimeSettingsFromEnv(), log: deps.phone.log, pollMs: deps.phone.pollMs, acceptBackoffMs: deps.phone.acceptBackoffMs, hangUpOnExit: deps.phone.hangUpOnExit });
   }
 
   /** Prepared mandates from cases/, plus saved mandates with a confirmed revision. Unconfirmed drafts never appear. */
