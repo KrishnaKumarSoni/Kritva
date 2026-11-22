@@ -6,7 +6,7 @@ Interaction design (what Kritva says when, how a declined call sounds, whether a
 
 ## 1. What it does
 
-A buyer dials a Vobiz number. The call reaches Kritva's realtime voice, which talks with them exactly as in a browser call: the realtime model is Kritva's ears and voice, the negotiation engine decides every deal move, and every reply is checked and recorded. The seller sees the call in the console as a voice session.
+A counterparty dials a Vobiz number. The call reaches Kritva's realtime voice, which talks with them exactly as in a browser call: the realtime model is Kritva's ears and voice, the negotiation engine decides every deal move, and every reply is checked and recorded. The principal (whoever Kritva represents, seller or buyer) sees the call in the console as a voice session.
 
 ```
 Caller → Vobiz DID → Vobiz inbound SIP trunk (TLS signalling, SRTP setting on)
@@ -27,7 +27,7 @@ Audio never passes through Kritva's server. Vobiz and OpenAI exchange it directl
 - **The engine decides every move**, through the same `negotiate` tool and `engine.handleCounterpartyMessage`. Nothing in the engine's negotiation logic changed.
 - **The call controller** (`RealtimeCall` in `apps/server/src/realtime-voice.ts`) is shared with the browser: routing of conversation and deal turns, verbatim speech, the checks on the voice model's own words, corrections, engine-initiated messages and the fillers during waits. Phone calls added only two read-only getters (`language`, `textOf`).
 - **Session settings**: a phone call gets the same `realtimeSession(...)` as a browser call (model, instructions, tools, language hints, semantic turn-taking, reasoning), applied in two steps (section 3, step 5). Only noise reduction is the phone's own setting, and no audio format is set (SIP negotiates the codec; the live calls used PCMA).
-- **Listing rules**: a phone call checks a listing with the same function as the listing's "Call Seller" button (`resolveListing` in `voice-routes.ts`).
+- **Listing rules**: a phone call checks a listing with the same function as the bed demo listing's "Call Seller" button (`resolveListing` in `voice-routes.ts`).
 - **Delivery rule**: an offer counts only once heard in full; an interruption records the approximate part heard.
 
 ## 3. How a call works
@@ -161,7 +161,7 @@ OpenAI must reach the webhook over HTTPS. Both tunnels are installed on this Mac
 cloudflared tunnel --no-autoupdate --url http://localhost:8787
 ```
 
-It prints `https://<random>.trycloudflare.com`; that host changes on every run, so update the OpenAI webhook URL each time. `ngrok http 8787` works the same way, with a fixed domain on a paid plan. While the tunnel runs, the whole local API is reachable from the internet; the seller's routes still need the seller access key.
+It prints `https://<random>.trycloudflare.com`; that host changes on every run, so update the OpenAI webhook URL each time. `ngrok http 8787` works the same way, with a fixed domain on a paid plan. While the tunnel runs, the whole local API is reachable from the internet; the principal's console routes still need the access key.
 
 ### 9.4 Run and check
 
@@ -174,7 +174,7 @@ It prints `https://<random>.trycloudflare.com`; that host changes on every run, 
 
    Expect `200`. A 400 means the secret differs between the script's `.env` and the server; a 404 means phone calls are off on that server. Adding `--ring +91XXXXXXXXXX` sends a made-up call: the server routes it, starts a session and tries to answer, and OpenAI refuses because the call does not exist. Expect `200` with `"error":"accept_failed"`. This leaves one empty session in the record.
 3. Call the number, with `KRITVA_PHONE_TRACE=1` and `KRITVA_PHONE_LOG_FILE` set for the first calls. In the log, a healthy call shows `phone_incoming`, `phone_accepted`, `session.updated`, `input_audio_buffer.speech_started` when you speak, `output_audio_buffer.started` and `.stopped` around each reply, and `phone_ended` with `deliveryFrom: "playback_events"`.
-4. The seller console shows the session, with "Phone call connected" and, after hanging up, "Phone call ended".
+4. The principal's console shows the session, with "Phone call connected" and, after hanging up, "Phone call ended".
 
 ### 9.5 Troubleshooting
 
@@ -234,7 +234,7 @@ It prints `https://<random>.trycloudflare.com`; that host changes on every run, 
 Placeholders, for the interaction design:
 
 - The lines for silence and the time limit, and the 30 s and 15 minute defaults.
-- A declined call is a SIP rejection, so the caller hears their network's tone. Answering and explaining ("the seller has paused this listing") is the alternative.
+- A declined call is a SIP rejection, so the caller hears their network's tone. Answering and explaining ("this negotiation is paused for now") is the alternative.
 - Each call starts a new negotiation. Continuing a caller's earlier negotiation would need their number stored with it, which is a product and privacy decision; today the caller's number is not recorded.
 - The call stays open after an agreement or a refusal; the silence timer ends it. Hanging up after the engine's closing message is the alternative.
 

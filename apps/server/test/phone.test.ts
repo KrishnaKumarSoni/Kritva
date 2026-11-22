@@ -367,7 +367,7 @@ class FakeTelephony implements OutboundTelephony {
   }
 }
 
-const BUYER = "+919812345678";
+const COUNTERPARTY = "+919812345678";
 
 function setup(options: { library?: boolean; settings?: Partial<PhoneSettings>; outbound?: Partial<OutboundSettings> } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "kritva-phone-"));
@@ -381,7 +381,7 @@ function setup(options: { library?: boolean; settings?: Partial<PhoneSettings>; 
   const engine = new NegotiationEngine({ record, llm, locale: "en-IN", subjectFacts: new Map([["bed-sale", "fact_f_item"]]), listingDetails: new Map(listings.map((l) => [l.caseId, l])) });
   const connector = new FakeConnector();
   const telephony = new FakeTelephony();
-  const outboundSettings: OutboundSettings = { callerId: "918064264194", publicUrl: "https://kritva.example.test", bridgeUri: "sip:proj_test@sip.api.openai.com:5061;transport=tls", allow: [normalizeNumber(BUYER)], maxCalls: 5, timeLimitSeconds: 900, countryCode: "91", ...options.outbound };
+  const outboundSettings: OutboundSettings = { callerId: "918064264194", publicUrl: "https://kritva.example.test", bridgeUri: "sip:proj_test@sip.api.openai.com:5061;transport=tls", allow: [normalizeNumber(COUNTERPARTY)], maxCalls: 5, timeLimitSeconds: 900, countryCode: "91", ...options.outbound };
   const settings: PhoneSettings = { webhookSecret: SECRET, projectId: "proj_test", sipHost: GLOBAL_SIP_HOST, routes: parseRoutes(`${NUMBER}=bed-sale`).routes, countryCode: "91", noiseReduction: "near_field", idleMs: 60_000, maxCallMs: 600_000, maxCalls: 5, acceptMode: "minimal", trace: false, ...options.settings };
   const logs: Array<Record<string, unknown>> = [];
   const app = createApp({
@@ -440,7 +440,7 @@ function setup(options: { library?: boolean; settings?: Partial<PhoneSettings>; 
     const res = await app.request(url.replace("https://kritva.example.test", ""), { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(fields).toString() });
     return { status: res.status, text: await res.text(), type: res.headers.get("content-type") };
   };
-  const placeCall = async (sessionId: string, to = BUYER, clientRequestId?: string) => {
+  const placeCall = async (sessionId: string, to = COUNTERPARTY, clientRequestId?: string) => {
     const res = await app.request(`/api/operator/sessions/${sessionId}/calls`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ to, clientRequestId }) });
     return { status: res.status, json: (await res.json()) as any };
   };
@@ -569,7 +569,7 @@ describe("Phone: incoming calls", () => {
     await until(() => t.connector.attached === 1 && t.link.says().length === 1);
   });
 
-  it("shows the setup values and calls in progress to the seller", async () => {
+  it("shows the setup values and calls in progress to the principal", async () => {
     const t = setup();
     await t.ring("rtc_status");
     await until(() => t.connector.attached === 1);
@@ -690,7 +690,7 @@ describe("Phone: outbound calls (Kritva dials the counterparty)", () => {
     expect(res.status).toBe(202);
     expect(res.json).toMatchObject({ sessionId, state: "dialling", to: "91******5678", outcome: null });
     const [placed] = t.telephony.placed;
-    expect(placed).toMatchObject({ from: "+918064264194", to: BUYER, timeLimitSeconds: 900 });
+    expect(placed).toMatchObject({ from: "+918064264194", to: COUNTERPARTY, timeLimitSeconds: 900 });
     const token = /\/api\/phone\/vobiz\/([\w-]+)\/answer$/.exec(placed!.answerUrl)![1]!;
     expect(token.length).toBeGreaterThanOrEqual(24);
     expect(placed!.ringUrl).toBe(`https://kritva.example.test/api/phone/vobiz/${token}/ring`);
@@ -705,11 +705,11 @@ describe("Phone: outbound calls (Kritva dials the counterparty)", () => {
     expect((await t.placeCall(sessionId, "+919900000000")).json.error).toBe("not_allowed");
     expect((await t.placeCall(sessionId, "12")).json.error).toBe("invalid_number");
     expect((await t.placeCall("ses_missing")).json.error).toBe("session_not_active");
-    const [a, b] = await Promise.all([t.placeCall(sessionId, BUYER, "click-0001"), t.placeCall(sessionId, BUYER, "click-0001")]);
+    const [a, b] = await Promise.all([t.placeCall(sessionId, COUNTERPARTY, "click-0001"), t.placeCall(sessionId, COUNTERPARTY, "click-0001")]);
     expect(a.json.callId).toBe(b.json.callId);
     expect(t.telephony.placed).toHaveLength(1);
     t.telephony.failNext = new Error("down");
-    expect((await t.placeCall(sessionId, BUYER, "click-0002")).status).toBe(502);
+    expect((await t.placeCall(sessionId, COUNTERPARTY, "click-0002")).status).toBe(502);
   });
 
   it("answered: the XML bridges to OpenAI over TLS with the token; the bridged call joins the same session, greets and is recorded as Kritva's call", async () => {
@@ -766,7 +766,7 @@ describe("Phone: outbound calls (Kritva dials the counterparty)", () => {
     expect(other.json.sessionId).not.toBe(sessionId);
   });
 
-  it("the seller can cancel a call that is still ringing", async () => {
+  it("the principal can cancel a call that is still ringing", async () => {
     const t = setup({ outbound: {} });
     const sessionId = await t.newSession();
     const { callId } = (await t.placeCall(sessionId)).json;
