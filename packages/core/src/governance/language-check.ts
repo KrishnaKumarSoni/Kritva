@@ -105,13 +105,25 @@ const OFFER_PHRASE = /^(?:(?:so|well|okay|ok|then|right),?\s+)?(?:i can do|i cou
  * them as the offer is the action itself, never a mismatch or an invented fact.
  */
 /** The same offer in Hindi or Tamil: "मैं <amount> कर सकता हूँ", "நான் <amount> தர முடியும்". */
-const OFFER_PHRASE_INDIC = /^(?:(?:तो|ठीक है|अच्छा|ओके|हाँ|हां),?\s+)?(?:(?:मैं|हम)\s+)?(\S+?)\s+(?:(?:में|पर|तक)\s+)?(?:कर|दे)\s+(?:सकता|सकती|सकते)(?:\s+(?:हूँ|हूं|हैं|है))?$|^(?:நான்|நாங்கள்)\s+(\S+?)\s+(?:க்கு\s+)?(?:தர|கொடுக்க)\s+முடியும்$/u;
-const offerAmount = (text: string) => { const m = OFFER_PHRASE.exec(text) ?? OFFER_PHRASE_INDIC.exec(text); return (m?.[1] ?? m?.[2])?.trim(); };
+/**
+ * The same offer in Hindi, Tamil or typed Hindi: "<amount> में दे सकती हूँ", "मैं <amount> कर सकती हूँ",
+ * "நான் <amount> தர முடியும்", "<amount> mein de sakti hoon". "तक" (up to) is left out on purpose: it
+ * names the furthest Kritva will go, which is a limit, so it stays a concern.
+ */
+const OFFER_PHRASE_INDIC = /^(?:(?:तो|ठीक है|अच्छा|ओके|हाँ|हां),?\s+)?(?:(?:मैं|हम)\s+)?(\S+?)(?:\s+(?:रुपये|रुपए))?\s+(?:(?:में|पर)\s+)?(?:कर|दे)\s+(?:सकता|सकती|सकते)(?:\s+(?:हूँ|हूं|हैं|है))?$|^(?:நான்|நாங்கள்)\s+(\S+?)\s+(?:க்கு\s+)?(?:தர|கொடுக்க)\s+முடியும்$|^(?:(?:to|theek hai|accha|acha|ok|okay|haan),?\s+)?(?:(?:main|mai|hum)\s+)?(\S+?)\s+(?:(?:mein|me|par)\s+)?(?:kar|de)\s+(?:sakti|sakta|sakte)(?:\s+(?:hoon|hu|hun|hain|hai))?$/iu;
+/** The amount an offer sentence puts forward, as a number, or undefined. */
+const offerAmount = (text: string): number | undefined => {
+  const m = OFFER_PHRASE.exec(text) ?? OFFER_PHRASE_INDIC.exec(text);
+  const said = (m?.[1] ?? m?.[2] ?? m?.[3])?.trim();
+  // Only the amount itself (with its currency): "<amount> and deliver it free" adds something, so it is no match.
+  return said && /^\p{Sc}?\s?\d[\d,.]*\s*(?:k|lakh|रुपये|रुपए)?$/iu.test(said) ? findAmounts(said)[0] : undefined;
+};
 
 function flagsOnlyTheOffer(reply: string, quote: string, checkedTerms: string[], move: string | undefined): boolean {
   if (move !== "counter" && move !== "hold") return false;
   const quoted = normalizeForQuoteMatch(quote).replace(/[.!?।]$/u, "");
-  const offered = checkedTerms.map((t) => normalizeForQuoteMatch(t.slice(t.indexOf(": ") + 2)));
+  // By number: the amount with or without its currency sign or word is the same offer.
+  const offered = checkedTerms.flatMap((t) => findAmounts(t.slice(t.indexOf(": ") + 2)));
   // The quote may be just the offer clause of a longer sentence ("..., and I can bring it to X").
   const own = offerAmount(quoted.replace(/^(?:and|but|so|then|लेकिन|पर|ஆனால்),?\s+/u, ""));
   if (own !== undefined && offered.includes(own)) return true;

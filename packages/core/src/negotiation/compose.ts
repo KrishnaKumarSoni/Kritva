@@ -141,6 +141,7 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
   const must: string[] = [];
   if (plan.introduce) must.push(`Introduce yourself once as Kritva, the assistant of ${String(payload.who_you_represent)}, in your first sentence.`);
   if (payload.their_offer && plan.move === "counter") must.push(`Say their offer of ${String(payload.their_offer)} back as theirs first (never call it "noted") and, in that same sentence, say you can't do it; then put your amount to them clearly as your offer, and hand the turn back.`);
+  if (plan.move === "counter" || plan.move === "hold") must.push("Put your offer the way your side says it, as the guide's \"Put an offer the way your side says it\" shows, in the language of your reply.");
   if (plan.move === "compare_terms") must.push("Never repeat the amount of the other option they mention, and never say whether it is a good deal or useful to know.");
   if (input.publicPrincipalName) must.push(`${input.publicPrincipalName} is the person you represent, not the person you are talking to: refer to ${input.publicPrincipalName} by name, never as "he" or "she", and never address them by that name.`);
   else must.push(`Refer to ${String(payload.who_you_represent)} without "he" or "she".`);
