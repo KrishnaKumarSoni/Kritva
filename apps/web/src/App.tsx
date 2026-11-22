@@ -261,7 +261,6 @@ export function App() {
 
       {access && view === "deals" && (
         <BoardPage
-          mandates={mandates}
           onOpen={(id) => {
             setSessionId(id);
             setView("negotiation");

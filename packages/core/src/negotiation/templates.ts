@@ -67,6 +67,7 @@ export function templateReply(view: MandateView, plan: Plan, locale: string, sub
   const budget = n && plan.statedBudget !== undefined ? formatValue(numericValue(n, plan.statedBudget), locale) : null;
   const parts: string[] = [];
   if (plan.introduce) parts.push(introduction(view, publicPrincipalName));
+  if (plan.opening && plan.outbound) return clean([...parts, "I'm calling about your interest in what's on offer. Is now a good time to talk?"].join(" "));
   if (plan.opening) return clean([...parts, "What would you like to discuss?"].join(" "));
   if (plan.acknowledge) parts.push(plan.acknowledge);
   if (plan.listingAvailable === true) parts.push("Yes, it's still available.");

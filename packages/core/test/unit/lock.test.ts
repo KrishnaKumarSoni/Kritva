@@ -113,3 +113,12 @@ describe("the deal lock", () => {
     expect(await groups.start({ mandate, mandateSource: { mandateId: "m_demo", revision: 1 }, entryId: null, via: "listing" })).toMatchObject({ ok: false, code: "concluded" });
   });
 });
+
+describe("a call Kritva places", () => {
+  it("opens by saying who is calling and asking if now is a good time", async () => {
+    const { engine, start } = await setup();
+    const a = await start();
+    const greeted = await engine.greet({ sessionId: a, channel: "voice", outbound: true });
+    expect(greeted.ok && greeted.reply?.text).toMatch(/calling about .*good time to talk\?/);
+  });
+});

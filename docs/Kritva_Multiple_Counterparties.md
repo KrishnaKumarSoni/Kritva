@@ -29,7 +29,7 @@ This work lets one principal run one mandate against several counterparties at t
 
 **Non-goals**
 - Simulated counterparties. Real counterparties only (the user: "we don't have time for simulated").
-- Kritva contacting counterparties first (outbound calls or messages to start a negotiation). The principal sends each counterparty their link. Follow-up calls belong to the approval session.
+- Outbound messages to start a negotiation. (Outbound calls are now in scope: see section 13a. Follow-up calls belong to the approval session.)
 - Several units of one item, or a principal making several deals from one mandate.
 - Finding counterparties. The host or the principal supplies them.
 - Time limits on offers. An offer stays live while its session is open (see section 8).
@@ -212,6 +212,16 @@ Browser calls and phone calls share `RealtimeCall`, so one implementation serves
 - **Start negotiations (console).** For every listed counterparty without a session, start a session under the active revision, linked to their entry, up to the cap. Each gets a private link (`?view=buyer#session=<id>`, today's counterparty page). The principal sends the links themselves. Kritva greets each one when they open it (today's greeting).
 - **The public listing ("Call seller")** and **the console's "New negotiation"** under a saved mandate join the group as walk-ins, within the cap.
 - **A phone call** from a listed number joins that counterparty's session and continues it. A call from any other number is a walk-in, within the cap. Both use the caller number the phone routes already read from the SIP headers. A call for a deal that has concluded hears the same closing news.
+
+### 13a. Kritva calls the counterparties (added 2026-11-22)
+
+The user asked for Kritva to call the numbers the principal provides. The telephony session owns the dialer (Vobiz Make Call, bridged into the same realtime controller); this work owns when to call and what the board shows. The agreed interface (`Dialer` in apps/server/src/group-routes.ts):
+- `call({ sessionId, to, clientRequestId })`, `listForSession(sessionId)`, `hangup(callId)`; a call view with a masked number, state (dialling, ringing, answered, connected, ended) and outcome (completed, no answer, busy, failed, blocked, cancelled).
+- One call belongs to one negotiation session. "Start negotiations" calls every listed counterparty with a phone number; the others get their private link. The board shows each call's state and has a Call button per counterparty. No automatic retries in P0.
+- Numbers stay only on the mandate's counterparty list (operator-only). The dialer keeps them in memory and masks them in logs; the record gets only voice_connection events.
+- An answered call goes through the phone routes' connect(), so break-in and "keep your number" work unchanged, and the engine opens with `greet({ outbound: true })`: who is calling, for whom, about what, and whether now is a good time.
+- When a deal goes elsewhere, calls to the others that are still dialling or ringing are hung up.
+- Open (the user's call): India's Do-Not-Disturb rules need documented consent to be called. Until decided, the dialer's allowlist (KRITVA_PHONE_OUTBOUND_ALLOW) is the only gate.
 
 **Your time used.** The console measures, for each principal action on this group (approve, counter, decline, end, pause, start negotiations, edit the list), the time from when the thing to decide first appeared on screen to the click, and sends it with the action. The server records it as `principal_time`. The header shows the sum. Nothing is counted while the console is closed.
 

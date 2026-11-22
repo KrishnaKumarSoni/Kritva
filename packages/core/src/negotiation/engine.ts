@@ -1394,7 +1394,7 @@ export class NegotiationEngine {
    * itself once as the principal's assistant and invites the counterparty to speak.
    * If Kritva has already spoken in this session, nothing is sent.
    */
-  greet(input: { sessionId: string; channel: Channel }): Promise<{ ok: true; reply: TurnResult["reply"] } | TurnError> {
+  greet(input: { sessionId: string; channel: Channel; /** Kritva placed the call (it rang them). */ outbound?: boolean }): Promise<{ ok: true; reply: TurnResult["reply"] } | TurnError> {
     return this.#serialize(input.sessionId, async () => {
       const ctx = await this.#record.context(input.sessionId);
       if (!ctx.mandate) return { ok: false, code: "session_not_found", message: "The session does not exist." };
@@ -1405,9 +1405,10 @@ export class NegotiationEngine {
       const plan = basePlan("answer", { kind: "answer", reason: "Introduce Kritva at the start of the conversation." }, null);
       plan.introduce = true;
       plan.opening = true;
+      plan.outbound = input.outbound === true;
       const writes = new Writer(this.#record, input.sessionId);
       try {
-        const text = (await this.#speak(writes, this.#drafting(state, plan, [], null, input.channel), agent, "A conversation is starting. Nobody has spoken yet."))?.text ?? null;
+        const text = (await this.#speak(writes, this.#drafting(state, plan, [], null, input.channel), agent, plan.outbound ? "You called them and they just answered. Nobody has spoken yet." : "A conversation is starting. Nobody has spoken yet."))?.text ?? null;
         if (text === null) return { ok: false, code: "invalid_event", message: "The greeting did not pass the outgoing check." };
         const current = projectState(await this.#record.context(input.sessionId));
         if (current.status !== "active" || current.mandateRevision !== state.mandateRevision) return { ok: false, code: "not_pending", message: "The negotiation changed before the greeting was ready." };

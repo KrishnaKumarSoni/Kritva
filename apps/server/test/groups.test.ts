@@ -16,6 +16,7 @@ import {
   type StructuredResponse,
 } from "@kritva/core";
 import { createApp } from "../src/app.ts";
+import { hangUpPending, type CallView, type Dialer } from "../src/group-routes.ts";
 import { loadConfirmedMandates, loadExamples, loadListings } from "../src/main-helpers.ts";
 
 const CASES = resolve(import.meta.dirname, "../../../cases");
@@ -32,7 +33,28 @@ class ScriptedLlm implements StructuredLlm {
   }
 }
 
-export function groupSetup(maxOpen = 3) {
+/** Stands in for the telephony work's dialer: records each call and lets a test move its state. */
+class FakeDialer implements Dialer {
+  readonly calls: CallView[] = [];
+  readonly numbers: string[] = [];
+  readonly hungUp: string[] = [];
+  async call(input: { sessionId: string; to: string; clientRequestId?: string }) {
+    this.numbers.push(input.to);
+    const call: CallView = { callId: `call_${this.calls.length + 1}`, sessionId: input.sessionId, to: "91******2345", state: "ringing", outcome: null, startedAt: new Date().toISOString() };
+    this.calls.push(call);
+    return { ok: true as const, call };
+  }
+  listForSession(sessionId: string) {
+    return this.calls.filter((c) => c.sessionId === sessionId);
+  }
+  async hangup(callId: string) {
+    this.hungUp.push(callId);
+    const c = this.calls.find((x) => x.callId === callId);
+    if (c) Object.assign(c, { state: "ended", outcome: "cancelled" });
+  }
+}
+
+export function groupSetup(maxOpen = 3, dialer: Dialer | null = null) {
   const dir = mkdtempSync(join(tmpdir(), "kritva-groups-"));
   const db = join(dir, "db.sqlite");
   const record = new NegotiationRecord(new SqliteRecordBackend(db));
@@ -44,7 +66,7 @@ export function groupSetup(maxOpen = 3) {
   const groups = new DealGroups(record, { maxOpen });
   const engine = new NegotiationEngine({ record, llm, locale: "en-IN", subjectFacts: new Map([["bed-sale", "fact_f_item"]]), listingDetails: new Map(listings.map((l) => [l.caseId, l])), groups });
   const revisions = new MandateRevisions({ record, engine, mappingLlm: llm });
-  const app = createApp({ record, engine, revisions, mandates, locale: "en-IN", library, examples, listings, groups });
+  const app = createApp({ record, engine, revisions, mandates, locale: "en-IN", library, examples, listings, groups, dialer });
   const call = async (method: string, path: string, body?: unknown) => {
     const res = await app.request(path, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
     const text = await res.text();
@@ -150,5 +172,34 @@ describe("several counterparties: the lock", () => {
     const board = (await call("GET", `/api/operator/library/${mandateId}/board`)).json;
     expect(board.concluded.name).toBe("Ravi");
     expect(board.rows.find((r: { name: string }) => r.name === "Asha").status).toBe("closed_elsewhere");
+  });
+});
+
+describe("several counterparties: Kritva calls them", () => {
+  it("starting negotiations calls everyone with a number, and the board shows each call", async () => {
+    const dialer = new FakeDialer();
+    const { call, mandateId } = groupSetup(3, dialer);
+    await call("POST", `/api/operator/library/${mandateId}/counterparties`, { name: "Ravi", phone: "98450 12345" });
+    await call("POST", `/api/operator/library/${mandateId}/counterparties`, { name: "Asha" });
+    const started = await call("POST", `/api/operator/library/${mandateId}/start`);
+    expect(started.json.calls).toEqual([expect.objectContaining({ ok: true })]);
+    expect(dialer.numbers).toEqual(["9845012345"]);
+    const board = (await call("GET", `/api/operator/library/${mandateId}/board`)).json;
+    expect(board.canCall).toBe(true);
+    const row = (name: string) => board.rows.find((r: { name: string }) => r.name === name);
+    expect(row("Ravi").call).toMatchObject({ state: "ringing", to: "91******2345" });
+    expect(row("Asha").call).toBeNull();
+    // No number ever reaches the board unmasked.
+    expect(JSON.stringify(board)).not.toContain("9845012345");
+  });
+
+  it("calls one counterparty again, and stops unanswered calls when the deal goes elsewhere", async () => {
+    const dialer = new FakeDialer();
+    const { call, mandateId } = groupSetup(3, dialer);
+    const entry = (await call("POST", `/api/operator/library/${mandateId}/counterparties`, { name: "Ravi", phone: "98450 12345" })).json.entry;
+    const again = await call("POST", `/api/operator/library/${mandateId}/counterparties/${entry.id}/call`, { clientRequestId: "again-1" });
+    expect(again.status).toBe(202);
+    await hangUpPending(dialer, again.json.call.sessionId);
+    expect(dialer.hungUp).toEqual([again.json.call.callId]);
   });
 });

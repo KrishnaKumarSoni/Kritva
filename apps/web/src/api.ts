@@ -333,6 +333,8 @@ export interface BoardRowView {
   contact: "asked" | "asked_number" | "kept" | "declined" | null;
   lastActivityAt: string;
   link: string;
+  /** The latest call Kritva placed to them; the number is masked. */
+  call: { callId: string; to: string; state: "dialling" | "ringing" | "answered" | "connected" | "ended"; outcome: null | "completed" | "no_answer" | "busy" | "failed" | "blocked" | "cancelled" } | null;
   approval: {
     requestId: string;
     offerId: string;
@@ -349,6 +351,8 @@ export interface BoardView {
   title: string;
   state: MandateState;
   max: number;
+  /** Kritva can call counterparties' numbers on this server. */
+  canCall: boolean;
   rows: BoardRowView[];
   waiting: Array<{ entryId: string; name: string }>;
   bestSessionId: string | null;
@@ -496,7 +500,8 @@ export const api = {
     counterparties: (mandateId: string) => call<CounterpartyListView>("GET", `/api/operator/library/${mandateId}/counterparties`),
     addCounterparty: (mandateId: string, input: { name: string; phone: string | null }) => call<CounterpartyListView>("POST", `/api/operator/library/${mandateId}/counterparties`, input),
     removeCounterparty: (mandateId: string, entryId: string) => call<CounterpartyListView>("DELETE", `/api/operator/library/${mandateId}/counterparties/${entryId}`),
-    start: (mandateId: string) => call<CounterpartyListView & { started: Array<{ entryId: string; sessionId: string }>; refused: Array<{ entryId: string; message: string }> }>("POST", `/api/operator/library/${mandateId}/start`),
+    start: (mandateId: string) => call<CounterpartyListView & { started: Array<{ entryId: string; sessionId: string }>; refused: Array<{ entryId: string; message: string }>; calls: Array<{ entryId: string; ok: boolean; message: string | null }> }>("POST", `/api/operator/library/${mandateId}/start`),
+    callCounterparty: (mandateId: string, entryId: string) => call<unknown>("POST", `/api/operator/library/${mandateId}/counterparties/${entryId}/call`, { clientRequestId: crypto.randomUUID() }),
     recordTime: (mandateId: string, action: string, sessionId: string | null, ms: number) => call<unknown>("POST", `/api/operator/library/${mandateId}/time`, { action, sessionId, ms }),
   },
 };

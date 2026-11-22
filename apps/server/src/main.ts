@@ -9,6 +9,7 @@ import { OpenAIRealtimeConnector, realtimeSettingsFromEnv } from "./realtime-voi
 import { phoneFromEnv } from "./phone/routes.ts";
 import { loadCaseRuntime, maxCounterparties } from "./main-helpers.ts";
 import { LiveCalls } from "./live-calls.ts";
+import { hangUpPending, type Dialer } from "./group-routes.ts";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
 
@@ -20,6 +21,8 @@ const locale = process.env.KRITVA_LOCALE ?? "en-IN";
 // open negotiations at once, so a mistake can't run up model use (docs/Kritva_Multiple_Counterparties.md).
 const groups = new DealGroups(record, { maxOpen: maxCounterparties(process.env.KRITVA_MAX_COUNTERPARTIES) });
 const liveCalls = new LiveCalls();
+// Kritva calling counterparties (src/phone/outbound.ts) plugs in here when outbound calling is on.
+const dialer: Dialer | null = null;
 const mappingLlm = createMappingLlmFromEnv();
 // Case-level mandates live in their own tables, so they exist before any session starts.
 // The library maps the intake agent's plain-prose brief, which low reasoning effort handles as well as the
@@ -39,7 +42,10 @@ const engine = new NegotiationEngine({
   listingDetails,
   // Several counterparties: the deal group, breaking into live calls, and closing the listing once agreed.
   groups,
-  onSessionClosedElsewhere: (sessionId) => liveCalls.breakIn(sessionId),
+  onSessionClosedElsewhere: (sessionId) => {
+    liveCalls.breakIn(sessionId);
+    void hangUpPending(dialer, sessionId);
+  },
   contactFor: (sessionId) => liveCalls.contactFor(sessionId),
   onDealConcluded: ({ mandateId }) => {
     const closed = library.setLifecycle(mandateId, "closed");
@@ -73,6 +79,7 @@ const app = createApp({
   phone: phoneFromEnv(),
   groups,
   liveCalls,
+  dialer,
 });
 const port = Number(process.env.PORT ?? 8787);
 

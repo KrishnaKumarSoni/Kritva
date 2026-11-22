@@ -77,6 +77,7 @@ export function composeBrief(input: ComposeInput): Record<string, unknown> {
     who_you_represent: (plan.introduce && input.publicPrincipalName) || principalLabel(view),
     introduce: plan.introduce === true,
     opening: plan.opening === true,
+    calling_them: plan.outbound === true,
     open_for_discussion: plan.openForDiscussion === true,
     listing_available: plan.listingAvailable ?? null,
     // The price and the other terms, separately: the guide decides when the price is worth saying again.
@@ -163,7 +164,9 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
     check_with_principal: "Say that this needs a decision from the person you represent, and that you will come back to them.",
   };
   // How it should sound comes first: on a call, warmer and fuller; in chat, friendly and complete.
-  must.unshift(input.channel === "voice" && plan.opening
+  must.unshift(input.channel === "voice" && plan.opening && plan.outbound
+    ? "You placed this call and they just answered. In two short, warm sentences: say you are Kritva, calling for the person you represent about what is offered (a few words from the facts), and ask whether now is a good time to talk. Do not mention the price or terms yet."
+    : input.channel === "voice" && plan.opening
     ? "This is the start of a live voice call. In one or two short, warm sentences, say who you are and invite them to talk. Do not mention the price, terms or other details yet."
     : input.channel === "voice"
     ? `This is a live voice call. Speak like a friendly person on the phone: two to four natural sentences. Acknowledge what they said or how they feel, give the answer or move, and if it fits end with one short, friendly line that keeps the conversation open. Do not repeat details you already gave, do not add terms or facts they did not ask about, and promise nothing (no holding, reserving or checking back unless the brief says so). Say places in full and never read terms as a list. Reply in ${languageName(input.language) ?? "the language of their latest message"}, in that language's own script (Hindi in Devanagari, never Urdu script; Tamil in Tamil script), and write every amount in digits with its currency symbol, never in words.`

@@ -45,7 +45,7 @@ import {
   type ValidConfirmedMandate,
   type DealGroups,
 } from "@kritva/core";
-import { registerGroupRoutes, startNegotiation } from "./group-routes.ts";
+import { registerGroupRoutes, startNegotiation, type Dialer } from "./group-routes.ts";
 import type { LiveCalls } from "./live-calls.ts";
 
 export interface MandateEntry {
@@ -81,6 +81,8 @@ export interface AppDeps {
   groups?: DealGroups | null;
   /** Voice calls connected now (browser and phone), shared with the engine's break-in callback. */
   liveCalls?: LiveCalls | null;
+  /** Kritva calling counterparties' numbers (src/phone/outbound.ts). Off when absent. */
+  dialer?: Dialer | null;
 }
 
 export function createApp(deps: AppDeps): Hono {
@@ -109,7 +111,7 @@ export function createApp(deps: AppDeps): Hono {
   }
 
   if (deps.library) registerLibraryRoutes(app, { library: deps.library, record, engine, locale, examples: deps.examples ?? [], protectedIds: (deps.listings ?? []).map((l) => l.libraryId), groups: deps.groups ?? null });
-  if (deps.library && deps.groups) registerGroupRoutes(app, { record, library: deps.library, groups: deps.groups, locale, liveCalls: deps.liveCalls ? () => deps.liveCalls!.sessions() : undefined });
+  if (deps.library && deps.groups) registerGroupRoutes(app, { record, library: deps.library, groups: deps.groups, locale, liveCalls: deps.liveCalls ? () => deps.liveCalls!.sessions() : undefined, dialer: deps.dialer ?? null });
   if (deps.library && deps.intake) registerIntakeRoutes(app, { intake: deps.intake, library: deps.library, record, engine, locale });
   registerVoiceRoutes(app, {
     record,

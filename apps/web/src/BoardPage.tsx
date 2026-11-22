@@ -6,7 +6,7 @@
  */
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { api, ApiError, type BoardRowView, type BoardView, type CounterpartyListView, type MandateOption } from "./api.ts";
+import { api, ApiError, type BoardRowView, type BoardView, type CounterpartyListView, type LibrarySummary } from "./api.ts";
 import { AlertIcon, CheckIcon, ClockIcon, CopyIcon, PhoneIcon, PlusIcon, StarIcon, TrashIcon } from "./icons.tsx";
 import { Select } from "./Select.tsx";
 
@@ -15,8 +15,6 @@ const spring = { type: "spring", duration: 0.35, bounce: 0 } as const;
 const iconSpring = { type: "spring", duration: 0.3, bounce: 0 } as const;
 
 interface Props {
-  /** Live saved mandates (from the console's mandate list); only "library:" ones have a board. */
-  mandates: MandateOption[];
   /** Opens one counterparty's negotiation in the console. */
   onOpen: (sessionId: string) => void;
 }
@@ -34,6 +32,15 @@ const STATUS: Record<BoardRowView["status"], { label: string; tone: "live" | "wa
 
 const CHANNEL: Record<BoardRowView["channel"], string> = { none: "Link sent", chat: "Chat", browser_call: "Browser call", phone: "Phone" };
 
+/** What the latest call Kritva placed to them is doing, in plain words. */
+function callLabel(call: NonNullable<BoardRowView["call"]>): string {
+  if (call.state === "dialling") return "Calling…";
+  if (call.state === "ringing") return "Ringing…";
+  if (call.state !== "ended") return "On the call";
+  const ended: Record<string, string> = { completed: "Call ended", no_answer: "No answer", busy: "Busy", failed: "Call failed", blocked: "Call blocked", cancelled: "Call stopped" };
+  return ended[call.outcome ?? "completed"] ?? "Call ended";
+}
+
 function formatTime(ms: number): string {
   const s = Math.round(ms / 1000);
   if (s < 60) return `${s} s`;
@@ -41,9 +48,20 @@ function formatTime(ms: number): string {
   return s % 60 === 0 ? `${m} min` : `${m} min ${s % 60} s`;
 }
 
-export function BoardPage({ mandates, onOpen }: Props) {
-  const deals = mandates.filter((m) => m.id.startsWith("library:"));
-  const [mandateId, setMandateId] = useState<string | null>(deals[0]?.id ?? null);
+const ORDER: Record<string, number> = { live: 0, paused: 1, closed: 2 };
+
+export function BoardPage({ onOpen }: Props) {
+  // Every confirmed saved mandate has a deal board: live ones first, then paused, then closed (an
+  // agreed deal closes its mandate, and its board stays here to show the outcome).
+  const [saved, setSaved] = useState<LibrarySummary[] | null>(null);
+  useEffect(() => {
+    api.library.list().then(setSaved, () => setSaved([]));
+  }, []);
+  const deals = (saved ?? [])
+    .filter((m) => m.activeRevision !== null && m.state !== "draft")
+    .sort((a, b) => (ORDER[a.state] ?? 3) - (ORDER[b.state] ?? 3))
+    .map((m) => ({ id: `library:${m.mandateId}`, title: m.title, state: m.state }));
+  const [mandateId, setMandateId] = useState<string | null>(null);
   const [board, setBoard] = useState<BoardView | null>(null);
   const [list, setList] = useState<CounterpartyListView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -55,9 +73,11 @@ export function BoardPage({ mandates, onOpen }: Props) {
   /** When each decision first appeared on screen, for "your time used". */
   const shownAt = useRef(new Map<string, number>());
 
+  const firstDeal = deals[0]?.id ?? null;
+  const known = deals.some((d) => d.id === mandateId);
   useEffect(() => {
-    if (!mandateId || !deals.some((d) => d.id === mandateId)) setMandateId(deals[0]?.id ?? null);
-  }, [deals, mandateId]);
+    if (!known) setMandateId(firstDeal);
+  }, [known, firstDeal]);
 
   const refresh = useCallback(async () => {
     const id = current.current;
@@ -111,7 +131,7 @@ export function BoardPage({ mandates, onOpen }: Props) {
   const approvals = (board?.rows ?? []).filter((r) => r.approval);
   for (const r of approvals) timed(`approval:${r.approval!.requestId}`);
 
-  if (deals.length === 0) {
+  if (saved !== null && deals.length === 0) {
     return (
       <main className="board-page">
         <section className="panel board-empty">
@@ -142,7 +162,7 @@ export function BoardPage({ mandates, onOpen }: Props) {
           </p>
         </div>
         <div className="board-actions">
-          {deals.length > 1 && <Select label="Deal" value={mandateId} options={deals.map((d) => ({ value: d.id, label: d.title }))} onChange={setMandateId} />}
+          {deals.length > 1 && <Select label="Deal" value={mandateId} options={deals.map((d) => ({ value: d.id, label: d.title, description: d.state === "live" ? "Live" : d.state === "paused" ? "Paused" : "Closed" }))} onChange={setMandateId} />}
           <button
             type="button"
             className="button button-accent"
@@ -255,6 +275,7 @@ function Row({ row, winner, reduced, onOpen }: { row: BoardRowView; winner: stri
           {row.channel === "phone" && <PhoneIcon width={14} height={14} aria-hidden="true" />}
           {CHANNEL[row.channel]}
           {row.live && <span className="board-live">Live now</span>}
+          {!row.live && row.call && <span className={row.call.state === "ended" ? undefined : "board-live"}>{callLabel(row.call)}</span>}
         </span>
       </span>
       <span className={`pill pill-${status.tone}`}>
@@ -320,7 +341,7 @@ function CounterpartyList({ mandateId, list, board, busy, onChange, act }: {
       <div className="panel-header">
         <div>
           <h2 id="people-title" className="panel-title">Your counterparties</h2>
-          <p className="panel-subtitle">{list ? `${list.entries.length} of ${list.max}. Each gets a private link; a call from their number continues their negotiation.` : "Loading…"}</p>
+          <p className="panel-subtitle">{list ? `${list.entries.length} of ${list.max}. ${board?.canCall ? "Kritva calls everyone with a number when you start; the others get a private link." : "Each gets a private link; a call from their number continues their negotiation."}` : "Loading…"}</p>
         </div>
       </div>
       <ul className="people-list">
@@ -330,6 +351,12 @@ function CounterpartyList({ mandateId, list, board, busy, onChange, act }: {
               <span className="board-name">{e.name}</span>
               <span className="board-meta">{e.phone ? `Phone ···${e.phone.slice(-4)}` : "No phone"}{e.open ? " · negotiating" : e.sessionId ? " · finished" : ""}</span>
             </span>
+            {board?.canCall && e.phone && !board.concluded && (
+              <button type="button" className="button button-ghost button-small" disabled={busy === `call:${e.id}`} onClick={() => void act(`call:${e.id}`, () => api.deals.callCounterparty(mandateId, e.id), { action: "call", sessionId: e.sessionId })} aria-label={`Call ${e.name}`}>
+                <PhoneIcon width={14} height={14} />
+                Call
+              </button>
+            )}
             {e.sessionId && (
               <button type="button" className="button button-ghost button-small" onClick={() => void copy(e.sessionId!)} aria-label={`Copy ${e.name}'s link`}>
                 {copied === e.sessionId ? <CheckIcon width={14} height={14} /> : <CopyIcon width={14} height={14} />}

@@ -124,6 +124,8 @@ export interface Plan {
   introduce?: boolean;
   /** Starts a conversation before the counterparty has spoken. */
   opening?: boolean;
+  /** Kritva placed this call to them (an outbound call), so it says why it is calling. */
+  outbound?: boolean;
   /** An explicit principal approval is on record for these terms. */
   approvalGranted?: boolean;
   /** How many replies the agent has sent before this one; varies fallback wording. */
