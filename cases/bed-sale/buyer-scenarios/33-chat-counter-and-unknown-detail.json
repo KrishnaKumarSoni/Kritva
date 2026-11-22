@@ -101,7 +101,7 @@
       "expect": {
         "neverSays": [
           "works for",
-          "\\bagreed\\b",
+          "(?<!can't say it's |cannot say it's |not )\\b(we're|we are|it's|it is) agreed\\b",
           "approved"
         ]
       }

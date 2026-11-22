@@ -89,7 +89,8 @@ Two function tools. Each tool's description carries the rules for using it, so t
 
 | Text | Place | Why |
 | --- | --- | --- |
-| Role, conversation judgement, voice, hard rules, brief semantics | Agent instructions | True on every turn and every move |
+| Role, the turn protocol, brief semantics and limits | Agent instructions | True on every turn and every move |
+| How Kritva talks: tone, the price and other terms, questions, each move | `packages/core/src/negotiation/conversation-guide.md`, plain text, placed in the instructions | Editable without code; never moves a limit |
 | How to read a message into the schema | `read_message` description and parameter schema | Describes that tool's input |
 | What happened this turn and what may be said | `read_message` result (the brief) | Changes every turn, computed by code |
 | Why a draft failed | `send_reply` result | Feedback the agent acts on |
@@ -122,8 +123,12 @@ Code-started replies (greeting, approval responses, principal ending, exception 
 | How to say the permitted move | The move, every amount, every term |
 | How to answer a question from public facts | Which facts are public |
 | How to word the suggested question | Which question objective is open, and asking it once |
-| How to fix a rejected draft | Whether a draft passes |
+| How to fix a rejected draft | Whether a draft passes a hard limit |
 | | Every record event, approval and agreement |
+
+**Hard limits and style.** Code enforces only limits: which amounts may appear (never private, never past the limit, never a figure the move does not allow), commitments (no agreement or approval the record does not hold, an offer carries its amount and conditions, the exact read-back), private content, and the reviewer's findings of disclosure, invented facts, competition, deadlines or promises. A draft that breaks one is rewritten once, then replaced by checked wording. Everything about how a reply sounds (repeating a sentence or opener, a fragment, an unasked question, not acknowledging their figure, not answering the turn) is a style note: the writer is asked once for a better reply, and the rewrite is sent as written. Style never forces the checked fallback; the conversation guide is what shapes it.
+
+**The price and the other terms.** The brief gives the price (current, original, and whether the last reply said it) separately from the other terms. The guide says when the price is worth saying again; code no longer requires it in every reply.
 
 ## 6. Testing and evaluation
 

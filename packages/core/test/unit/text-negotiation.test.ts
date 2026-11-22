@@ -11,6 +11,7 @@ import { projectState } from "../../src/negotiation/state.ts";
 import type { OfferTerm, PayloadOf } from "../../src/record/events.ts";
 import type { FulfillmentTerms } from "../../src/negotiation/interpret.ts";
 import { parseGuidance } from "../../src/strategy/guidance.ts";
+import { findAmounts } from "../../src/negotiation/reply-check.ts";
 import { buildMandate, conditionalMandate, exceptionMandate, listingOnlyDeliveryMandate, noExceptionMandate } from "../support/mandates.ts";
 import { openRecord } from "../support/record.ts";
 
@@ -103,7 +104,8 @@ describe("Epic 9, Story 1: buyer messages go through the core", () => {
       const turn = await say(quote, {
         intent: "question", price_concern: "objection", public_term_questions: [{ term_id: "term_price", basis: "current", quote }],
       });
-      expect(turn.reply!.text).toContain("₹19,000");
+      // The position holds at ₹19,000; the price is not restated when the last reply already said it.
+      expect(findAmounts(turn.reply!.text).every((amount) => amount === 19_000)).toBe(true);
       expect(turn.reply!.offerIds).toEqual([]);
       expect(turn.events.find((event) => event.type === "decision")?.payload).toMatchObject({ kind: "hold", interpretation: { pressure: "lowest_price", asksPrivateInfo: false } });
     }
@@ -371,9 +373,9 @@ describe("Humane conversation guide", () => {
   it("a composed reply never carries an em or en dash", async () => {
     const { say } = await setup(listingOnlyDeliveryMandate());
     await say("Hi.", { intent: "greeting" });
-    const t = await say("₹15,000.", offer(15_000), { composed: "Thanks for that — I could do ₹18,000 – would that work?" });
+    const t = await say("₹15,000.", offer(15_000), { composed: "Thanks for the ₹15,000 — I could do ₹18,000 – would that work?" });
     expect(t.reply!.text).not.toMatch(/[\u2014\u2013]/);
-    expect(t.reply!.text).toBe("Thanks for that, I could do ₹18,000, would that work?");
+    expect(t.reply!.text).toBe("Thanks for the ₹15,000, I could do ₹18,000, would that work?");
   });
 
   it("internal vocabulary in a composed reply is blocked and replaced by checked wording", async () => {
@@ -541,7 +543,8 @@ describe("Current-turn negotiation regressions", () => {
     });
     expect(result.reply?.text).toMatch(/concern.*price.*budget/i);
     expect(result.reply?.text).not.toMatch(/still available/);
-    expect(result.events.some((event) => event.type === "reply_blocked")).toBe(true);
+    // Not answering the turn is a conversation-quality note: the writer is asked for a rewrite, nothing is recorded as blocked.
+    expect(result.events.some((event) => event.type === "reply_blocked")).toBe(false);
   });
 });
 
@@ -618,7 +621,7 @@ describe("Reviewer accuracy and repeated invitations", () => {
     expect(budget.reply?.text).toBe(`Noted, you've said your ceiling is ₹18,000. ${question}`);
     for (const quote of ["What’s the best you could do?", "Can you go any lower than that?"]) {
       const turn = await say(quote, { intent: "question", price_concern: "objection", public_term_questions: [{ term_id: "term_price", basis: "current", quote }] });
-      expect(turn.reply?.text).toContain("₹19,000");
+      expect(findAmounts(turn.reply!.text).every((amount) => amount === 19_000)).toBe(true);
       expect(turn.reply?.text).not.toMatch(/firm offer|make an offer/i);
       expect(JSON.parse(llm.seen.findLast((request) => request.purpose === "compose_reply")!.messages[0]!.content).offer_invited_recently).toBe(true);
     }
@@ -1010,6 +1013,42 @@ describe("A budget below the price keeps the negotiation moving (reported chat, 
     const decision = turn.events.findLast((e) => e.type === "decision")?.payload as { interpretation?: unknown; action?: string };
     const extracted = turn.events.find((e) => e.type === "offer_extracted")?.payload as { conditions: string[] };
     expect(extracted.conditions.length > 0, String(decision?.action)).toBe(stays);
+  });
+});
+
+describe("Code keeps limits; the conversation guide shapes the wording", () => {
+  const briefOf = (llm: { seen: StructuredRequest[] }) => JSON.parse(llm.seen.findLast((r) => r.purpose === "compose_reply")!.messages[0]!.content);
+
+  it("the brief gives the price and the other terms separately, and whether the last reply already said the price", async () => {
+    const { say, llm } = await setup(listingOnlyDeliveryMandate(18_000));
+    await say("₹17,000.", offer(17_000), { composed: "Thanks for the offer. I can do ₹18,500." });
+    await say("Can you do better?", { intent: "request_change", pressure: "lowest_price" });
+    const brief = briefOf(llm);
+    expect(brief.price).toMatchObject({ original: "₹20,000", said_in_your_last_reply: true });
+    expect(brief.other_terms.map((t: { term: string }) => t.term)).not.toContain("price");
+    expect(brief).not.toHaveProperty("public_deal_terms");
+    expect(brief.must.join(" ")).toMatch(/do not repeat the number/);
+    expect(brief.must.join(" ")).not.toMatch(/Mention the current asking amount/);
+  });
+
+  it("restating the price already put to them is never blocked as an unplanned amount", async () => {
+    const { say, events } = await setup(listingOnlyDeliveryMandate(18_000));
+    await say("₹17,000.", offer(17_000));
+    const counter = priceOf(((await events()).findLast((e) => e.type === "offer_proposed")!.payload as { terms: OfferTerm[] }).terms);
+    const line = `It's still at ₹${counter.toLocaleString("en-IN")} for now. Happy to look at a firm offer from you.`;
+    const turn = await say("Hmm, okay. What does it include?", { intent: "question" }, { composed: line });
+    expect(turn.reply?.text).toBe(line);
+    expect((await events()).filter((e) => e.type === "reply_blocked")).toHaveLength(0);
+  });
+
+  it("a style problem asks for one rewrite; a rewrite that still has one is sent, never replaced by the checked fallback", async () => {
+    const { say, events } = await setup(listingOnlyDeliveryMandate(18_000));
+    await say("Hi", { intent: "greeting" }, { composed: "Hi, I'm Kritva, the seller's assistant. What can I help you with today?" });
+    const second = "Happy to help with that. It's a solid piece, kept with care. What can I help you with today?";
+    const turn = await say("Tell me more.", { intent: "question" }, { composed: ["Sure. What can I help you with today?", second] });
+    // Both drafts repeat an earlier sentence (style); the second is still sent as written.
+    expect(turn.reply?.text).toBe(second);
+    expect((await events()).filter((e) => e.type === "reply_blocked")).toHaveLength(0);
   });
 });
 

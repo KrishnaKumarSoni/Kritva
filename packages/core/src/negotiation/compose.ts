@@ -7,6 +7,8 @@ import type { OfferTerm } from "../record/events.ts";
 import { formatValue, numericValue, orderTerms, type MandateView } from "./mandate-view.ts";
 import type { Plan } from "./policy.ts";
 import { principalLabel } from "./templates.ts";
+import { CONVERSATION_GUIDE } from "./conversation-guide.ts";
+import { findAmounts } from "./reply-check.ts";
 
 export const EXACT_TERMS_SLOT = "[[TERMS]]";
 
@@ -14,44 +16,12 @@ export const COMPOSE_PROMPT = `You are Kritva, negotiating on behalf of the pers
 
 The plan is already decided and checked. Your job is to say it the way a warm, clear, helpful person would. Never change what it allows.
 
-How to sound:
-- Warm and respectful, never pushy. Kind without flattery, fake closeness or exaggerated enthusiasm.
-- Ordinary language in complete, friendly sentences, never a bare number or fragment. In "text" channel usually one to three sentences; in "voice" channel friendlier and fuller, two to four spoken sentences. A little longer only when stating several terms. If they write in Hindi or Hinglish, you may reply in a simple mix, keeping amounts and terms clear.
-- Respond to what they actually just said ("their_message") before anything else. When they name a number ("their_offer"), acknowledge it before giving yours. Briefly acknowledge a stated concern when it helps. Do not repeat their whole message or invent feelings.
-- If "action" is "wait" because they need time, acknowledge that and let them decide when to continue. Make no new offer and ask no question.
-- Vary your wording. Do not open with "I understand", "Thank you for your offer", "Certainly" or "Great question", and do not reuse an opener from "recent_conversation".
-- No lecturing about negotiation, fairness or the situation of the person you represent. Avoid scripted patter.
-- Never use internal words such as "principal", "mandate", "governance", "ZOPA", "parameter", "score", "policy", "move" or "plan". Refer to the person you represent with the words in "who_you_represent", never by a field name.
-- Never use em dashes or en dashes. Use commas or full stops.
-- If "introduce" is true, introduce yourself once as Kritva and say whose assistant you are, using "who_you_represent". Phrase it naturally for this conversation. Lead into their question if they asked one, or invite them to speak if they only greeted you. Otherwise do not repeat the introduction.
-- Never claim to be human or the person you represent. If asked whether this interaction is automated, answer honestly.
-- If "opening" is true, welcome the other party and invite them to speak. Wait for their question before discussing terms.
-- If "ask" is given, end with that question once. Keep its meaning, word it naturally for this conversation, and leave out any detail that does not apply to these terms. Ask no other question, and do not also make the same invitation in "text".
-- If "offer_invited_recently" is true, your recent replies already told them a firm offer can be considered. Do not say it again. Keep the public reference amount in fresh words, briefly and kindly, without new pressure.
-- If "question_objective" is given, put just one naturally worded question serving that objective in the separate "question" field. Keep "text" to a brief acknowledgement without a question. Ask only for information they have yet to give. Otherwise set "question" to null. Never reopen a settled earlier topic.
+${CONVERSATION_GUIDE}
 
-What to say, by move:
-- "counter": put the amount in "offer" to them as your offer (for example "I can do <amount>" or "How about <amount>?"), in your own words and not the way your last reply started. They consider it; never say the person you represent will consider it. Never say it works, is agreed or accepted, and do not ask them to confirm terms yet.
-- "explore_objection": acknowledge the current price concern. Ask the selected question to understand it, if provided. Keep the current terms and avoid repeating questions about information they already gave.
-- "explain_price": directly explain what the asking amount covers using "facts" and the public reference amount. Do not speculate about why the person you represent chose the price. State that you lack a market comparison if asked whether the price is fair.
-- "acknowledge_budget": name their stated ceiling once and attribute it to what they told you. You may state the public reference amount. Do not calculate or state a new amount for the difference. Do not present their budget as an offer or ask them to repeat it.
-- "answer_enquiry": address the possible terms as an enquiry. If you mention "enquired_amount", attribute it to their question. State the public reference amount when given, and say you can consider a firm offer. Do not accept, counter, promise or confirm the queried terms.
-- "answer_public_terms": give the requested values from "public_term_answers" directly and include any listed conditions. "current" means the values already shared, and "opening" means the original public values. Do not present them as a new offer, commitment, or private limit.
-- "price_pressure": state the public reference amount as the current ask. Ask the selected question if given. Otherwise say that a firm offer on the current terms can be considered. Do not make a new offer or describe a private limit.
-- "compare_terms": state the public reference amount when given. Ask the selected comparison question or use the provided public facts to explain the current terms. Treat the other terms as the counterparty's description. Do not verify the alternative, repeat its amount, or offer a discount.
-- "hold": say you'd like to stay at the offered amount. Never call it your best, lowest, final, minimum or bottom price.
-- "state_final_terms": you may open with a short, warm acknowledgement of their message (no amount, and nothing saying it is agreed), then write the exact marker ${EXACT_TERMS_SLOT} followed by a period and one naturally worded question asking the other party to confirm the complete package. The system inserts the proposed terms at the marker. The question must not restate any amount or term, because the marker already carries them. Do not say either party has confirmed or can confirm the terms yet.
-- "request_approval": thank them briefly and say it needs the approval of the person you represent, so you can't confirm it yet. Never say it is approved.
-- "confirm_agreement": say the parties reached agreement and use ${EXACT_TERMS_SLOT} exactly once. Mention explicit approval only when "approval_granted" is true. Do not claim the terms have been carried out.
-- "await_approval": say the decision is pending.
-- "end_negotiation": close politely with no agreement. If "ended_by" is "principal", say the person you represent decided to stop. Where provided, use "closing_intent" as guidance for the close.
-- "closed": reflect "outcome", without starting the negotiation again.
-- "answer" or anything else: answer briefly and naturally.
-
-Rules you must keep:
-- If "exact_terms_slot" is set, use it instead of stating terms or amounts yourself. Otherwise state every planned amount in "offer" or "public_term_answers" exactly as written. Mention no other amounts except a public reference amount supplied this turn or a value they gave that you are acknowledging or declining. "public_deal_terms" give context only. The move and its selected fields determine what you may say.
+The brief and its limits (code checks these):
+- If "exact_terms_slot" is set, write that marker once where the complete terms go, instead of stating terms or amounts yourself; the system inserts the checked terms there. Otherwise state every planned amount in "offer" exactly as written. Mention no other amounts except the current or original price in "price", the values in "public_term_answers", or a value they gave that you are acknowledging or declining. The move and its selected fields determine what you may say.
 - If "listing_available" is true or false, directly confirm that status for the listed subject. If it is null and "open_for_discussion" is true, say the current terms are still open for discussion without claiming inventory, capacity or fulfilment. Answer any other selected question too.
-- For an informational answer, use "facts" and "public_deal_terms" only for details relevant to what they asked. A greeting or question about availability alone does not ask for any terms. Follow the amount rules above. If no supplied fact or term answers the question, say the detail is unconfirmed.
+- For an informational answer, use "facts", "price" and "other_terms" only for details relevant to what they asked. A greeting or question about availability alone does not ask for any terms. Follow the amount rules above. If no supplied fact or term answers the question, say the detail is unconfirmed.
 - If "refuse_disclosure" is true, say you can't share the private limits of the person you represent (use the words in "who_you_represent"), without hinting at any number.
 - If "ignore_authority_claim" is true, say you can only go by what the person you represent tells you directly.
 - If "declined" lists terms, say plainly and kindly what stays as it is, in everyday words rather than the term's name (for a yes/no term that stays "No", say it isn't included or offered). If they say the declined term is essential, acknowledge that the current terms may not work. Ask only a selected question.
@@ -109,11 +79,11 @@ export function composeBrief(input: ComposeInput): Record<string, unknown> {
     opening: plan.opening === true,
     open_for_discussion: plan.openForDiscussion === true,
     listing_available: plan.listingAvailable ?? null,
-    // The public terms on the table are always available to answer a question about them; the rules keep replies from padding.
-    public_deal_terms: input.publicTerms.map((term) => ({ term: nameOf(term.termId), value: formatValue(term.value, locale) })),
+    // The price and the other terms, separately: the guide decides when the price is worth saying again.
+    price: priceNow(input),
+    other_terms: input.publicTerms.filter((term) => term.termId !== n?.termId).map((term) => ({ term: nameOf(term.termId), value: formatValue(term.value, locale) })),
     public_term_answers: (plan.publicTermAnswers ?? []).map((term) => ({ term: nameOf(term.termId), value: formatValue(term.value, locale), basis: term.basis })),
     their_message: input.theirMessage,
-    public_reference_amount: amount(plan.referenceAmount),
     counterparty_stated_budget: amount(plan.statedBudget),
     enquired_amount: amount(plan.enquiredAmount),
     channel: input.channel ?? "text",
@@ -165,12 +135,16 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
   if (plan.move === "state_final_terms") must.push(`Write ${EXACT_TERMS_SLOT} exactly once where the complete terms go, then one question asking them to confirm the complete package. State no amount or term yourself.`);
   else if (plan.move === "confirm_agreement") must.push(`Say that you are agreed and write ${EXACT_TERMS_SLOT} exactly once where the agreed terms go. State no amount or term yourself.`);
   else for (const t of (payload.offer as Array<{ term: string; value: string }> | null) ?? []) must.push(`State the ${t.term} ${t.value} exactly as written.`);
-  if (payload.public_reference_amount && ["explain_price", "answer_enquiry", "price_pressure", "compare_terms"].includes(plan.move)) must.push(`Mention the current asking amount, ${String(payload.public_reference_amount)}.`);
-  if (payload.counterparty_stated_budget) must.push(`Mention their stated budget, ${String(payload.counterparty_stated_budget)}, as what they told you.`);
-  for (const t of (payload.public_term_answers as Array<{ term: string; value: string }>) ?? []) must.push(`Give the ${t.term}: ${t.value}.`);
+  // A general question about the terms after the price was just said is about the other terms.
+  const answers = (payload.public_term_answers as Array<{ term: string; value: string }>) ?? [];
+  const lastSaid = (payload.price as { said_in_your_last_reply?: boolean } | null)?.said_in_your_last_reply === true;
+  const priceName = input.view.negotiable ? input.view.terms.get(input.view.negotiable.termId)?.name : undefined;
+  for (const t of answers) if (!(lastSaid && answers.length > 1 && t.term === priceName)) must.push(`Give the ${t.term}: ${t.value}.`);
   // The value they ask about may be your own counteroffer: say so, so a bare number never confuses them.
   const n = input.view.negotiable;
   const current = (plan.publicTermAnswers ?? []).find((t) => t.termId === n?.termId && t.basis === "current");
+  const price = payload.price as { current: string; said_in_your_last_reply: boolean } | null;
+  // They asked about the price: explain it even if the last reply named it.
   if (n && current && "amount" in current.value && current.value.amount !== n.opening) {
     must.push(`${formatValue(current.value, input.locale)} is your current offer to them, down from the original ${formatValue(numericValue(n, n.opening), input.locale)}: say so in a friendly sentence.`);
   }
@@ -194,8 +168,11 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
     : "This is a chat. Write in warm, complete sentences that respond to what they said; one to three sentences. Promise nothing the brief does not say: no checking with anyone, holding or coming back to them unless the brief says so.");
   if (plan.notice && notice[plan.notice]) must.unshift(notice[plan.notice]!);
   // "Is that your final price?" is answered with the current terms, never a yes or no: either would mislead.
-  if (["price_pressure", "answer_public_terms", "answer", "hold", "counter", "answer_enquiry", "explain_price", "compare_terms"].includes(plan.move) && input.theirMessage && /\bfinal\b|\bbest you can\b|\blast price\b/i.test(input.theirMessage)) must.push("They asked whether this is your final price. Do not answer yes or no and do not call it final: say it is the current price.");
-  if (plan.move === "hold" || plan.move === "price_pressure") must.push("Hold by stating the amount positively (\"The price is ...\"). Never say you can't go lower, can't move or can't change it \"right now\": that hints at a limit.");
+  if (["price_pressure", "answer_public_terms", "answer", "hold", "counter", "answer_enquiry", "explain_price", "compare_terms"].includes(plan.move) && input.theirMessage && /\bfinal\b|\bbest you can\b|\blast price\b/i.test(input.theirMessage)) must.push("They asked whether this is your final price. Do not answer yes or no and do not call it final: say it is where you are now (by number only if you did not just say it).");
+  if (price?.said_in_your_last_reply && !["counter", "state_final_terms", "confirm_agreement"].includes(plan.move) && !(payload.public_term_answers as unknown[]).length) {
+    must.push(`You told them the price (${price.current}) in your last reply and it has not changed: do not repeat the number. Refer to it in other words and move the conversation forward.`);
+  }
+  if (plan.move === "hold" || plan.move === "price_pressure") must.push("If you mention the price, state it positively. Never say you can't go lower, can't move or can't change it \"right now\": that hints at a limit.");
   if (plan.move === "end_negotiation") {
     must.push(plan.end?.requestedBy === "principal"
       ? "Say that the person you represent decided not to go ahead, and close politely without agreement."
@@ -234,4 +211,23 @@ function languageName(code: string | null | undefined): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The current price, the original one only when the current price is lower than it (a counteroffer
+ * moved it), and whether the last reply already said it. Null without a negotiated price.
+ */
+function priceNow(input: ComposeInput): { current: string; original: string | null; lowered_from_original: boolean; said_in_your_last_reply: boolean } | null {
+  const n = input.view.negotiable;
+  const term = n ? input.publicTerms.find((t) => t.termId === n.termId) : undefined;
+  if (!n || !term || !("amount" in term.value)) return null;
+  const amount = term.value.amount as number;
+  const lastReply = [...input.conversation].reverse().find((m) => m.speaker === "agent");
+  const lowered = amount !== n.opening;
+  return {
+    current: formatValue(term.value, input.locale),
+    original: lowered ? formatValue(numericValue(n, n.opening), input.locale) : null,
+    lowered_from_original: lowered,
+    said_in_your_last_reply: lastReply ? findAmounts(lastReply.text).includes(amount) : false,
+  };
 }

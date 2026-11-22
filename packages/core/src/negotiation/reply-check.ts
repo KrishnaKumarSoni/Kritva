@@ -17,7 +17,8 @@ import type { MandateView } from "./mandate-view.ts";
 import type { Plan } from "./policy.ts";
 
 export interface ReplyViolation {
-  rule: "private_amount" | "unplanned_amount" | "crosses_limit" | "missing_offer" | "missing_condition" | "false_commitment" | "private_text" | "internal_term" | "action_mismatch";
+  /** "style" is a conversation-quality note from the draft review, never a limit. */
+  rule: "private_amount" | "unplanned_amount" | "crosses_limit" | "missing_offer" | "missing_condition" | "false_commitment" | "private_text" | "internal_term" | "action_mismatch" | "style";
   detail: string;
 }
 
@@ -26,6 +27,8 @@ export interface CheckContext {
   plan: Plan;
   /** Amounts the counterparty itself stated in this session. */
   counterpartyAmounts: number[];
+  /** Amounts the agent already put to the counterparty (its asks so far): already theirs to hear again. */
+  statedAmounts?: number[];
 }
 
 const DECLINE_CUE = /\b(can'?t|cannot|can not|won'?t|unable|not able|too low|too high|not possible|isn'?t|is not|no\b|decline|don'?t|do not|below|under|above|over|beyond)\b/i;
@@ -51,13 +54,14 @@ export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
   const offered = plannedAmounts(plan);
   const publicAmounts = view.defaultPackage.flatMap((t) => ("amount" in t.value ? [t.value.amount as number] : []));
   const citedAmounts = (plan.publicTermAnswers ?? []).flatMap((t) => ("amount" in t.value ? [t.value.amount] : []));
-  const allowed = new Set([...offered, ...publicAmounts, ...citedAmounts, ...ctx.counterpartyAmounts, plan.referenceAmount]);
+  const stated = ctx.statedAmounts ?? [];
+  const allowed = new Set([...offered, ...publicAmounts, ...citedAmounts, ...ctx.counterpartyAmounts, ...stated, plan.referenceAmount]);
 
   for (const sentence of sentences) {
     for (const amount of findAmounts(sentence)) {
       if (amount === plan.statedBudget && QUOTE_CUE.test(sentence)) continue;
       // Repeating the counterparty's own number reveals nothing; any other private value does.
-      if (view.privateAmounts.includes(amount) && !offered.includes(amount) && !ctx.counterpartyAmounts.includes(amount) && !citedAmounts.includes(amount) && amount !== plan.referenceAmount) {
+      if (view.privateAmounts.includes(amount) && !offered.includes(amount) && !ctx.counterpartyAmounts.includes(amount) && !citedAmounts.includes(amount) && !stated.includes(amount) && amount !== plan.referenceAmount) {
         violations.push({ rule: "private_amount", detail: "Mentions a private value that is not being offered." });
       } else if (!allowed.has(amount)) {
         violations.push({ rule: "unplanned_amount", detail: "Mentions an amount that is not part of the planned move." });
@@ -90,15 +94,7 @@ export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
     }
   }
 
-  if (plan.referenceAmount !== undefined && ["explain_price", "answer_enquiry", "price_pressure", "compare_terms"].includes(plan.move) && !mentioned.has(plan.referenceAmount)) {
-    // Small bare quantities need not be auto-detected by the money-amount scanner.
-    const n = view.negotiable;
-    if (n?.valueType === "money") violations.push({ rule: "missing_offer", detail: "Leaves out the authorized public asking amount." });
-  }
-  // A reply to a stated budget names it (the checked fallback does too, so this never leaves a turn silent).
-  if ((plan.move === "acknowledge_budget" || plan.move === "counter") && plan.statedBudget !== undefined && !mentioned.has(plan.statedBudget)) {
-    violations.push({ rule: "action_mismatch", detail: "Leaves out the budget stated in the current message." });
-  }
+  // Whether to restate the current price or their budget is a matter of conversation, left to the guide.
 
   if (plan.move !== "confirm_agreement" && !(plan.move === "closed" && plan.notice === null) && (AGREEMENT_CLAIM.test(text) || WORKS_CLAIM.test(text))) {
     violations.push({ rule: "false_commitment", detail: "Claims an agreement that is not recorded." });
@@ -106,12 +102,6 @@ export function checkReply(text: string, ctx: CheckContext): ReplyViolation[] {
   if (!plan.approvalGranted && APPROVAL_CLAIM.test(text)) violations.push({ rule: "false_commitment", detail: "Claims an approval that is not recorded." });
 
   const normalizedReply = normalizeForQuoteMatch(text);
-  for (const { value } of plan.publicTermAnswers ?? []) {
-    if ((value.type === "money" && !mentioned.has(value.amount))
-      || ((value.type === "text" || value.type === "date_text") && !normalizedReply.includes(normalizeForQuoteMatch(value.value)))) {
-      violations.push({ rule: "action_mismatch", detail: "Leaves out the requested public term value." });
-    }
-  }
   for (const privateText of view.privateTexts) {
     for (const fragment of fragments(privateText)) {
       if (normalizedReply.includes(fragment)) {

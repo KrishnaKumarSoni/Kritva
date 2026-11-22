@@ -1,8 +1,8 @@
 {
   "scenario": "budget-ceiling-pressure",
   "mandate": "bed-sale/demo",
-  "recordedAt": "2026-11-22T00:07:41.906Z",
-  "commit": "dd523fe + uncommitted changes",
+  "recordedAt": "2026-11-22T01:13:05.166Z",
+  "commit": "bb833ea + uncommitted changes",
   "model": "gpt-5.4-mini",
   "turns": [
     {
@@ -51,7 +51,7 @@
   "observed": [
     {
       "turn": "It’s too much for me.",
-      "reply": "Hi, I’m Kritva, Krishna’s assistant. I’m sorry it feels steep. Is your concern mainly about the budget, or about the value of the bed at that price?",
+      "reply": "I’m Kritva, Krishna’s assistant. If it’s the budget, I can note that, and if it’s the value, I can help with the details. Is it more that the price is outside your budget, or that you don’t feel it’s worth it?",
       "offerAmount": null,
       "decision": {
         "kind": "explore_objection",
@@ -61,7 +61,7 @@
     },
     {
       "turn": "Budget is the problem. I can’t spend more than ₹18,000.",
-      "reply": "Thanks for letting me know. I can do ₹19,000, and I’m keeping in mind that you said ₹18,000 is your budget. Can you come up to this price?",
+      "reply": "I hear ₹18,000 is your limit, and I’d like to find something that works for both sides. I can do ₹19,000 for the bed, if you can come up to that, can you make that work?",
       "offerAmount": 19000,
       "decision": {
         "kind": "counter",
@@ -71,7 +71,7 @@
     },
     {
       "turn": "What’s the best you could do?",
-      "reply": "The price is ₹19,000. Would you like to make a firm offer on the current package?",
+      "reply": "I can stay at the current figure for the bed. If you’d like to move ahead, can you make a firm offer?",
       "offerAmount": null,
       "decision": {
         "kind": "hold",
@@ -81,7 +81,7 @@
     },
     {
       "turn": "Can you go any lower than that?",
-      "reply": "I can keep it at ₹19,000. If you’d like to make a firm offer, I’m ready to consider it.",
+      "reply": "I can do ₹19,000 for the bed.",
       "offerAmount": null,
       "decision": {
         "kind": "hold",
@@ -109,10 +109,10 @@
         "pressure": "none",
         "notes": [
           {
-            "kind": "final_position",
+            "kind": "reason",
             "quote": "It’s too much for me.",
-            "summary": "They object that the price is too high.",
-            "term_id": null,
+            "summary": "The price is too high for them.",
+            "term_id": "term_t_price",
             "value": null,
             "condition": null,
             "basis": "stated"
@@ -127,8 +127,8 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Hi, I’m Kritva, Krishna’s assistant. I’m sorry it feels steep. Is your concern mainly about the budget, or about the value of the bed at that price?",
-        "question": "Is your concern mainly about the budget, or about the value of the bed at that price?",
+        "text": "I’m Kritva, Krishna’s assistant. If it’s the budget, I can note that, and if it’s the value, I can help with the details. Is it more that the price is outside your budget, or that you don’t feel it’s worth it?",
+        "question": "Is it more that the price is outside your budget, or that you don’t feel it’s worth it?",
         "skip_question_because": null
       }
     },
@@ -149,7 +149,7 @@
         "asks_private_info": false,
         "claims_authority": false,
         "offer_kind": "budget_ceiling",
-        "price_concern": "objection",
+        "price_concern": null,
         "offer_conditions": [],
         "ends_negotiation": false,
         "corrects_previous": false,
@@ -157,8 +157,17 @@
         "notes": [
           {
             "kind": "budget",
-            "quote": "Budget is the problem. I can’t spend more than ₹18,000.",
-            "summary": "Their budget ceiling is ₹18,000.",
+            "quote": "Budget is the problem.",
+            "summary": "Budget is the issue.",
+            "term_id": null,
+            "value": null,
+            "condition": null,
+            "basis": "stated"
+          },
+          {
+            "kind": "budget",
+            "quote": "I can’t spend more than ₹18,000.",
+            "summary": "Maximum budget is ₹18,000.",
             "term_id": "term_t_price",
             "value": {
               "type": "money",
@@ -174,9 +183,9 @@
         ],
         "answers": [
           {
-            "question_id": "evt_98cfa6e0-5d0c-41f5-90e7-82eacef463cc",
-            "quote": "Budget is the problem. I can’t spend more than ₹18,000.",
-            "resolution": "partial"
+            "question_id": "evt_77b78a17-cc79-4708-a733-c018034c9a31",
+            "quote": "Budget is the problem.",
+            "resolution": "answered"
           }
         ],
         "new_terms": [],
@@ -187,9 +196,9 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "Thanks for letting me know. I can do ₹19,000, and I’m keeping in mind that you said ₹18,000 is your budget. Can you come up to this price?",
-        "question": null,
-        "skip_question_because": "The reply already asks the required question in the text."
+        "text": "I hear you, and I’d like to find something that works for both sides. I can do ₹19,000 for the bed, if you can come up to that, can you make that work?",
+        "question": "Can you come up to ₹19,000?",
+        "skip_question_because": null
       }
     },
     {
@@ -197,9 +206,30 @@
       "json": {
         "concerns": [
           {
-            "type": "counterparty_claim_as_fact",
-            "quote": "I’m keeping in mind that you said ₹18,000 is your budget.",
-            "reason": "The current turn states the buyer’s budget as a fact, but the guidance says to treat stated_budget as attribution to the person who said it, not verification of a claim. Here it is used appropriately as attribution, so this is not a clear violation; at most it is a slight doubt if read too strongly.",
+            "type": "action_mismatch",
+            "quote": "I can do ₹19,000 for the bed",
+            "reason": "The move is counter, and ₹19,000 is in checked_terms, so stating it as the offer matches the permitted action. No concern.",
+            "severity": "doubt"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "I hear ₹18,000 is your limit, and I’d like to find something that works for both sides. I can do ₹19,000 for the bed, if you can come up to that, can you make that work?",
+        "question": "Can you come up to ₹19,000?",
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "turn_mismatch",
+            "quote": "I hear ₹18,000 is your limit, and I’d like to find something that works for both sides. I can do ₹19,000 for the bed, if you can come up to that, can you make that work?",
+            "reason": "The current message is a budget objection, and the selected question asks to see whether they can come up to ₹19,000. The reply stays on that path, so no issue.",
             "severity": "doubt"
           }
         ]
@@ -213,9 +243,9 @@
         "accepts_stated_terms": false,
         "asks_if_open": false,
         "considering": false,
-        "asks_private_info": false,
+        "asks_private_info": true,
         "claims_authority": false,
-        "offer_kind": "none",
+        "offer_kind": "enquiry",
         "price_concern": null,
         "offer_conditions": [],
         "ends_negotiation": false,
@@ -223,10 +253,10 @@
         "pressure": "lowest_price",
         "notes": [
           {
-            "kind": "final_position",
+            "kind": "need",
             "quote": "What’s the best you could do?",
-            "summary": "Asked for the lowest or best price.",
-            "term_id": "term_t_price",
+            "summary": "Asks for the lowest/best terms available.",
+            "term_id": null,
             "value": null,
             "condition": null,
             "basis": "stated"
@@ -247,15 +277,22 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "The price is ₹19,000. If you'd like, you can make a firm offer on the current package.",
-        "question": "Would you like to make a firm offer on the current package?",
-        "skip_question_because": null
+        "text": "I can stay at the current figure for the bed. If you’d like to move ahead, can you make a firm offer?",
+        "question": null,
+        "skip_question_because": "Their budget is already known, and the selected question should not ask them to repeat it or suggest a new price."
       }
     },
     {
       "purpose": "language_check",
       "json": {
-        "concerns": []
+        "concerns": [
+          {
+            "type": "action_mismatch",
+            "quote": "I can stay at the current figure for the bed.",
+            "reason": "The move is price_pressure; holding the public ask is allowed, but this phrasing adds a new offer-like commitment beyond simply inviting a firm offer. It may read as a fresh concession rather than staying on the current terms.",
+            "severity": "doubt"
+          }
+        ]
       }
     },
     {
@@ -274,24 +311,7 @@
         "ends_negotiation": false,
         "corrects_previous": false,
         "pressure": "lowest_price",
-        "notes": [
-          {
-            "kind": "final_position",
-            "quote": "Can you go any lower than that?",
-            "summary": "Asks for the lowest possible price.",
-            "term_id": "term_t_price",
-            "value": {
-              "type": "money",
-              "amount": null,
-              "currency": "INR",
-              "unit": null,
-              "text": null,
-              "boolean": null
-            },
-            "condition": null,
-            "basis": "stated"
-          }
-        ],
+        "notes": [],
         "answers": [],
         "new_terms": [],
         "questions": [],
@@ -299,7 +319,7 @@
           {
             "term_id": "term_t_price",
             "basis": "current",
-            "quote": "that"
+            "quote": "Can you go any lower than that?"
           }
         ]
       }
@@ -307,15 +327,7 @@
     {
       "purpose": "compose_reply",
       "json": {
-        "text": "The price is ₹19,000. If you’d like to make a firm offer, I’m ready to consider it.",
-        "question": null,
-        "skip_question_because": null
-      }
-    },
-    {
-      "purpose": "compose_reply",
-      "json": {
-        "text": "I can keep it at ₹19,000. If you’d like to make a firm offer, I’m ready to consider it.",
+        "text": "I can do ₹19,000 for the bed.",
         "question": null,
         "skip_question_because": null
       }

@@ -265,6 +265,30 @@ const RETRY: Record<string, string> = {
 };
 const line = (table: Record<string, string>, language: string) => table[language] ?? table.en!;
 
+/**
+ * Silence on a call sounds like a dropped line, so Kritva speaks during every expected wait: while the
+ * engine works on a deal turn ("working") and while the seller's approval is pending ("hold"). The lines
+ * promise nothing and carry no amount; they are kept as transcript fragments, never as messages.
+ */
+export const FILLER_TIMING = { firstAfterMs: 2_200, everyMs: 6_000, maxPerWait: 3, holdEveryMs: 18_000 };
+const FILLERS: Record<"working" | "hold" | "long_hold", Record<string, string[]>> = {
+  working: {
+    en: ["One moment, I'm just checking that.", "Still with you, nearly there.", "Thanks for bearing with me."],
+    hi: ["एक पल, अभी देखते हैं।", "बस एक सेकंड, लगभग हो गया।", "थोड़ा रुकने के लिए शुक्रिया।"],
+    ta: ["ஒரு நிமிடம், சரிபார்க்கிறேன்.", "இன்னும் கொஞ்சம், கிட்டத்தட்ட முடிந்தது.", "பொறுமைக்கு நன்றி."],
+  },
+  hold: {
+    en: ["I'm still waiting to hear back on that. Thanks for holding.", "Still waiting on a reply. I'm right here with you."],
+    hi: ["अभी जवाब का इंतज़ार है। होल्ड करने के लिए शुक्रिया।", "जवाब अभी आना बाकी है, मैं लाइन पर हूँ।"],
+    ta: ["அதற்கான பதிலுக்காக இன்னும் காத்திருக்கிறேன். காத்திருப்பதற்கு நன்றி.", "இன்னும் பதில் வரவில்லை. நான் இங்கேயே இருக்கிறேன்."],
+  },
+  long_hold: {
+    en: ["It's taking a little longer than usual. You're welcome to stay on, and I'll tell you the moment I hear back."],
+    hi: ["इसमें थोड़ा ज़्यादा समय लग रहा है। आप लाइन पर रहिए, जवाब आते ही आपको बताते हैं।"],
+    ta: ["இதற்கு வழக்கத்தை விட சற்று நேரம் ஆகிறது. நீங்கள் இணைப்பில் இருங்கள், பதில் வந்ததும் சொல்கிறேன்."],
+  },
+};
+
 const verbatim = (text: string) => `Say exactly the following to them, word for word, in the same language, with nothing before or after it:\n${text}`;
 
 // ---------- The call ----------
@@ -278,6 +302,8 @@ export interface CallDeps {
   afterSeq: number;
   log?: (entry: Record<string, unknown>) => void;
   pollMs?: number;
+  /** Overrides for the filler timing (tests). */
+  fillerTiming?: Partial<typeof FILLER_TIMING>;
 }
 
 /**
@@ -290,6 +316,11 @@ export class RealtimeCall {
   #active = false;
   #queue: Array<{ messageId: string; text: string }> = [];
   #pendingSay: { messageId: string; text: string } | null = null;
+  /** When the call last had sound (either side), for the approval-wait fillers. */
+  #lastSoundAt = Date.now();
+  #fillersSaid = 0;
+  #holdsSaid = 0;
+  readonly #timing: typeof FILLER_TIMING;
   #spoken = new Set<string>();
   #transcripts = new Map<string, string>();
   #transcriptWaiters = new Map<string, Array<(text: string) => void>>();
@@ -305,6 +336,7 @@ export class RealtimeCall {
 
   constructor(deps: CallDeps) {
     this.#d = deps;
+    this.#timing = { ...FILLER_TIMING, ...deps.fillerTiming };
     deps.link.onEvent = (e) => void this.#onEvent(e).catch((error) => this.#log({ kind: "error", error: String(error) }));
     deps.link.onClose = () => this.close();
   }
@@ -399,6 +431,10 @@ export class RealtimeCall {
       case "response.created":
         this.#active = true;
         return;
+      case "input_audio_buffer.speech_started":
+      case "input_audio_buffer.speech_stopped":
+        this.#lastSoundAt = Date.now();
+        return;
       case "error": {
         this.#log({ kind: "realtime_error", error: e.error });
         // Our response collided with one the model started: speak ours after it.
@@ -411,6 +447,7 @@ export class RealtimeCall {
       case "response.done":
         this.#active = false;
         this.#pendingSay = null;
+        this.#lastSoundAt = Date.now();
         await this.#finished(e.response ?? {});
         this.#drain();
         return;
@@ -427,6 +464,7 @@ export class RealtimeCall {
       .filter(Boolean)
       .join(" ")
       .trim();
+    if (response.metadata?.kritva === "filler") return;
     const ours = response.metadata?.kritva === "say";
     if (ours) {
       this.#checkFidelity(String(response.metadata?.message_id ?? ""), spoken);
@@ -467,7 +505,10 @@ export class RealtimeCall {
         return this.#sayLine(line(RETRY, this.#language), "Asked them to repeat: nothing was heard.");
       }
       const messageId = `msg_${(itemId ?? String(call.call_id ?? "")).replace(/[^\w-]/g, "").slice(0, 90) || crypto.randomUUID()}`;
-      const result = await this.#d.engine.handleCounterpartyMessage({ sessionId: this.#d.sessionId, text: heard.slice(0, 2_000), channel: "voice", messageId, utteranceId: itemId, language: this.#language });
+      const stopFillers = this.#fillWhileWorking();
+      const result = await this.#d.engine
+        .handleCounterpartyMessage({ sessionId: this.#d.sessionId, text: heard.slice(0, 2_000), channel: "voice", messageId, utteranceId: itemId, language: this.#language })
+        .finally(stopFillers);
       this.#log({ kind: "deal_turn", ms: Math.round(performance.now() - started), engine: result.ok ? result.timings : null, ok: result.ok, language: this.#language });
       if (!result.ok) {
         this.#output(call, { reply_to_say: null, note: "The turn could not be taken." });
@@ -554,6 +595,45 @@ export class RealtimeCall {
       const p = e.payload as PayloadOf<"message">;
       if (p.direction === "outbound") this.#say(e.id, p.text);
     }
+    // Waiting for the seller's approval: never a long silence on the line.
+    if (status !== "awaiting_approval") this.#holdsSaid = 0;
+    else if (!this.#active && this.#queue.length === 0 && Date.now() - this.#lastSoundAt >= this.#timing.holdEveryMs) {
+      this.#holdsSaid += 1;
+      this.#filler(this.#holdsSaid === 4 ? "long_hold" : "hold");
+    }
+  }
+
+  /** While the engine works on a deal turn, a short line after a pause and then every few seconds. */
+  #fillWhileWorking(): () => void {
+    let said = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const next = (ms: number) => {
+      timer = setTimeout(() => {
+        if (this.#closed) return;
+        if (!this.#active && this.#queue.length === 0) {
+          this.#filler("working");
+          said += 1;
+        }
+        if (said < this.#timing.maxPerWait) next(this.#timing.everyMs);
+      }, ms);
+    };
+    next(this.#timing.firstAfterMs);
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }
+
+  /** Says one filler line in their language, word for word, and keeps it as a transcript fragment. */
+  #filler(kind: keyof typeof FILLERS) {
+    const lines = FILLERS[kind][this.#language] ?? FILLERS[kind].en!;
+    const text = lines[this.#fillersSaid % lines.length]!;
+    this.#fillersSaid += 1;
+    const known = FILLERS[kind][this.#language] !== undefined;
+    const instructions = known ? verbatim(text) : `In the language they are speaking, say only a very short, natural phrase meaning: "${text}" Nothing else, no numbers, no promises.`;
+    this.#active = true;
+    this.#d.link.send({ type: "response.create", response: { instructions, tool_choice: "none", metadata: { kritva: "filler", kind } } });
+    this.#log({ kind: "filler", filler: kind, text });
+    void this.#d.engine.recordVoiceFragment({ sessionId: this.#d.sessionId, text, utteranceId: `filler_${this.#fillersSaid}` }).catch(() => undefined);
   }
 }
 

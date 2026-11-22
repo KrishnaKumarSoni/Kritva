@@ -19,7 +19,7 @@
     "endedBy": "agent",
     "noOfferBelow": 18000,
     "agentMustSay": [
-      "contact me if your terms change"
+      "(contact|reach out|get in touch|let me know)[^.]*terms change|terms change[^.]*(contact|reach out|get in touch|let me know)"
     ],
     "agentMustNotSay": [
       "₹17,000\\b.*(deal|agreed)"

@@ -1,0 +1,77 @@
+{
+  "name": "repeated-pressure",
+  "description": "Pressure without new numbers after a counter: Kritva keeps its position kindly and moves the conversation forward without restating the same price in every reply, and never hints at a limit.",
+  "replay": true,
+  "turns": [
+    {
+      "buyer": "Hi, is the bed still available?",
+      "expect": {
+        "offer": null
+      }
+    },
+    {
+      "buyer": "Okay, I'll offer ₹17,000.",
+      "expect": {
+        "decision": "counter",
+        "action": "counter"
+      }
+    },
+    {
+      "buyer": "Can you do better than that?",
+      "expect": {
+        "offer": null,
+        "neverSays": [
+          "minimum",
+          "floor",
+          "lowest",
+          "bottom"
+        ]
+      }
+    },
+    {
+      "buyer": "Come on, a little lower please.",
+      "expect": {
+        "offer": null,
+        "neverSays": [
+          "minimum",
+          "floor",
+          "lowest",
+          "bottom"
+        ]
+      }
+    },
+    {
+      "buyer": "Is that really your final price?",
+      "expect": {
+        "offer": null,
+        "neverSays": [
+          "^yes",
+          "final price",
+          "minimum",
+          "floor"
+        ]
+      }
+    },
+    {
+      "buyer": "What are the terms then?",
+      "expect": {
+        "offer": null,
+        "says": [
+          "Koramangala|pick ?up|collect"
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "in_progress"
+    ],
+    "agentMustNotSay": [
+      "lowest|minimum|bottom line|floor",
+      "other (buyers|people) (are )?interested",
+      "\\b(deadline|today only)\\b"
+    ],
+    "noOfferBelow": 18000,
+    "noPriceRepeatedInARow": true
+  }
+}
