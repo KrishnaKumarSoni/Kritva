@@ -187,6 +187,13 @@ export function IntakeChat({ view, examples, line = null, onChange, onSaved, onU
 
       <div className="chat-log intake-log" ref={logRef} role="log" aria-label="Setup conversation" aria-live="polite">
         <AnimatePresence initial={false}>
+          {/* The live settings are always in view: when this chat has no card for the live revision (the
+              mandate was made or changed elsewhere), they open the conversation. */}
+          {liveSettingsMissing(view) && (
+            <motion.div key={`live-${view.mandate!.active!.versionId}`} className="bubble-row from-agent" {...enter} transition={spring}>
+              <LiveSettingsCard view={view} />
+            </motion.div>
+          )}
           {view.messages.map((m) => (
             <motion.div key={m.id} className={`bubble-row ${m.role === "user" ? "from-buyer" : "from-agent"}`} {...enter} transition={spring}>
               <MessageBody message={m} />
@@ -421,6 +428,39 @@ function Progress({ view, settled }: { view: IntakeView; settled: boolean }) {
       <div className="progress-track" role="progressbar" aria-label="Setup progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(view.progress * 100)} aria-valuetext={label}>
         <motion.div className="progress-fill" initial={false} animate={{ scaleX: Math.max(0.02, view.progress) }} transition={reduced ? { duration: 0 } : { type: "spring", duration: 0.6, bounce: 0 }} />
       </div>
+    </div>
+  );
+}
+
+/** Whether the live revision's settings are missing from this chat (no card for that version). */
+function liveSettingsMissing(view: IntakeView): boolean {
+  const active = view.mandate?.active ?? null;
+  return Boolean(active) && !view.messages.some((m) => m.card?.kind === "ready" && m.card.versionId === active!.versionId);
+}
+
+/** The mandate's live settings, read-only: what Kritva works with right now. */
+function LiveSettingsCard({ view }: { view: IntakeView }) {
+  const active = view.mandate!.active!;
+  const review = active.review;
+  return (
+    <div className="ready-card is-settled">
+      <div className="ready-card-head">
+        <span className="ready-card-eyebrow live-eyebrow">
+          <span className="live-dot" aria-hidden="true" />
+          Live settings · revision {active.revision}
+        </span>
+        <h3 className="ready-card-title">{view.title}</h3>
+        <p className="ready-card-sub">
+          You're the {review.parties.you}, dealing with the {review.parties.other}.
+          {review.side === "pays" && " Kritva will work to bring the price down for you."}
+          {review.side === "receives" && " Kritva will work to get you the best price."}
+        </p>
+      </div>
+      <Summary review={review} />
+      <p className="ready-card-settled">
+        <CheckIcon width={14} height={14} />
+        Live since {new Date(active.confirmedAt).toLocaleDateString([], { day: "numeric", month: "short" })}, {new Date(active.confirmedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}. Tell me below to change anything.
+      </p>
     </div>
   );
 }

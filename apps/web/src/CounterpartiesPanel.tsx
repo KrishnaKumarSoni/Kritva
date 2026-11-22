@@ -18,6 +18,8 @@ interface Props {
   state: MandateState | "new";
   /** People named in the chat before the mandate was saved. */
   pending: Array<{ name: string; hasPhone: boolean }>;
+  /** The mandate's title: each mandate has its own list. */
+  title: string;
   onOpen: (sessionId: string) => void;
 }
 
@@ -33,7 +35,7 @@ function standing(row: BoardRowView | undefined): string | null {
   return words[row.status];
 }
 
-export function CounterpartiesPanel({ mandateId, state, pending, onOpen }: Props) {
+export function CounterpartiesPanel({ mandateId, state, pending, title, onOpen }: Props) {
   const [list, setList] = useState<CounterpartyListView | null>(null);
   const [board, setBoard] = useState<BoardView | null>(null);
   const [name, setName] = useState("");
@@ -119,7 +121,7 @@ export function CounterpartiesPanel({ mandateId, state, pending, onOpen }: Props
         <div>
           <h2 id="counterparties-title" className="panel-title">Counterparties</h2>
           <p className="panel-subtitle">
-            {mandateId ? `${entries.length} of ${list?.max ?? 5}. Who Kritva negotiates with. Numbers stay with you.` : "Name them in the chat, or add them here once the mandate is prepared."}
+            {mandateId ? `Who Kritva negotiates with for ${title}. ${entries.length} of ${list?.max ?? 5} listed. Numbers stay with you.` : `Who Kritva negotiates with for ${title}. Name them in the chat, or add them here once it's prepared.`}
           </p>
         </div>
       </header>

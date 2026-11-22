@@ -14,10 +14,27 @@ function sessionFromHash(): string | null {
   return match?.[1] ?? null;
 }
 
+type View = "deals" | "negotiation" | "instructions";
+const NAV: Array<{ view: View; label: string; path: string }> = [
+  { view: "deals", label: "Deals", path: "/deals" },
+  { view: "negotiation", label: "Negotiations", path: "/negotiations" },
+  { view: "instructions", label: "Mandates", path: "/mandates" },
+];
+
+/** Each console page has its own address: /deals, /negotiations (and /negotiations/<id>), /mandates (and /mandates/<id>). */
+function routeFromLocation(): { view: View; sessionId: string | null; mandateId: string | null } {
+  const [first, second] = window.location.pathname.split("/").filter(Boolean);
+  if (first === "deals") return { view: "deals", sessionId: null, mandateId: null };
+  if (first === "mandates") return { view: "instructions", sessionId: null, mandateId: second ?? null };
+  // Older links name the negotiation in the hash (#session=...).
+  return { view: "negotiation", sessionId: (first === "negotiations" ? second : undefined) ?? sessionFromHash(), mandateId: null };
+}
+
 export function App() {
   // ?view=buyer is the counterparty's own page: the conversation only, nothing private.
   const counterpartyOnly = new URLSearchParams(window.location.search).get("view") === "buyer";
-  const [sessionId, setSessionId] = useState<string | null>(sessionFromHash());
+  const [initialRoute] = useState(() => (counterpartyOnly ? { view: "negotiation" as View, sessionId: sessionFromHash(), mandateId: null } : routeFromLocation()));
+  const [sessionId, setSessionId] = useState<string | null>(initialRoute.sessionId);
   const currentSession = useRef(sessionId);
   currentSession.current = sessionId;
   const [access, setAccess] = useState(false);
@@ -35,13 +52,13 @@ export function App() {
   const reported = useRef(new Set<string>());
   const [mandates, setMandates] = useState<MandateOption[]>([]);
   const [mandateId, setMandateId] = useState<string | null>(null);
-  const [view, setView] = useState<"deals" | "negotiation" | "instructions">("negotiation");
+  const [view, setView] = useState<View>(initialRoute.view);
   const reducedMotion = useReducedMotion();
-  // The Negotiation tab shows the log of every negotiation, or one negotiation opened from it.
-  const [negMode, setNegMode] = useState<"log" | "session">(sessionFromHash() ? "session" : "log");
+  // The Negotiations page shows the log of every negotiation, or one negotiation opened from it.
+  const [negMode, setNegMode] = useState<"log" | "session">(initialRoute.sessionId ? "session" : "log");
   // What the log knows about the open negotiation: who it is with, and whether it is a test.
   const [openRow, setOpenRow] = useState<NegotiationLogRow | null>(null);
-  const [openMandate, setOpenMandate] = useState<string | null>(null);
+  const [openMandate, setOpenMandate] = useState<string | null>(initialRoute.mandateId);
 
   const loadMandates = useCallback(() => {
     if (counterpartyOnly) return;
@@ -65,9 +82,36 @@ export function App() {
   }, [counterpartyOnly]);
   useEffect(() => { if (api.hasSellerKey()) void loadMandates(); }, [loadMandates]);
 
+  // The address follows the page. The counterparty's own page keeps its link (?view=buyer#session=...).
+  const firstSync = useRef(true);
   useEffect(() => {
-    window.history.replaceState(null, "", sessionId ? `${window.location.search}#session=${sessionId}` : window.location.search || window.location.pathname);
-  }, [sessionId]);
+    if (counterpartyOnly) {
+      window.history.replaceState(null, "", sessionId ? `${window.location.search}#session=${sessionId}` : window.location.search || window.location.pathname);
+      return;
+    }
+    const path = view === "deals" ? "/deals" : view === "instructions" ? (openMandate ? `/mandates/${openMandate}` : "/mandates") : negMode === "session" && sessionId ? `/negotiations/${sessionId}` : "/negotiations";
+    const replace = firstSync.current;
+    firstSync.current = false;
+    if (window.location.pathname === path && !window.location.hash) return;
+    if (replace) window.history.replaceState(null, "", `${path}${window.location.search}`);
+    else window.history.pushState(null, "", `${path}${window.location.search}`);
+  }, [counterpartyOnly, view, negMode, sessionId, openMandate]);
+  // Back and forward move between pages.
+  useEffect(() => {
+    if (counterpartyOnly) return;
+    const onPop = () => {
+      const r = routeFromLocation();
+      setView(r.view);
+      setOpenMandate(r.mandateId);
+      setOpenRow(null);
+      setChat(null);
+      setOperator(null);
+      setSessionId(r.sessionId);
+      setNegMode(r.sessionId ? "session" : "log");
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [counterpartyOnly]);
 
   // An opened negotiation the log has not described yet (opened from a board, a mandate or the address): look it up.
   useEffect(() => {
@@ -254,25 +298,28 @@ export function App() {
           Kritva<span className="wordmark-dot" aria-hidden="true" />
         </span>
         {access && (
-          <nav className="view-switch" aria-label="Views">
-            {(["deals", "negotiation", "instructions"] as const).map((v) => (
-              <button
-                key={v}
-                type="button"
-                className="view-switch-item"
-                aria-current={view === v ? "page" : undefined}
-                onClick={() => {
-                  // The Negotiation tab again, from an open negotiation: back to the log.
-                  if (v === "negotiation" && view === "negotiation" && negMode === "session") backToLog();
-                  setView(v);
-                  if (v === "negotiation" || v === "deals") loadMandates();
-                  if (v !== "negotiation") setOpenMandate(null);
+          <nav className="topnav" aria-label="Pages">
+            {NAV.map((item) => (
+              <a
+                key={item.view}
+                href={item.path}
+                className="topnav-item"
+                aria-current={view === item.view ? "page" : undefined}
+                onClick={(event) => {
+                  // A modified click opens the page in a new tab, as any link does.
+                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+                  event.preventDefault();
+                  // Negotiations again, from an open negotiation: back to the log.
+                  if (item.view === "negotiation" && view === "negotiation" && negMode === "session") backToLog();
+                  setView(item.view);
+                  if (item.view === "negotiation" || item.view === "deals") loadMandates();
+                  if (item.view !== "negotiation") setOpenMandate(null);
                 }}
               >
-                {/* One pill springs to the current view, so the switch moves like a physical control. */}
-                {view === v && <motion.span layoutId="view-switch-pill" className="view-switch-pill" transition={reducedMotion ? { duration: 0 } : { type: "spring", duration: 0.35, bounce: 0 }} aria-hidden="true" />}
-                {v === "deals" ? "Deals" : v === "negotiation" ? "Negotiation" : "Mandates"}
-              </button>
+                {item.label}
+                {/* One underline springs to the current page. */}
+                {view === item.view && <motion.span layoutId="topnav-underline" className="topnav-underline" transition={reducedMotion ? { duration: 0 } : { type: "spring", duration: 0.35, bounce: 0 }} aria-hidden="true" />}
+              </a>
             ))}
           </nav>
         )}

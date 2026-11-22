@@ -236,7 +236,7 @@ export function MandatesPage({ onUse, initialId = null, onOpenNegotiation }: Pro
               <span>Opening</span>
             </section>
           )}
-          {view && <CounterpartiesPanel mandateId={view.mandateId} state={view.state} pending={view.counterparties ?? []} onOpen={onOpenNegotiation} />}
+          {view && <CounterpartiesPanel mandateId={view.mandateId} state={view.state} pending={view.counterparties ?? []} title={view.title} onOpen={onOpenNegotiation} />}
         </div>
       </div>
 
