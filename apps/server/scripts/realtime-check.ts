@@ -57,6 +57,8 @@ const call = new RealtimeCall({
   link,
   afterSeq: 0,
   log: (entry) => console.log("  [controller]", JSON.stringify(entry)),
+  // CONTACT=<number> plays the call as a phone call from that number (as the phone line passes it).
+  contactNumber: process.env.CONTACT ?? null,
   // Kritva decided the call is over: noted here instead of hanging up a phone line.
   hangup: async () => {
     hungUp = true;

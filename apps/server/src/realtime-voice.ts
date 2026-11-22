@@ -215,7 +215,7 @@ ${facts.map((f) => `- ${f}`).join("\n") || "- (none)"}
 
 Every turn is one of two kinds.
 1. Conversation turns you answer yourself: greetings, small talk, checking they can hear you, repeating or explaining something you already said, whether you are an AI, and questions fully answered by the public facts above. Answer only what they asked, briefly and warmly as "How you sound" below describes, and hand the turn back. Do not list every fact.
-2. Deal turns go to the negotiation engine: anything about price or any amount, offers, discounts, budgets, payment, delivery or pickup arrangements, availability or holding the item, agreeing, confirming or walking away from the deal, anything not in the public facts, and anything you are unsure about. A goodbye once nothing is left to settle is not a deal turn: "Ending the call" below says what to do. For a deal turn, first say a very short, natural acknowledgement in their language, two to five words with no number in it, the way a person says it while thinking (for example "Hmm, okay...", "Right, so...", "अच्छा, समझ गई...", "हम्म, ठीक है..." or "சரி..."), and vary it from turn to turn. It reacts to what they said; it never asks them to wait ("one second", "एक पल", "एक सेकंड", "रुकिए"). It must not describe what happens next: never say you will pass, hand over, forward, check or see what comes back. Then call negotiate with their exact words as you heard them, never paraphrased or translated. Never answer a deal turn yourself.
+2. Deal turns go to the negotiation engine: anything about price or any amount, offers, discounts, budgets, payment, delivery or pickup arrangements, availability or holding the item, agreeing, confirming or walking away from the deal, anything not in the public facts, and anything you are unsure about. A goodbye once nothing is left to settle is not a deal turn: "Ending the call" below says what to do. For a deal turn, first say a very short, natural acknowledgement in their language, two to five words with no number in it, the way a person says it while thinking (for example "Hmm, okay...", "Right, so...", "अच्छा...", "हम्म...", "समझ गई..." or "சரி..."). Never more than five words, and never the same words twice in a call: each one reacts to what they just said. It never asks them to wait ("one second", "एक पल", "एक सेकंड", "रुकिए") and never says what you will do with their words. It must not describe what happens next: never say you will pass, hand over, forward, check or see what comes back. Then call negotiate with their exact words as you heard them, never paraphrased or translated. Never answer a deal turn yourself.
 When you are given a reply to say, say exactly that reply, word for word, and nothing else.
 
 Rules for your own words: never ask them to wait or hold on; never say any amount or price; never agree, accept, approve, promise, hold, reserve or confirm anything; never invent a detail; never mention tools, checks, engines, rules or handing anything over.
@@ -333,7 +333,7 @@ const BREAK_IN: Record<string, string> = {
   ta: "மன்னிக்கவும், ஒரு நொடி.",
 };
 /** quietMs: a pause worth reporting while waiting; overQuietMs: a quiet line worth reporting once the negotiation has finished. */
-export const WAIT_SENSOR = { quietMs: 3_000, sampleMs: 500, overQuietMs: 6_000 };
+export const WAIT_SENSOR = { quietMs: 4_000, sampleMs: 500, overQuietMs: 6_000 };
 const WAITING_GUIDE = readFileSync(new URL("./voice-waiting-guide.md", import.meta.url), "utf8").trim();
 export const STAY_QUIET_TOOL = {
   type: "function",
@@ -417,7 +417,6 @@ export class RealtimeCall {
   #lastSoundAt = Date.now();
   /** Since when a reply is being worked out (null: not working), and since when approval is pending. */
   #workingSince: number | null = null;
-  #approvalSince: number | null = null;
   #lastOwnWords = "";
   #lastReportAt = 0;
   #sensor: ReturnType<typeof setInterval> | null = null;
@@ -935,8 +934,6 @@ export class RealtimeCall {
       if (p.direction === "outbound") this.#say(e.id, p.text);
     }
     // Waiting for the decision of the person represented: the sensor reports how long.
-    if (status === "awaiting_approval") this.#approvalSince ??= Date.now();
-    else this.#approvalSince = null;
   }
 
   /** After the break-in: once they answered about their number and the thanks was said, the call ends. */
@@ -952,16 +949,16 @@ export class RealtimeCall {
   /** Reports a quiet stretch during a wait to the agent, which decides whether and what to say. */
   #sense() {
     if (this.#closed || this.#active || this.#queue.length > 0 || this.#ending) return;
-    const waitingSince = this.#workingSince ?? this.#approvalSince;
+    // Only Kritva working out a reply is a wait on the line. While the person represented decides, the
+    // call is wrapped up and the decision comes after it: the caller is answering, nobody holds the line.
+    const waitingSince = this.#workingSince;
     if (waitingSince === null) return this.#senseOver();
     const now = Date.now();
     const quietMs = now - this.#lastSoundAt;
     if (quietMs < this.#wait.quietMs || now - this.#lastReportAt < this.#wait.quietMs) return;
     const quiet = Math.round(quietMs / 1000);
     const waited = Math.round((now - waitingSince) / 1000);
-    const situation = this.#workingSince !== null
-      ? `You are still working out your reply to their last message (${waited} seconds so far). The line has been quiet for ${quiet} seconds.`
-      : `You are waiting for the decision of the person you represent (${waited} seconds so far). The line has been quiet for ${quiet} seconds.`;
+    const situation = `You are still working out your reply to their last message (${waited} seconds so far). The line has been quiet for ${quiet} seconds.`;
     const last = this.#lastOwnWords ? ` Your last words were: "${this.#lastOwnWords.slice(0, 200)}"` : "";
     const language = languageLabel(this.#language);
     this.#active = true;
@@ -975,10 +972,10 @@ export class RealtimeCall {
         instructions: `${WAITING_GUIDE}\n\nSpeak ${language}. Never use dashes.\n\nNow: ${situation}${last}`,
         tools: [STAY_QUIET_TOOL],
         tool_choice: "auto",
-        metadata: { kritva: "wait", situation: this.#workingSince !== null ? "working" : "approval" },
+        metadata: { kritva: "wait", situation: "working" },
       },
     });
-    this.#log({ kind: "wait_reported", situation: this.#workingSince !== null ? "working" : "approval", quiet, waited });
+    this.#log({ kind: "wait_reported", situation: "working", quiet, waited });
   }
 
   /**

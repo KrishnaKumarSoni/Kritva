@@ -307,7 +307,7 @@ describe("Realtime voice: no silence during a wait (the agent decides)", () => {
     call.close();
   });
 
-  it("while the decision is pending, quiet stretches are reported as waiting for the person represented, and not while the negotiation is active", async () => {
+  it("while the decision is pending, nothing fills the line: the caller is answering the wrap-up, and the decision comes after the call", async () => {
     const t = await setup();
     let status = "active";
     const record = new Proxy(t.record, {
@@ -323,14 +323,14 @@ describe("Realtime voice: no silence during a wait (the agent decides)", () => {
     await new Promise((r) => setTimeout(r, 250));
     expect(reports(t.link)).toHaveLength(0);
     status = "awaiting_approval";
-    await until(() => reports(t.link).length >= 1, 2_000);
-    expect(String(reports(t.link)[0]!.response.instructions)).toMatch(/waiting for the decision of the person you represent/);
+    await new Promise((r) => setTimeout(r, 400));
+    expect(reports(t.link)).toHaveLength(0);
     call.close();
   });
 
   it("words the agent says in a pause that break a limit are corrected", async () => {
     const t = await setup();
-    let status = "awaiting_approval";
+    let status = "agreed";
     const record = new Proxy(t.record, {
       get(target, prop, receiver) {
         if (prop === "context") return async (id: string) => ({ ...(await target.context(id)), status });
@@ -338,11 +338,11 @@ describe("Realtime voice: no silence during a wait (the agent decides)", () => {
         return typeof value === "function" ? value.bind(target) : value;
       },
     });
-    const call = new RealtimeCall({ engine: t.engine, record, sessionId: t.sessionId, link: t.link, afterSeq: 0, pollMs: 25, waitSensor: { quietMs: 60, sampleMs: 20 } });
+    const call = new RealtimeCall({ engine: t.engine, record, sessionId: t.sessionId, link: t.link, afterSeq: 0, pollMs: 25, waitSensor: { quietMs: 60, sampleMs: 20, overQuietMs: 60 }, hangup: async () => undefined });
     await call.start();
     t.done([t.spoken("x")], { kritva: "say", message_id: t.link.says()[0]?.messageId ?? "none" });
     await until(() => reports(t.link).length >= 1, 2_000);
-    t.done([t.spoken("Good news, it's a deal at ₹17,000!")], { kritva: "wait" });
+    t.done([t.spoken("Good news, it's a deal at ₹17,000!")], { kritva: "wait", situation: "over" });
     await until(() => t.link.says().some((x) => /ignore what I just said/.test(x.text)), 2_000);
     status = "active";
     call.close();
