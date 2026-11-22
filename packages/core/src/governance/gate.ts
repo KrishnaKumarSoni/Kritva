@@ -145,7 +145,9 @@ export function gateWording(state: NegotiationState, plan: Plan, text: string): 
   for (const v of checkReply(text, { view: state.view, plan, counterpartyAmounts: [...new Set([...state.counterpartyAmounts, ...state.counterpartySaidAmounts])], statedAmounts: state.askHistory })) reasons.push({ rule: v.rule, detail: v.detail });
   const termNames = new Map(state.space.terms.map((t) => [t.termId, t.name]));
   const counterpartyRole = state.view.mandate.parties.find((p) => p.id === state.view.counterpartyId)?.role ?? null;
-  for (const v of checkClaims(text, { offerTerms: plan.offer?.terms ?? null, termNames, counterpartyRole })) {
+  // A counter puts a new checked amount to them, so talking about moving is the move itself.
+  const concession = plan.move === "counter";
+  for (const v of checkClaims(text, { offerTerms: plan.offer?.terms ?? null, termNames, counterpartyRole, concession })) {
     // A real competing offer code allowed (plan.competingAmount) may be mentioned; the reply check holds
     // its figure to the real one. Without one, report the competition claim once.
     if (v.rule === "invented_competition" && (plan.competingAmount !== undefined || reasons.some((r) => r.rule === "invented_competition"))) continue;

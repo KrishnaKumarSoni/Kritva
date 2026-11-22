@@ -85,15 +85,19 @@ export class VobizTelephony implements OutboundTelephony {
 const xmlEscape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /**
- * The answer XML: bridge the answered call to OpenAI's SIP address over TLS, tagged with the call's
- * token as a SIP header (Vobiz sends `sipHeaders` on the dialled leg, with its own `X-` prefix), so
- * the incoming-call webhook can tell which outbound call it is.
+ * The answer XML: hand the answered call to OpenAI, where it arrives as an incoming realtime call.
+ * - "number" (the default): dial Kritva's own Vobiz number, so the call comes in through the inbound
+ *   trunk, the route whose audio works. Vobiz's direct SIP hand-off from its dialling servers was
+ *   silent on the first live call (docs/Kritva_Phone_Calls.md, section 15.4).
+ * - "sip": dial OpenAI's SIP address over TLS, tagged with the call's token as a SIP header (Vobiz
+ *   sends `sipHeaders` on the dialled leg with its own `X-VH-` prefix).
  */
-export function bridgeXml(input: { callerId: string; sipUri: string; token: string; timeLimitSeconds: number }): string {
+export function bridgeXml(input: { callerId: string; target: { kind: "number"; number: string } | { kind: "sip"; uri: string }; token: string; timeLimitSeconds: number }): string {
+  const leg = input.target.kind === "number" ? `<Number>${xmlEscape(input.target.number)}</Number>` : `<User sipHeaders="kritva_call=${xmlEscape(input.token)}">${xmlEscape(input.target.uri)}</User>`;
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial callerId="${xmlEscape(input.callerId)}" timeout="30" timeLimit="${Math.round(input.timeLimitSeconds)}">
-    <User sipHeaders="kritva_call=${xmlEscape(input.token)}">${xmlEscape(input.sipUri)}</User>
+    ${leg}
   </Dial>
 </Response>`;
 }

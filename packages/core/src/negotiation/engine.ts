@@ -10,7 +10,7 @@ import type { StructuredLlm } from "../llm/types.ts";
 import { hashTerms, type Actor, type Channel, type NewEvent, type OfferTerm, type PayloadOf, type RecordedEvent } from "../record/events.ts";
 import { newEventId, type NegotiationRecord } from "../record/store.ts";
 import type { DealGroups } from "../record/groups.ts";
-import { composeBrief, EXACT_TERMS_SLOT } from "./compose.ts";
+import { composeBrief, EXACT_TERMS_SLOT, REPLY_SCHEMA, REWORD_PROMPT } from "./compose.ts";
 import { interpretRequest, readInterpretation, type FulfillmentTerms, type InterpretInput } from "./interpret.ts";
 import { user, type Model, type ModelSettings } from "@openai/agents";
 import { eventItem, historyItems, readingContextItem, runNegotiator, StructuredLlmAgentModel, type AgentConfig, type SendOutcome } from "../agent/negotiator.ts";
@@ -781,6 +781,10 @@ export class NegotiationEngine {
       if (draft.includes("?")) {
         styleRule("The reply asked a different question from the selected move.");
         question = null;
+      } else if (/[^\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}]/u.test(draft) && !/[^\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}]/u.test(question)) {
+        // The selected question is written in English; pasted onto a Hindi or Tamil reply it mixes languages.
+        styleRule("Ask the selected question yourself, in the language of your reply, at the end.");
+        question = null;
       } else draft = `${draft} ${question}`;
     }
     // Checked on the words the other party will read, after the terms are in place.
@@ -880,7 +884,11 @@ export class NegotiationEngine {
     }
     if (plan.ask && !fallback.includes(plan.ask.text)) fallback = `${fallback} ${plan.ask.text}`;
     const fallbackGate = gateWording(state, plan, fallback);
-    if (fallbackGate.decision === "allow") return { text: fallback, question: plan.ask && fallback.includes(plan.ask.text) ? plan.ask.text : null };
+    if (fallbackGate.decision === "allow") {
+      // The checked wording, said the way Kritva talks and in their language, if that passes every check too.
+      const reworded = await this.#reword(writes, d, fallback, agent);
+      return reworded ?? { text: fallback, question: plan.ask && fallback.includes(plan.ask.text) ? plan.ask.text : null };
+    }
     await this.#block(writes, fallback, fallbackGate.reasons.map((r) => ({ rule: r.rule as ReplyViolation["rule"], detail: r.detail })), agent);
     // Never leave the turn silent because one checked sentence failed: send the rest when it passes on its own.
     const sentences = fallback.split(/(?<=[.!?])\s+/);
@@ -889,6 +897,38 @@ export class NegotiationEngine {
       if (gateWording(state, plan, rest).decision === "allow") return { text: rest, question: plan.ask && rest.includes(plan.ask.text) ? plan.ask.text : null };
     }
     return null;
+  }
+
+  /**
+   * One model call that says checked fallback wording the way Kritva talks, in the conversation's language.
+   * It must carry exactly the same amounts and pass every check a draft passes; otherwise null, and the
+   * fixed wording is sent. Nothing is relaxed.
+   */
+  async #reword(writes: Writer, d: Drafting, checked: string, agent: Actor): Promise<{ text: string; question: string | null } | null> {
+    const { state, plan } = d;
+    let source = checked;
+    if (plan.move === "state_final_terms" || plan.move === "confirm_agreement") {
+      const terms = plan.offer ? speakTerms(state.view, plan.offer.terms, this.#locale) : null;
+      if (!terms || !source.includes(terms)) return null;
+      source = source.replace(terms, EXACT_TERMS_SLOT);
+    }
+    const sameAmounts = (a: string, b: string) => JSON.stringify(findAmounts(a).sort()) === JSON.stringify(findAmounts(b).sort());
+    try {
+      const brief = d.brief as { channel?: unknown; reply_language?: unknown; who_you_represent?: unknown };
+      const response = await this.#llm.generate({
+        purpose: "reword_checked_reply",
+        system: REWORD_PROMPT,
+        // A reply that neither closes nor already asks something still hands the turn back (the guide's way forward).
+        messages: [{ role: "user", content: JSON.stringify({ checked_reply: source, hand_back: !source.includes("?") && plan.action !== "wait" && !plan.opening && !plan.notice && ["counter", "hold", "price_pressure", "answer", "answer_public_terms", "explain_price", "acknowledge_budget", "answer_enquiry", "explore_objection", "compare_terms"].includes(plan.move), their_message: d.currentMessage, channel: brief.channel ?? "text", reply_language: brief.reply_language ?? null, who_you_represent: brief.who_you_represent ?? null, recent_conversation: d.conversation.slice(-4) }, null, 2) }],
+        schema: { name: "kritva_reworded_reply", jsonSchema: REPLY_SCHEMA },
+      });
+      const { text } = (response.json ?? {}) as { text?: unknown };
+      if (typeof text !== "string" || !text.trim() || !sameAmounts(text, source)) return null;
+      const result = await this.#checkDraft(writes, d, { text, question: null }, agent);
+      return result.ok ? { text: result.text, question: result.question } : null;
+    } catch {
+      return null;
+    }
   }
 
   /** Records an agent offer (with its previous version and tactic). With check: also its deal-space check. */

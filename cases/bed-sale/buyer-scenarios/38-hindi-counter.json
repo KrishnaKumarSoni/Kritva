@@ -1,0 +1,64 @@
+{
+  "name": "hindi-counter",
+  "description": "A Hindi chat (2026-11-22): price, a low offer, pressure, then asking for the owner. Every reply stays in Hindi (Devanagari), counters say the buyer's number back while declining it, nothing calls a price the best or last, and Kritva never promises to put them through to the owner.",
+  "turns": [
+    {
+      "buyer": "नमस्ते, बेड का लास्ट प्राइस क्या है?",
+      "expect": {
+        "offer": null,
+        "says": [
+          "[\\u0900-\\u097F]",
+          "20,000"
+        ]
+      }
+    },
+    {
+      "buyer": "बहुत महँगा है। 15,000 में दे दो।",
+      "expect": {
+        "says": [
+          "[\\u0900-\\u097F]",
+          "15,000"
+        ],
+        "neverSays": [
+          "I can (offer|do)",
+          "How about"
+        ]
+      }
+    },
+    {
+      "buyer": "थोड़ा और कम करो ना भैया।",
+      "expect": {
+        "says": [
+          "[\\u0900-\\u097F]"
+        ],
+        "neverSays": [
+          "I can (offer|do)",
+          "I'd like to stay"
+        ]
+      }
+    },
+    {
+      "buyer": "मालिक से बात कराओ।",
+      "expect": {
+        "says": [
+          "[\\u0900-\\u097F]"
+        ],
+        "neverSays": [
+          "बात (कराऊँ|कराऊं|करा दूँ|करवा दूँ|करवा देता)"
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "in_progress",
+      "pending_approval",
+      "no_agreement"
+    ],
+    "agentMustNotSay": [
+      "सबसे (सही|अच्छा|कम) (रेट|दाम|कीमत|प्राइस)",
+      "(आखिरी|आख़िरी|लास्ट) (रेट|दाम|कीमत|प्राइस) ₹",
+      "\\b(deal|agreed)\\b"
+    ]
+  }
+}

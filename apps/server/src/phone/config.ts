@@ -38,6 +38,13 @@ export interface PhoneSettings {
   acceptMode: "minimal" | "full";
   /** Log every sideband event type and the masked SIP headers of each call (KRITVA_PHONE_TRACE=1), for diagnosing a call. */
   trace: boolean;
+  /**
+   * The audio codec to declare to OpenAI for calls Kritva placed (KRITVA_PHONE_OUTBOUND_CODEC). Vobiz's
+   * outbound legs use G.711 mu-law (PCMU), and OpenAI stayed silent on them when no format was given;
+   * inbound calls (A-law from the networks) worked without one. Off by default: declaring PCMU did not
+   * bring audio on the live test either (section 15.4).
+   */
+  outboundCodec: "pcmu" | "pcma" | null;
 }
 
 /** OpenAI's global SIP host, routed by the caller's location (https://developers.openai.com/api/docs/guides/realtime-sip). */
@@ -112,6 +119,7 @@ export function phoneSettingsFromEnv(env: NodeJS.ProcessEnv = process.env): { se
     maxCalls: Math.round(seconds(env.KRITVA_PHONE_MAX_CALLS, 5, 1, 100)),
     acceptMode: env.KRITVA_PHONE_ACCEPT === "full" ? "full" : "minimal",
     trace: env.KRITVA_PHONE_TRACE === "1",
+    outboundCodec: env.KRITVA_PHONE_OUTBOUND_CODEC === "pcmu" ? "pcmu" : env.KRITVA_PHONE_OUTBOUND_CODEC === "pcma" ? "pcma" : null,
   };
   return { settings: webhookSecret && parsed.routes.length ? settings : null, problems };
 }
@@ -133,6 +141,8 @@ export interface OutboundConfig {
   callerId: string;
   publicUrl: string;
   bridgeUri: string;
+  /** "number" (default): hand answered calls over through Kritva's own number; "sip": straight to OpenAI's SIP address. */
+  bridge: "number" | "sip";
   /** Numbers Kritva may call (digits with country code), or ["*"]. Empty until calling is approved. */
   allow: string[];
   maxCalls: number;
@@ -170,6 +180,7 @@ export function outboundFromEnv(env: NodeJS.ProcessEnv, phone: PhoneSettings): {
       callerId,
       publicUrl,
       bridgeUri: `${sipUri(phone)};transport=tls`,
+      bridge: env.KRITVA_PHONE_BRIDGE === "sip" ? "sip" : "number",
       allow,
       maxCalls: phone.maxCalls,
       timeLimitSeconds: Math.round(phone.maxCallMs / 1000),
