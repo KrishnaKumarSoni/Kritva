@@ -958,7 +958,7 @@ export class RealtimeCall {
       response: {
         conversation: "none",
         input: [],
-        instructions: `${ENDING_GUIDE}\n\nSpeak ${languageLabel(this.#language)}. Never use dashes.\n\nNow: the negotiation has ${over}, and the line has been quiet for ${quiet} seconds.${last} If the call is over, say your goodbye and call end_call. If they may still want something, warmly ask if there is anything else. If speaking now would be awkward, call stay_quiet.`,
+        instructions: `${ENDING_GUIDE}\n\nSpeak ${languageLabel(this.#language)}. Never use dashes.\n\nNow: the negotiation has ${over}, and the line has been quiet for ${quiet} seconds.${last} If the call is over, say your goodbye and call end_call. If they may still want something, warmly ask if there is anything else. If speaking now would be awkward, call stay_quiet.\n\nHow you sound:\n${CONVERSATION_TONE}`,
         tools: [END_CALL_TOOL, STAY_QUIET_TOOL],
         tool_choice: "auto",
         metadata: { kritva: "wait", situation: "over" },
