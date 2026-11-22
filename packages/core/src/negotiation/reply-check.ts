@@ -43,14 +43,14 @@ const APPROVAL_CLAIM = /\b(has|have) approved\b|\bapproved (it|this|your offer|t
  * The same cues in Hindi and Tamil, so a reply in the other party's language is read like an English one.
  * Indic scripts have no \b word boundary in JavaScript, so these are plain sequences.
  */
-const DECLINE_CUE_INDIC = /नहीं|मुमकिन नहीं|संभव नहीं|मुश्किल|कम है|முடியாது|இயலாது|இல்லை|சாத்தியமில்லை|கஷ்டம்|குறைவு/u;
+const DECLINE_CUE_INDIC = /నాకు కుదరదు|కుదరదు|కాదు|లేదు|వీలు కాదు|సాధ్యం కాదు|ಆಗಲ್ಲ|ಆಗುವುದಿಲ್ಲ|ಇಲ್ಲ|ಸಾಧ್ಯವಿಲ್ಲ|പറ്റില്ല|ഇല്ല|സാധ്യമല്ല|না(?=[\s.,!?।]|$)|পারব না|সম্ভব নয়|नाही|जमणार नाही|नहीं|मुमकिन नहीं|संभव नहीं|मुश्किल|कम है|முடியாது|இயலாது|இல்லை|சாத்தியமில்லை|கஷ்டம்|குறைவு/u;
 const AGREEMENT_CLAIM_INDIC = /डील (पक्की|हो गई|डन)|सौदा (पक्का|तय|हो गया)|बात पक्की|मंज़ूर है|मंजूर है|आपका हुआ|बिक गया|ஒப்பந்தம் (உறுதி|முடிந்தது|ஆனது)|டீல் (ஓகே|முடிந்தது|உறுதி)|உங்களுடையது/u;
 const APPROVAL_CLAIM_INDIC = /(मंज़ूरी|मंजूरी|अप्रूवल) (दे दी|मिल गई|मिल गयी)|अप्रूव कर (दिया|दी)|ஒப்புதல் (கொடுத்தார்|கிடைத்தது|தந்தார்)|அப்ரூவ் (பண்ணிட்டார்|செய்தார்)/u;
 /** "<amount> चलेगा" / "<amount> ஓகே": agreeing to a figure, unless it is asked as a question. */
 const WORKS_CLAIM_INDIC = /\d[\d,]*\s*(?:में\s*)?(?:चलेगा|ठीक है|डन|डील पक्की|ஓகே|சரி|டீல்)(?![^।.!?]*\?)/u;
-const QUOTE_CUE_INDIC = /आप|तुम|உங்கள்|நீங்கள்|உங்க|நீங்க/u;
-const ACKNOWLEDGED_INDIC = /धन्यवाद|शुक्रिया|थैंक|बताया|कहा|बजट|நன்றி|சொன்ன|பட்ஜெட்/u;
-const OFFERING_INDIC = /कर सकता|कर सकती|कर सकते|दे सकता|दे सकती|दे सकते|चलेगा|ठीक रहेगा|डील|தர முடியும்|கொடுக்க முடியும்|பண்ணலாம்|செய்யலாம்|டீல்/u;
+const QUOTE_CUE_INDIC = /మీ|మీరు|ನಿಮ್ಮ|ನೀವು|നിങ്ങളുടെ|നിങ്ങൾ|আপনার|আপনি|तुमचा|तुमची|आप|तुम|உங்கள்|நீங்கள்|உங்க|நீங்க/u;
+const ACKNOWLEDGED_INDIC = /ధన్యవాదాలు|థ్యాంక్స్|ధన్యవాదాలు|ಧನ್ಯವಾದ|ಥ್ಯಾಂಕ್ಸ್|നന്ദി|ধন্যবাদ|থ্যাঙ্কস|धन्यवाद|शुक्रिया|थैंक|बताया|कहा|बजट|நன்றி|சொன்ன|பட்ஜெட்/u;
+const OFFERING_INDIC = /ఇవ్వగలను|ఇస్తాను|ಕೊಡಬಹುದು|ಕೊಡುತ್ತೇನೆ|തരാം|തരാൻ പറ്റും|দিতে পারি|দেব|देऊ शकते|देऊ शकतो|कर सकता|कर सकती|कर सकते|दे सकता|दे सकती|दे सकते|चलेगा|ठीक रहेगा|डील|தர முடியும்|கொடுக்க முடியும்|பண்ணலாம்|செய்யலாம்|டீல்/u;
 const declines = (s: string) => DECLINE_CUE.test(s) || DECLINE_CUE_INDIC.test(s);
 const quotes = (s: string) => QUOTE_CUE.test(s) || QUOTE_CUE_INDIC.test(s);
 const acknowledges = (s: string) => ACKNOWLEDGED.test(s) || ACKNOWLEDGED_INDIC.test(s);

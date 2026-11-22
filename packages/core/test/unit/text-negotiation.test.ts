@@ -759,13 +759,22 @@ describe("One rewrite before the checked fallback", () => {
     expect(added.text).toMatch(/king-size/i);
   });
 
-  it("the brief names the reply language from the script they wrote in, so an English chat never turns Hindi", async () => {
+  it("the brief names the reply language from the script they wrote in, so an English chat never turns Devanagari Hindi", async () => {
     const { say, llm } = await setup(listingOnlyDeliveryMandate());
     await say("Hi", { intent: "greeting" });
     expect(frames(llm).at(-1).reply_language).toBe("English");
     await say("बेड का दाम क्या है?", { intent: "question", questions: ["बेड का दाम क्या है?"] });
     expect(frames(llm).at(-1).reply_language).toBe("Hindi");
     expect(frames(llm).at(-1).must.join(" ")).toMatch(/Reply in Hindi/);
+  });
+
+  it("before they have spoken, the brief names no language and points to the guide's default; the guide sets it, not code", async () => {
+    const { engine, llm, sessionId } = await setup(listingOnlyDeliveryMandate());
+    await engine.greet({ sessionId, channel: "voice" });
+    const greeting = frames(llm).at(-1);
+    expect(greeting.reply_language).toBeUndefined();
+    expect(greeting.must.join(" ")).toMatch(/use the default language from "How Kritva sounds"/);
+    expect(greeting.must.join(" ")).toMatch(/feminine forms for yourself/);
   });
 
   it("a draft that exposed a private amount is never sent back to the model, only the reason", async () => {

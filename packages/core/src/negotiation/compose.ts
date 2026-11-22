@@ -7,7 +7,7 @@ import type { OfferTerm } from "../record/events.ts";
 import { formatValue, numericValue, orderTerms, type MandateView } from "./mandate-view.ts";
 import type { Plan } from "./policy.ts";
 import { principalLabel } from "./templates.ts";
-import { CONVERSATION_GUIDE, CONVERSATION_TONE } from "./conversation-guide.ts";
+import { CONVERSATION_GUIDE, CONVERSATION_TONE, DEFAULT_LANGUAGE } from "./conversation-guide.ts";
 import { findAmounts } from "./reply-check.ts";
 
 export const EXACT_TERMS_SLOT = "[[TERMS]]";
@@ -191,13 +191,16 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
     check_with_principal: "Say that this needs a decision from the person you represent, and that you will come back to them.",
   };
   // How it should sound comes first, the same in a chat and on a call ("How Kritva sounds" in the guide).
+  // The language is theirs once they have spoken; before that the guide's default applies (no language in code).
+  const language = replyLanguage(input);
+  const speakIn = `${language ? `Reply in ${language}.` : `They have not spoken yet: use the default language from "How Kritva sounds"${DEFAULT_LANGUAGE ? ` (${DEFAULT_LANGUAGE})` : ""}.`} Use everyday spoken words with the English words people use, never formal or bookish ones, and the feminine forms for yourself (you are a woman).`;
   must.unshift(input.channel === "voice" && plan.opening && plan.outbound
-    ? "You placed this call and they just answered. In two short, warm sentences: say hi, that you are Kritva, calling for the person you represent about what is offered (a few words from the facts), and ask whether now is a good time to talk. Do not mention the price or terms yet."
+    ? `You placed this call and they just answered. In two short, warm sentences: say hi, that you are Kritva, calling for the person you represent about what is offered (a few words from the facts), and ask whether now is a good time to talk. Do not mention the price or terms yet. ${speakIn}`
     : input.channel === "voice" && plan.opening
-    ? "This is the start of a live voice call. In one or two short, warm sentences, say hi, who you are and who you're helping, and invite them to talk. Do not mention the price, terms or other details yet."
+    ? `This is the start of a live voice call. In one or two short, warm sentences, say hi, who you are and who you're helping, and invite them to talk. Do not mention the price, terms or other details yet. ${speakIn}`
     : input.channel === "voice"
-    ? `This is a live voice call: sound like a friendly person on the phone, as in "How Kritva sounds". React to what they said, give the answer or move, and hand the turn back, usually in two to four short spoken sentences. Do not repeat details you already gave, do not add terms or facts they did not ask about, and promise nothing (no holding, reserving or checking back unless the brief says so). Say places in full and never read terms as a list. Reply in ${languageName(input.language) ?? "the language of their latest message"}, in that language's own script (Hindi in Devanagari, never Urdu script; Tamil in Tamil script), and write every amount in digits with its currency symbol, never in words.`
-    : `This is a chat: write the way you'd talk, as in "How Kritva sounds". React to what they said, give the answer or move, and hand the turn back, usually in two to four short sentences. Reply in ${replyLanguage(input) ?? "the language of their latest message"}, in that language's own script, with every amount in digits. Promise nothing the brief does not say: no checking with anyone, holding or coming back to them unless the brief says so.`);
+    ? `This is a live voice call: sound like a friendly person on the phone, as in "How Kritva sounds". React to what they said, give the answer or move, and hand the turn back, usually in two to four short spoken sentences. Do not repeat details you already gave, do not add terms or facts they did not ask about, and promise nothing (no holding, reserving or checking back unless the brief says so). Say places in full and never read terms as a list. ${speakIn} Use that language's own script (Hindi in Devanagari, never Urdu script; Tamil in Tamil script), and write every amount in digits with its currency symbol, never in words.`
+    : `This is a chat: write the way you'd talk, as in "How Kritva sounds". React to what they said, give the answer or move, and hand the turn back, usually in two to four short sentences. ${speakIn} Use that language's own script, with every amount in digits. Promise nothing the brief does not say: no checking with anyone, holding or coming back to them unless the brief says so.`);
   if (plan.notice && notice[plan.notice]) must.unshift(notice[plan.notice]!);
   // "Is that your final price?" is answered with the current terms, never a yes or no: either would mislead.
   if (["price_pressure", "answer_public_terms", "answer", "hold", "counter", "answer_enquiry", "explain_price", "compare_terms"].includes(plan.move) && input.theirMessage && /\bfinal\b|\bbest you can\b|\blast price\b/i.test(input.theirMessage)) must.push("They asked whether this is your final price. Do not answer yes, no or anything like \"not quite\", and do not call it final: say it's the price right now (by number only if you did not just say it), then hand the turn back.");
@@ -306,10 +309,14 @@ function earlierInvitations(conversation: Array<{ speaker: "agent" | "counterpar
 /** Their language: the call's, or else the script of their latest message (Latin script reads as English). */
 function replyLanguage(input: ComposeInput): string | null {
   if (input.language) return languageName(input.language);
-  const text = input.theirMessage ?? "";
+  // A reply code starts (an approval, an end) follows the language of their latest message.
+  const text = input.theirMessage ?? [...input.conversation].reverse().find((m) => m.speaker === "counterparty")?.text ?? "";
+  // Nothing from them yet: the guide's default language applies.
   if (!/\p{L}/u.test(text)) return null;
   const scripts: Array<[RegExp, string]> = [[/\p{Script=Devanagari}/u, "hi"], [/\p{Script=Tamil}/u, "ta"], [/\p{Script=Kannada}/u, "kn"], [/\p{Script=Telugu}/u, "te"], [/\p{Script=Malayalam}/u, "ml"], [/\p{Script=Bengali}/u, "bn"]];
-  return languageName(scripts.find(([pattern]) => pattern.test(text))?.[1] ?? "en");
+  const script = scripts.find(([pattern]) => pattern.test(text))?.[1];
+  // Latin letters read as English (Indian English): leaving it to the writer made English chats turn Hindi.
+  return languageName(script ?? "en");
 }
 
 /** A language code as a name for the brief ("ta" → "Tamil"); null when unknown. */

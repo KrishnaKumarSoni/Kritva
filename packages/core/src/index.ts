@@ -35,7 +35,7 @@ export { projectBoard, latestOffer, liveOffer, scoreOffer, gapToLimit, contactSt
 export { projectState, type NegotiationState, type Outcome, type StatedOffer, type FollowUpState } from "./negotiation/state.ts";
 export { readMandate, formatValue, orderTerms, type MandateView, type NegotiableTerm } from "./negotiation/mandate-view.ts";
 export { checkReply, findAmounts, type ReplyViolation } from "./negotiation/reply-check.ts";
-export { CONVERSATION_GUIDE, CONVERSATION_TONE, guideSection } from "./negotiation/conversation-guide.ts";
+export { CONVERSATION_GUIDE, CONVERSATION_TONE, DEFAULT_LANGUAGE, guideSection } from "./negotiation/conversation-guide.ts";
 export { decide, type Plan, type Interpretation } from "./negotiation/policy.ts";
 export { createAgentFromEnv, createTurnLlmFromEnv, DEFAULT_TURN_MODEL } from "./llm/config.ts";
 export { AGENT_INSTRUCTIONS, READ_MESSAGE_DESCRIPTION, SEND_REPLY_DESCRIPTION, StructuredLlmAgentModel } from "./agent/negotiator.ts";

@@ -100,6 +100,9 @@ describe("outgoing reply check (code, not prompt)", () => {
     expect(checkReply("₹15,000 के लिए धन्यवाद, लेकिन मैं यह नहीं कर सकता। मैं ₹19,000 कर सकता हूँ।", counter)).toEqual([]);
     expect(checkReply("₹15,000 க்கு நன்றி, ஆனால் அது முடியாது. நான் ₹19,000 தர முடியும்.", counter)).toEqual([]);
     expect(checkReply("मैं ₹15,000 कर सकता हूँ।", counter).map((x) => x.rule)).toContain("crosses_limit");
+    // Telugu: "Thanks for your ₹15,000 offer, but that doesn't work for me. I can give ₹19,000."
+    expect(checkReply("మీ ₹15,000 offerకు thanks, కానీ అది నాకు కుదరదు. నేను ₹19,000 ఇవ్వగలను.", counter)).toEqual([]);
+    expect(checkReply("నేను ₹15,000 ఇవ్వగలను.", counter).map((x) => x.rule)).toContain("crosses_limit");
     // One "no" in another sentence never covers a figure put forward in this one.
     expect(checkReply("ठीक है, ₹15,000 कर सकता हूँ। डिलीवरी नहीं होगी।", counter).map((x) => x.rule)).toContain("crosses_limit");
   });

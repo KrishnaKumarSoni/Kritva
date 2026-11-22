@@ -18,3 +18,6 @@ export function guideSection(title: string): string {
  * turns it answers itself (greetings, small talk, "are you a bot?"), so both sound like one person.
  */
 export const CONVERSATION_TONE = guideSection("How Kritva sounds");
+
+/** The guide's "Default language: <name>." line: the language Kritva speaks before the other party has spoken. Set in the guide, never in code. */
+export const DEFAULT_LANGUAGE = /^- Default language: ([^.\n]+)\./m.exec(CONVERSATION_GUIDE)?.[1]?.trim() ?? null;

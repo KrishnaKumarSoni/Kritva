@@ -61,7 +61,7 @@ const MARKET = /\bmarket (price|value|rate)\b|\bretail (price|cost)s?\b|\b(price
  */
 const HANDOFF = [
   /\b(?:i|we)(?:'ll| will| can| could| would)? (?:put you through|connect you|transfer you|pass you (?:on |over )?to|hand you (?:over )?to|get (?:them|him|her|\w+) on the (?:line|phone)|have (?:them|him|her|\w+) call you|arrange a call)\b/i,
-  /बात (?:कराऊँ|कराऊं|करा दूँ|करा दूं|करवा दूँ|करवा दूं|करवाता|कराता|कराती|करवाती|करवा देता|करा देता)|कनेक्ट (?:कर दूँ|कर दूं|करवा|करा)/u,
+  /बात (?:कराऊँ|कराऊं|करा दूँ|करा दूं|करवा दूँ|करवा दूं|करवाता|कराता|कराती|करवाती|करवा देता|करा देता|करवा देती|करा देती|करवा दूंगी|करवा दूँगी|करा दूँगी)|कनेक्ट (?:कर दूँ|कर दूं|करवा|करा)/u,
   /பேச வைக்கிறேன்|இணைக்கிறேன்|இணைத்து விடுகிறேன்|கனெக்ட் (?:பண்ணுகிறேன்|பண்றேன்|செய்கிறேன்)/u,
 ];
 const PROMISE = /\b(we|i)( will|'ll| can| could| would)? (deliver|drop (it )?off|bring (it )?(over|to you)|assemble|install|include|throw in|add in)\b/i;
