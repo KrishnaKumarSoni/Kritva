@@ -11,6 +11,7 @@ import {
   MandateRevisions,
   NegotiationEngine,
   NegotiationRecord,
+  DealGroups,
   SqliteLibraryBackend,
   SqliteRecordBackend,
   type PayloadOf,
@@ -382,7 +383,7 @@ class FakeLiveCalls implements LiveCallRegistry {
   }
 }
 
-function setup(options: { library?: boolean; settings?: Partial<PhoneSettings>; outbound?: Partial<OutboundSettings>; injectDialer?: boolean; followUps?: boolean } = {}) {
+function setup(options: { library?: boolean; settings?: Partial<PhoneSettings>; outbound?: Partial<OutboundSettings>; injectDialer?: boolean; followUps?: boolean; groups?: number } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "kritva-phone-"));
   const db = join(dir, "db.sqlite");
   const record = new NegotiationRecord(new SqliteRecordBackend(db));
@@ -391,7 +392,9 @@ function setup(options: { library?: boolean; settings?: Partial<PhoneSettings>; 
   const examples = loadExamples(CASES);
   const library = options.library === false ? null : new MandateLibrary({ backend: new SqliteLibraryBackend(db), mappingLlm: llm });
   const listings = loadListings(CASES, mandates, examples, library);
-  const engine = new NegotiationEngine({ record, llm, locale: "en-IN", subjectFacts: new Map([["bed-sale", "fact_f_item"]]), listingDetails: new Map(listings.map((l) => [l.caseId, l])) });
+  // Several counterparties: deal groups with this many open places, when a test asks for them.
+  const groups = options.groups ? new DealGroups(record, { maxOpen: options.groups }) : null;
+  const engine = new NegotiationEngine({ record, llm, locale: "en-IN", subjectFacts: new Map([["bed-sale", "fact_f_item"]]), listingDetails: new Map(listings.map((l) => [l.caseId, l])), groups });
   const connector = new FakeConnector();
   const telephony = new FakeTelephony();
   const liveCalls = new FakeLiveCalls();
@@ -428,6 +431,7 @@ function setup(options: { library?: boolean; settings?: Partial<PhoneSettings>; 
     phone: { settings, connector, log: (e) => logs.push(e), pollMs: 40, acceptBackoffMs: [0, 0, 0], outbound: options.outbound && !options.injectDialer ? { telephony, settings: outboundSettings } : null },
     dialer: options.injectDialer ? (injected = new OutboundDialer({ engine, telephony, settings: outboundSettings })) : null,
     liveCalls,
+    groups,
   });
   let n = 0;
   /** OpenAI's webhook for an incoming call, signed with the project's secret. */
@@ -484,7 +488,7 @@ function setup(options: { library?: boolean; settings?: Partial<PhoneSettings>; 
     if (!started.ok) throw new Error(started.error.message);
     return started.session.id;
   };
-  return { app, record, engine, llm, library, connector, telephony, liveCalls, injected: () => injected, link, logs, ring, bridge, vobiz, placeCall, getCall, newSession, sessions, events, messages, deliveries, connections, play, offer, followUpVobiz };
+  return { groups, listings, app, record, engine, llm, library, connector, telephony, liveCalls, injected: () => injected, link, logs, ring, bridge, vobiz, placeCall, getCall, newSession, sessions, events, messages, deliveries, connections, play, offer, followUpVobiz };
 }
 
 describe("Phone: incoming calls", () => {
@@ -1034,5 +1038,31 @@ describe("Phone: approval after the call, and a call-back", () => {
     const res = await t.app.request("/api/webhooks/vobiz/answer?t=nope", { method: "POST" });
     expect(await res.text()).toContain("<Hangup/>");
     expect((await t.app.request("/api/webhooks/vobiz/hangup?t=nope", { method: "POST" })).status).toBe(200);
+  });
+});
+
+describe("inbound calls with several counterparties", () => {
+  it("a listed counterparty calling back while their negotiation waits is let in, not turned away", async () => {
+    const t = setup({ groups: 5 });
+    const mandateId = t.listings.find((l) => l.caseId === "bed-sale")!.libraryId;
+    const entry = t.library!.addCounterparty(mandateId, { name: "Asha", phone: "+91 98765 43210" }, 5);
+    if (!entry.ok) throw new Error(entry.message);
+    const active = t.library!.active(mandateId)!;
+    const started = await t.groups!.start({ mandate: active.mandate, mandateSource: { mandateId, revision: active.revision }, entryId: entry.value.id, via: "link" });
+    if (!started.ok) throw new Error(started.message);
+    await t.engine.setPaused({ sessionId: started.sessionId, paused: true });
+    const call = await t.ring("rtc_listed_back");
+    expect(call.status).toBe(200);
+    expect(call.json).toMatchObject({ ok: true, sessionId: started.sessionId });
+  });
+
+  it("callers whose call ended never fill the cap and turn the next caller away", async () => {
+    const t = setup({ groups: 1 });
+    const first = await t.ring("rtc_first");
+    expect(first.json.ok).toBe(true);
+    await t.record.append(first.json.sessionId, { id: "voice_end_test", type: "voice_connection", channel: "voice", payload: { status: "ended", transport: "phone", reason: "hung_up" } }, { kind: "system", partyId: null });
+    const second = await t.ring("rtc_second");
+    expect(second.json).toMatchObject({ ok: true });
+    expect(second.json.sessionId).not.toBe(first.json.sessionId);
   });
 });

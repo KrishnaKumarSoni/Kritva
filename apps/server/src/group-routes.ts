@@ -78,10 +78,17 @@ export interface GroupRouteDeps {
   liveCalls?: () => Set<string>;
   /** Kritva calling counterparties' numbers. Absent when outbound calling is off. */
   dialer?: Dialer | null;
+  /**
+   * Whether the board may place calls ("Start negotiations" dialling, and the Call button). Off by
+   * default (KRITVA_BOARD_CALLS=on turns it on), so outbound problems never reach a demo.
+   */
+  boardCalls?: boolean;
 }
 
 export function registerGroupRoutes(app: Hono, deps: GroupRouteDeps): void {
   const { library, groups, record } = deps;
+  // The board places calls only when switched on and a dialer exists.
+  const dialer = deps.boardCalls ? (deps.dialer ?? null) : null;
   const found = (id: string) => {
     const d = library.get(id);
     return d && !d.deleted ? d : null;
@@ -140,15 +147,15 @@ export function registerGroupRoutes(app: Hono, deps: GroupRouteDeps): void {
     const calls: Array<{ entryId: string; ok: boolean; message: string | null }> = [];
     for (const entry of library.counterparties(id)) {
       if (await openSessionFor(groups, id, entry.id)) continue;
-      const r = await startNegotiation(groups, record, { mandate: active.mandate, source: { mandateId: id, revision: active.revision }, entryId: entry.id, via: entry.phone && deps.dialer ? "phone" : "link" });
+      const r = await startNegotiation(groups, record, { mandate: active.mandate, source: { mandateId: id, revision: active.revision }, entryId: entry.id, via: entry.phone && dialer ? "phone" : "link" });
       if (!r.ok) {
         refused.push({ entryId: entry.id, message: r.message });
         continue;
       }
       started.push({ entryId: entry.id, sessionId: r.sessionId });
       // Kritva calls everyone with a number; the others get their private link.
-      if (entry.phone && deps.dialer) {
-        const placed = await deps.dialer.call({ sessionId: r.sessionId, to: entry.phone, clientRequestId: `start-${r.sessionId}` });
+      if (entry.phone && dialer) {
+        const placed = await dialer.call({ sessionId: r.sessionId, to: entry.phone, clientRequestId: `start-${r.sessionId}` });
         calls.push({ entryId: entry.id, ok: placed.ok, message: placed.ok ? null : placed.message });
       }
     }
@@ -158,7 +165,7 @@ export function registerGroupRoutes(app: Hono, deps: GroupRouteDeps): void {
   /** Calls one listed counterparty (again): their open negotiation, or a new one within the cap. */
   app.post("/api/operator/library/:id/counterparties/:entryId/call", async (c) => {
     const id = c.req.param("id");
-    if (!deps.dialer) return c.json({ error: "phone_off", message: "Calling isn't set up on this server." }, 409);
+    if (!dialer) return c.json({ error: "phone_off", message: "Calling from the board is off on this server." }, 409);
     const entry = library.counterparties(id).find((e) => e.id === c.req.param("entryId"));
     if (!entry) return c.json({ error: "not_found" }, 404);
     if (!entry.phone) return c.json({ error: "no_number", message: `${entry.name} has no phone number on the list.` }, 409);
@@ -171,7 +178,7 @@ export function registerGroupRoutes(app: Hono, deps: GroupRouteDeps): void {
       if (!r.ok) return c.json({ error: r.error, message: r.message }, r.status);
       sessionId = r.sessionId;
     }
-    const placed = await deps.dialer.call({ sessionId, to: entry.phone, clientRequestId: typeof body.clientRequestId === "string" ? body.clientRequestId.slice(0, 100) : undefined });
+    const placed = await dialer.call({ sessionId, to: entry.phone, clientRequestId: typeof body.clientRequestId === "string" ? body.clientRequestId.slice(0, 100) : undefined });
     if (!placed.ok) return c.json({ error: placed.code, message: placed.message }, 409);
     return c.json({ call: placed.call }, 202);
   });
@@ -183,7 +190,7 @@ export function registerGroupRoutes(app: Hono, deps: GroupRouteDeps): void {
     if (!detail) return c.json({ error: "not_found" }, 404);
     const group = groups.latestFor(id);
     const entries = library.counterparties(id);
-    if (!group) return c.json({ mandateId: id, title: detail.title, state: detail.state, max: groups.maxOpen, canCall: Boolean(deps.dialer), rows: [], waiting: entries.map((e) => ({ entryId: e.id, name: e.name })), bestSessionId: null, reservation: null, concluded: null, counters: { negotiationsRun: 0, timeMs: 0, dealsOutsideLimits: 0 } });
+    if (!group) return c.json({ mandateId: id, title: detail.title, state: detail.state, max: groups.maxOpen, canCall: Boolean(dialer), rows: [], waiting: entries.map((e) => ({ entryId: e.id, name: e.name })), bestSessionId: null, reservation: null, concluded: null, counters: { negotiationsRun: 0, timeMs: 0, dealsOutsideLimits: 0 } });
     const live = deps.liveCalls?.() ?? null;
     const inputs = await Promise.all(group.members.map(async (m) => {
       const ctx = await record.context(m.sessionId);
@@ -237,7 +244,7 @@ export function registerGroupRoutes(app: Hono, deps: GroupRouteDeps): void {
       title: detail.title,
       state: detail.state,
       max: groups.maxOpen,
-      canCall: Boolean(deps.dialer),
+      canCall: Boolean(dialer),
       rows,
       waiting: entries.filter((e) => !started.has(e.id)).map((e) => ({ entryId: e.id, name: e.name })),
       bestSessionId: board.bestSessionId,

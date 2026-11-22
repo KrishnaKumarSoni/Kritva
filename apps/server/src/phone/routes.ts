@@ -214,9 +214,12 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
   };
 
   /** Answers a call into a session that already exists, then joins it. */
-  const answerInto = async (callId: string, sessionId: string, outboundCallId: string | null, target: unknown): Promise<{ status: 200 | 500; body: Record<string, unknown> }> => {
+  const answerInto = async (callId: string, sessionId: string, outboundCallId: string | null, target: unknown, continuing = false): Promise<{ status: 200 | 500; body: Record<string, unknown> }> => {
     const briefing = await engine.voiceBriefing(sessionId);
-    if (!briefing || briefing.status !== "active") return reject(callId, 480, "not_active");
+    // A listed counterparty calling back while their offer waits for the principal (or the negotiation is
+    // paused) is let in: every turn then goes to the engine, which tells them where it stands.
+    const waiting = continuing && (briefing?.status === "awaiting_approval" || briefing?.status === "paused");
+    if (!briefing || (briefing.status !== "active" && !waiting)) return reject(callId, 480, "not_active");
     const plan = acceptPlan(realtimeSession(deps.realtime, briefing, { noiseReduction: settings.noiseReduction }), settings.acceptMode);
     // Kritva's own calls arrive as G.711 mu-law from Vobiz: declare it, so OpenAI decodes and plays the call's audio.
     if (outboundCallId && settings.outboundCodec) withCodec(plan.update ?? plan.accept, `audio/${settings.outboundCodec}`);
@@ -273,6 +276,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
     if (!target.ok) return reject(callId, target.sip, target.reason);
 
     let sessionId = sessions.get(callId);
+    let continuing = false;
     if (!sessionId) {
       // Several counterparties: a listed counterparty's number continues their open negotiation;
       // anyone else joins the mandate's group as a walk-in, within the cap.
@@ -282,6 +286,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
       const existing = entry && deps.groups ? await openSessionFor(deps.groups, target.source.mandateId, entry.id) : null;
       if (existing) {
         sessionId = existing;
+        continuing = true;
         log({ kind: "phone_continues", callId, sessionId });
       } else {
         const started = await startNegotiation(deps.groups ?? null, record, { mandate: target.mandate, source: target.source, entryId: entry?.id ?? null, via: "phone" });
@@ -290,7 +295,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
       }
       sessions.set(callId, sessionId);
     }
-    return answerInto(callId, sessionId, null, route.target);
+    return answerInto(callId, sessionId, null, route.target, continuing);
   };
 
   app.post(WEBHOOK_PATH, async (c) => {

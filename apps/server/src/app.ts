@@ -95,6 +95,8 @@ export interface AppDeps {
   operatorKey?: string;
   /** Several counterparties per saved mandate (docs/Kritva_Multiple_Counterparties.md). Off when absent. */
   groups?: DealGroups | null;
+  /** Whether the deal board may place calls (KRITVA_BOARD_CALLS=on). Off by default. */
+  boardCalls?: boolean;
 }
 
 export function createApp(deps: AppDeps): Hono {
@@ -123,7 +125,7 @@ export function createApp(deps: AppDeps): Hono {
   }
 
   if (deps.library) registerLibraryRoutes(app, { library: deps.library, record, engine, locale, examples: deps.examples ?? [], protectedIds: (deps.listings ?? []).map((l) => l.libraryId), groups: deps.groups ?? null });
-  if (deps.library && deps.groups) registerGroupRoutes(app, { record, library: deps.library, groups: deps.groups, locale, liveCalls: deps.liveCalls?.sessions ? () => deps.liveCalls!.sessions!() : undefined, dialer: deps.dialer ?? null });
+  if (deps.library && deps.groups) registerGroupRoutes(app, { record, library: deps.library, groups: deps.groups, locale, liveCalls: deps.liveCalls?.sessions ? () => deps.liveCalls!.sessions!() : undefined, dialer: deps.dialer ?? null, boardCalls: deps.boardCalls === true });
   if (deps.library && deps.intake) registerIntakeRoutes(app, { intake: deps.intake, library: deps.library, record, engine, locale });
   registerVoiceRoutes(app, {
     record,

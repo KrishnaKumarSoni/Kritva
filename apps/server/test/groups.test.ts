@@ -54,7 +54,7 @@ class FakeDialer implements Dialer {
   }
 }
 
-export function groupSetup(maxOpen = 3, dialer: Dialer | null = null) {
+export function groupSetup(maxOpen = 3, dialer: Dialer | null = null, boardCalls = true) {
   const dir = mkdtempSync(join(tmpdir(), "kritva-groups-"));
   const db = join(dir, "db.sqlite");
   const record = new NegotiationRecord(new SqliteRecordBackend(db));
@@ -66,7 +66,7 @@ export function groupSetup(maxOpen = 3, dialer: Dialer | null = null) {
   const groups = new DealGroups(record, { maxOpen });
   const engine = new NegotiationEngine({ record, llm, locale: "en-IN", subjectFacts: new Map([["bed-sale", "fact_f_item"]]), listingDetails: new Map(listings.map((l) => [l.caseId, l])), groups });
   const revisions = new MandateRevisions({ record, engine, mappingLlm: llm });
-  const app = createApp({ record, engine, revisions, mandates, locale: "en-IN", library, examples, listings, groups, dialer: dialer as unknown as AppDeps["dialer"] });
+  const app = createApp({ record, engine, revisions, mandates, locale: "en-IN", library, examples, listings, groups, dialer: dialer as unknown as AppDeps["dialer"], boardCalls });
   const call = async (method: string, path: string, body?: unknown) => {
     const res = await app.request(path, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
     const text = await res.text();
@@ -206,5 +206,19 @@ describe("several counterparties: Kritva calls them", () => {
     expect(again.status).toBe(202);
     await hangUpPending(dialer, again.json.call.sessionId);
     expect(dialer.hungUp).toEqual([again.json.call.callId]);
+  });
+});
+
+describe("several counterparties: board calls are off unless switched on", () => {
+  it("starting negotiations dials nobody and offers no Call button by default", async () => {
+    const dialer = new FakeDialer();
+    const { call, mandateId } = groupSetup(3, dialer, false);
+    const entry = (await call("POST", `/api/operator/library/${mandateId}/counterparties`, { name: "Ravi", phone: "98450 12345" })).json.entry;
+    const started = await call("POST", `/api/operator/library/${mandateId}/start`);
+    expect(started.json.started).toHaveLength(1);
+    expect(started.json.calls).toEqual([]);
+    expect(dialer.numbers).toEqual([]);
+    expect((await call("GET", `/api/operator/library/${mandateId}/board`)).json.canCall).toBe(false);
+    expect((await call("POST", `/api/operator/library/${mandateId}/counterparties/${entry.id}/call`, {})).status).toBe(409);
   });
 });

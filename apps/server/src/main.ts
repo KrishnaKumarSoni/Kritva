@@ -90,6 +90,8 @@ const app = createApp({
   groups,
   liveCalls,
   dialer,
+  // The deal board places calls only when KRITVA_BOARD_CALLS=on (outbound audio depends on Vobiz).
+  boardCalls: process.env.KRITVA_BOARD_CALLS === "on",
   followUps,
   recordingsDir: join(dataDir, "recordings"),
   vobizAuth: process.env.VOBIZ_AUTH_ID && process.env.VOBIZ_AUTH_TOKEN ? { authId: process.env.VOBIZ_AUTH_ID, authToken: process.env.VOBIZ_AUTH_TOKEN } : null,

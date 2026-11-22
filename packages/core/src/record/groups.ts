@@ -125,6 +125,23 @@ export class DealGroups {
     return this.groups().find((g) => g.members.some((m) => m.sessionId === sessionId)) ?? null;
   }
 
+  /**
+   * Open sessions that hold a place under the cap. A walk-in (no list entry) whose voice call has
+   * ended cannot be resumed (calling again starts a new negotiation), so it no longer holds one:
+   * test calls never fill the cap and turn the next caller away.
+   */
+  async heldPlaces(group: GroupState): Promise<string[]> {
+    const held: string[] = [];
+    for (const m of group.members) {
+      const ctx = await this.#record.context(m.sessionId);
+      if (FINISHED.has(ctx.status)) continue;
+      const call = ctx.events.findLast((e) => e.type === "voice_connection");
+      if (m.entryId === null && (call?.payload as { status?: string } | undefined)?.status === "ended") continue;
+      held.push(m.sessionId);
+    }
+    return held;
+  }
+
   async openSessions(group: GroupState): Promise<string[]> {
     const open: string[] = [];
     for (const m of group.members) {
@@ -145,7 +162,7 @@ export class DealGroups {
       if (group?.concluded) return { ok: false, code: "concluded", message: "This deal has already been agreed with someone else." };
       const replaces = input.previousSessionId && group?.members.some((m) => m.sessionId === input.previousSessionId) ? input.previousSessionId : null;
       if (group) {
-        const open = (await this.openSessions(group)).filter((id) => id !== replaces);
+        const open = (await this.heldPlaces(group)).filter((id) => id !== replaces);
         if (open.length >= this.#maxOpen) return { ok: false, code: "full", message: `This deal already has ${this.#maxOpen} open negotiations.` };
       }
       const started = await this.#record.startSession({ mandate: input.mandate, previousSessionId: input.previousSessionId ?? null, mandateSource: input.mandateSource });
