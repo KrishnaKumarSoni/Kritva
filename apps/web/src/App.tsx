@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { api, ApiError, type BuyerView, type Decision, type MandateOption, type NegotiationLogRow, type OperatorView, type TermValue } from "./api.ts";
 import { NegotiationLog, howOf, whoOf } from "./NegotiationLog.tsx";
@@ -6,6 +6,9 @@ import { Chat } from "./Chat.tsx";
 import { InsightsPanel } from "./InsightsPanel.tsx";
 import { MandatesPage } from "./MandatesPage.tsx";
 import { BoardPage } from "./BoardPage.tsx";
+import { Stage, type StageMode } from "./Stage.tsx";
+import { Menu } from "./Menu.tsx";
+import { SignOutIcon } from "./icons.tsx";
 
 const POLL_MS = 2500;
 
@@ -30,6 +33,14 @@ function routeFromLocation(): { view: View; sessionId: string | null; mandateId:
   return { view: "negotiation", sessionId: (first === "negotiations" ? second : undefined) ?? sessionFromHash(), mandateId: null };
 }
 
+/** A sign-in link's token works once, so every caller in this page shares the one verification. */
+const verifications = new Map<string, ReturnType<typeof api.auth.verify>>();
+function verifyOnce(token: string) {
+  let pending = verifications.get(token);
+  if (!pending) verifications.set(token, (pending = api.auth.verify(token)));
+  return pending;
+}
+
 export function App() {
   // ?view=buyer is the counterparty's own page: the conversation only, nothing private.
   const counterpartyOnly = new URLSearchParams(window.location.search).get("view") === "buyer";
@@ -38,9 +49,11 @@ export function App() {
   const currentSession = useRef(sessionId);
   currentSession.current = sessionId;
   const [access, setAccess] = useState(false);
-  const [askKey, setAskKey] = useState(false);
-  const [key, setKey] = useState("");
-  const [checkingKey, setCheckingKey] = useState(false);
+  // A sign-in link opens /signin#token=...; the token is read before anything rewrites the address.
+  const [linkToken] = useState(() => (!counterpartyOnly && window.location.pathname === "/signin" ? (/(?:^|[#&])token=([\w-]+)/.exec(window.location.hash)?.[1] ?? null) : null));
+  const [auth, setAuth] = useState<{ status: "checking" | "signed_out" | "signed_in"; email: string | null; linkError: string | null }>({ status: "checking", email: null, linkError: null });
+  // The curtain is down until the console is ready, then lifts (on every load, and after signing in).
+  const [curtain, setCurtain] = useState<"down" | "dropping" | "gone">(counterpartyOnly ? "gone" : "down");
   const [chat, setChat] = useState<BuyerView | null>(null);
   const [operator, setOperator] = useState<OperatorView | null>(null);
   const [pending, setPending] = useState<{ id: string; text: string } | null>(null);
@@ -66,8 +79,6 @@ export function App() {
       .listMandates()
       .then((list) => {
         setAccess(true);
-        setAskKey(false);
-        setKey("");
         setConsoleError(null);
         setMandates(list);
         setMandateId((current) => (current && list.some((m) => m.id === current) ? current : (list[0]?.id ?? null)));
@@ -75,12 +86,51 @@ export function App() {
       .catch((e: unknown) => {
         setAccess(false);
         setOperator(null);
-        if (!(e instanceof ApiError && e.status === 401) || api.hasSellerKey()) {
-          setConsoleError(e instanceof ApiError ? e.message : "Unable to load your instructions.");
-        }
+        if (e instanceof ApiError && e.status === 401) setAuth({ status: "signed_out", email: null, linkError: null });
+        else setConsoleError(e instanceof ApiError ? e.message : "Unable to load your instructions.");
       });
   }, [counterpartyOnly]);
-  useEffect(() => { if (api.hasSellerKey()) void loadMandates(); }, [loadMandates]);
+
+  // Who is signed in: a sign-in link's token is used first (and leaves the address at once); otherwise the cookie decides.
+  useEffect(() => {
+    if (counterpartyOnly) return;
+    let cancelled = false;
+    void (async () => {
+      if (linkToken) {
+        try {
+          const verified = await verifyOnce(linkToken);
+          if (!cancelled) setAuth({ status: "signed_in", email: verified.email, linkError: null });
+        } catch (e) {
+          // A link used a moment ago (a second tab, or a reload) may already have signed this browser in.
+          const me = await api.auth.me().catch(() => null);
+          if (!cancelled) setAuth(me ? { status: "signed_in", email: me.email, linkError: null } : { status: "signed_out", email: null, linkError: e instanceof ApiError ? e.message : "That sign-in link didn't work. Ask for a new one." });
+        }
+        return;
+      }
+      try {
+        const me = await api.auth.me();
+        if (!cancelled) setAuth({ status: "signed_in", email: me.email, linkError: null });
+      } catch (e) {
+        if (!cancelled) setAuth({ status: "signed_out", email: null, linkError: e instanceof ApiError && e.status === 401 ? null : "Unable to reach Kritva. Check that it is running, then reload." });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [counterpartyOnly, linkToken]);
+  useEffect(() => {
+    if (auth.status === "signed_in") void loadMandates();
+  }, [auth.status, loadMandates]);
+
+  /** Signing out ends the session and drops the curtain again. */
+  const signOut = async () => {
+    await api.auth.signOut().catch(() => undefined);
+    setAccess(false);
+    setOperator(null);
+    setChat(null);
+    setAuth({ status: "signed_out", email: null, linkError: null });
+    setCurtain("dropping");
+  };
 
   // The address follows the page. The counterparty's own page keeps its link (?view=buyer#session=...).
   const firstSync = useRef(true);
@@ -154,9 +204,13 @@ export function App() {
       }
     } catch (e) {
       if (currentSession.current !== id) return;
-      if (e instanceof ApiError && e.status === 401) {
+      if (e instanceof ApiError && e.status === 401 && access) {
+        // The session ended (signed out elsewhere, or expired): back to the sign-in curtain.
         setAccess(false);
         setOperator(null);
+        setAuth({ status: "signed_out", email: null, linkError: null });
+        setCurtain("dropping");
+        return;
       }
       (access ? setConsoleError : setError)(e instanceof ApiError ? e.message : "Unable to load the negotiation.");
     }
@@ -281,15 +335,7 @@ export function App() {
     }
   };
 
-  const unlock = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!askKey) { setAskKey(true); return; }
-    setCheckingKey(true);
-    // Opening the console is the moment to ask once whether Kritva may say when an approval is waiting.
-    if (typeof Notification !== "undefined" && Notification.permission === "default") void Notification.requestPermission().catch(() => undefined);
-    api.rememberSellerKey(key.trim());
-    try { await loadMandates(); } finally { setCheckingKey(false); }
-  };
+  const stageMode: StageMode = auth.status === "signed_out" ? "signin" : auth.status === "signed_in" && (access || consoleError) ? "lift" : "hold";
 
   return (
     <div className="app">
@@ -323,16 +369,25 @@ export function App() {
             ))}
           </nav>
         )}
-        {/* The top bar is navigation only. Each page carries its own actions, next to what they change. */}
+        {/* The top bar is navigation only. Each page carries its own actions, next to what they change; the account sits at the end. */}
         <div className="topbar-actions">
-          {!access && !counterpartyOnly && (
-            <form className="unlock" onSubmit={unlock}>
-              {askKey && <input className="seller-key" type="password" aria-label="Access key" placeholder="Access key" autoFocus required value={key} onChange={(e) => setKey(e.target.value)} />}
-              <button type="submit" className="button button-secondary" disabled={checkingKey}>{askKey ? "Unlock" : "Open console"}</button>
-            </form>
+          {access && auth.status === "signed_in" && (
+            <Menu
+              label={auth.email ? `Account: ${auth.email}` : "Account"}
+              trigger={<span className="account-avatar" aria-hidden="true">{(auth.email ?? "K").slice(0, 1).toUpperCase()}</span>}
+              header={auth.email ? <span className="account-email">{auth.email}</span> : null}
+              items={[{ id: "signout", label: "Sign out", icon: <SignOutIcon />, onSelect: () => void signOut() }]}
+            />
           )}
         </div>
       </header>
+
+      {curtain !== "gone" && !counterpartyOnly && <Stage key={curtain} mode={stageMode} linkError={auth.linkError} dropIn={curtain === "dropping"} onLifted={() => setCurtain("gone")} />}
+      {!counterpartyOnly && !access && auth.status === "signed_in" && consoleError && curtain === "gone" && (
+        <p className="composer-error console-error" role="alert">
+          {consoleError}
+        </p>
+      )}
 
       {access && view === "deals" && (
         <BoardPage
@@ -360,7 +415,7 @@ export function App() {
           test={{ mandates: mandates.map((m) => ({ value: m.id, label: m.title, description: m.description })), mandateId, onChoose: setMandateId, onStart: () => void newNegotiation(), starting }}
         />
       )}
-      <main className={access ? "layout" : "layout layout-single"} hidden={access && (view !== "negotiation" || negMode !== "session")}>
+      <main className={access ? "layout" : "layout layout-single"} hidden={(!access && !counterpartyOnly) || (access && (view !== "negotiation" || negMode !== "session"))}>
         <h1 className="visually-hidden">Kritva</h1>
         <Chat
           key={sessionId ?? "none"}
@@ -377,7 +432,6 @@ export function App() {
           // A real negotiation is watched, never joined: only a test lets the principal play the other side.
           readOnly={access && (openRow ? openRow.origin !== "test" : true)}
         />
-        {!counterpartyOnly && consoleError && !access && <p className="composer-error" role="alert">{consoleError}</p>}
         {access && (
           <div className="side">
             {consoleError && <p className="composer-error" role="alert">{consoleError}</p>}

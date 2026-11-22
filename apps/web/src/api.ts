@@ -467,16 +467,11 @@ export class ApiError extends Error {
   }
 }
 
-const sellerKeyStorage = "kritva.seller-key";
-
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response;
   const headers = new Headers();
   if (body !== undefined) headers.set("content-type", "application/json");
-  if (path.startsWith("/api/operator/")) {
-    const key = sessionStorage.getItem(sellerKeyStorage);
-    if (key) headers.set("authorization", `Bearer ${key}`);
-  }
+  // The console's requests carry the sign-in cookie (same origin); nothing else identifies the principal.
   // The server can be briefly unreachable (a restart while a turn is running). Retry a few times:
   // sends carry their client message ID, so a retried turn resumes instead of running twice.
   for (let attempt = 0; ; attempt += 1) {
@@ -498,8 +493,13 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 }
 
 export const api = {
-  hasSellerKey: () => Boolean(sessionStorage.getItem(sellerKeyStorage)),
-  rememberSellerKey: (key: string) => sessionStorage.setItem(sellerKeyStorage, key),
+  /** Signing in with an emailed link. */
+  auth: {
+    me: () => call<{ email: string | null }>("GET", "/api/auth/me"),
+    requestLink: (email: string) => call<{ ok: true; message: string; via?: "console" | "ses" }>("POST", "/api/auth/link", { email }),
+    verify: (token: string) => call<{ ok: true; email: string }>("POST", "/api/auth/verify", { token }),
+    signOut: () => call<{ ok: true }>("POST", "/api/auth/signout"),
+  },
   listSessions: () => call<SessionRow[]>("GET", "/api/operator/sessions"),
   negotiations: () => call<NegotiationLogRow[]>("GET", "/api/operator/negotiations"),
   listMandates: () => call<MandateOption[]>("GET", "/api/operator/mandates"),
@@ -509,12 +509,9 @@ export const api = {
   /** The seller's decision on a pending approval: approve, counter with new terms, or decline. */
   decide: (id: string, requestId: string, decision: Decision, offerId: string, mandateRevision: number, extra: { message?: string; counterTerms?: Array<{ termId: string; value: TermValue }> } = {}) =>
     call<{ followUp: { via: "text" | "voice" | "call" } }>("POST", `/api/operator/sessions/${id}/approvals/${requestId}`, { decision, offerId, mandateRevision, ...extra }),
-  /** A call recording, as a playable file (operator routes need the seller key, so an audio tag can't fetch it directly). */
+  /** A call recording, as a playable file. */
   recording: async (id: string, recordingId: string): Promise<Blob> => {
-    const headers = new Headers();
-    const key = sessionStorage.getItem(sellerKeyStorage);
-    if (key) headers.set("authorization", `Bearer ${key}`);
-    const res = await fetch(`/api/operator/sessions/${id}/recordings/${encodeURIComponent(recordingId)}`, { headers });
+    const res = await fetch(`/api/operator/sessions/${id}/recordings/${encodeURIComponent(recordingId)}`);
     if (!res.ok) throw new ApiError(res.status, ((await res.json().catch(() => ({}))) as { message?: string }).message ?? "The recording isn't available.");
     return res.blob();
   },

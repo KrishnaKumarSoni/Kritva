@@ -4,8 +4,11 @@
  * has gathered; the card that ends the intake shows exactly what will go live.
  */
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { createPortal } from "react-dom";
 import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent } from "react";
 import { api, ApiError, type IntakeMessageView, type IntakeView, type LibraryExample, type MandateReview, type PhoneLine, type PrincipalSide } from "./api.ts";
+import { adLine, lineNumberFor } from "./listing-line.ts";
+import { GoLive } from "./GoLive.tsx";
 import { AlertIcon, BeakerIcon, CheckIcon, CopyIcon, ImageIcon, LockIcon, PhoneIcon, SendIcon, SparkIcon, XIcon } from "./icons.tsx";
 
 const spring = { type: "spring", duration: 0.35, bounce: 0 } as const;
@@ -36,6 +39,7 @@ export function IntakeChat({ view, examples, line = null, onChange, onSaved, onU
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<{ message: string; retry: (() => void) | null } | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [reveal, setReveal] = useState<{ title: string; code: string | null } | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -95,9 +99,13 @@ export function IntakeChat({ view, examples, line = null, onChange, onSaved, onU
   const goLive = async (versionId: string, draftHash: string) => {
     setPhase("going-live");
     setError(null);
+    // The first time a mandate goes live is a moment of its own; later revisions just update.
+    const first = !view.mandate?.active;
     try {
-      onChange(await api.intake.goLive(view.id, versionId, draftHash));
+      const live = await api.intake.goLive(view.id, versionId, draftHash);
+      onChange(live);
       onSaved();
+      if (first && live.state === "live") setReveal({ title: live.title, code: live.mandate?.listingCode ?? null });
     } catch (e) {
       setError({ message: e instanceof ApiError ? e.message : "It couldn't go live just now. Nothing changed; try again.", retry: null });
     } finally {
@@ -308,6 +316,7 @@ export function IntakeChat({ view, examples, line = null, onChange, onSaved, onU
           Enter to send, Shift+Enter for a new line. Paste or drop a picture to share it.
         </p>
       </form>
+      {createPortal(<AnimatePresence>{reveal && <GoLive key="golive" title={reveal.title} code={reveal.code} line={line} onClose={() => setReveal(null)} />}</AnimatePresence>, document.body)}
     </section>
   );
 }
@@ -335,30 +344,14 @@ function MessageBody({ message, pending = false }: { message: IntakeMessageView;
 }
 
 /** Which side the principal is on, in words, so the meaning never rests on colour. */
-/** Indian metro area codes with 8-digit numbers after them (Delhi, Pune, Mumbai, Kolkata, Hyderabad, Chennai, Ahmedabad, Bengaluru). */
-const METRO_CODES = ["11", "20", "22", "33", "40", "44", "79", "80"];
-
-/**
- * The line's number as people write it. The line is a landline or toll-free number (a phone provider's
- * DID), so "+918064264194" reads "+91 80 6426 4194". Anything else stays ungrouped, so it is never
- * grouped wrongly.
- */
-function formatNumber(e164: string): string {
-  const digits = e164.replace(/\D/g, "");
-  if (digits.length !== 12 || !digits.startsWith("91")) return e164;
-  const n = digits.slice(2);
-  if (METRO_CODES.includes(n.slice(0, 2))) return `+91 ${n.slice(0, 2)} ${n.slice(2, 6)} ${n.slice(6)}`;
-  return `+91 ${n}`;
-}
-
 /**
  * The listing code: the four digits a caller gives on Kritva's shared phone line so the call reaches
  * this mandate. "Copy for your ad" copies the line to paste next to the listing.
  */
 function ListingCode({ code, line, state }: { code: string; line: PhoneLine | null; state: IntakeView["state"] }) {
   const [copied, setCopied] = useState(false);
-  const number = line?.listingCodes && line.number ? formatNumber(line.number) : null;
-  const ad = number ? `Call ${number} and give listing code ${code}.` : `Listing code: ${code}`;
+  const number = lineNumberFor(line);
+  const ad = adLine(code, line);
   useEffect(() => {
     if (!copied) return;
     const t = window.setTimeout(() => setCopied(false), 1600);
