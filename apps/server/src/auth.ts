@@ -107,7 +107,14 @@ export interface AuthSettings {
   /** Who may sign in (lowercase). Empty: anyone, which is allowed only with console delivery. */
   allowed: string[];
   sender: EmailSender;
+  /** A shared passkey that also signs in (KRITVA_PASSKEY, with a demo default). Null: off. */
+  passkey?: string | null;
+  /** Who a passkey sign-in is signed in as. */
+  passkeyEmail?: string;
 }
+
+/** The demo passkey when KRITVA_PASSKEY is not set. Set KRITVA_PASSKEY=off to turn passkey sign-in off. */
+export const DEFAULT_PASSKEY = "kritva-jury-2026";
 
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/;
 
@@ -140,7 +147,11 @@ export function authFromEnv(env: NodeJS.ProcessEnv = process.env): { settings: A
   if (useSes && from && allowed.length) sender = new SesEmailSender({ from, region });
   notes.unshift(sender.kind === "ses" ? `Sign-in: links are emailed through Amazon SES (${region ?? env.AWS_REGION ?? env.AWS_DEFAULT_REGION ?? "the AWS profile's region"}) from ${from}, to ${allowed.length} allowed address(es).` : "Sign-in: links are printed in this log (set KRITVA_EMAIL_FROM and KRITVA_SIGNIN_EMAILS to email them).");
   if (sender.kind === "ses" && !webUrl) notes.push("Set KRITVA_WEB_URL (https) so emailed links open the console from anywhere.");
-  return { settings: { webUrl, allowed, sender }, notes };
+  const rawPasskey = env.KRITVA_PASSKEY?.trim();
+  const passkey = rawPasskey === "off" ? null : rawPasskey || DEFAULT_PASSKEY;
+  const passkeyEmail = normalizeEmail(env.KRITVA_PASSKEY_EMAIL) ?? allowed[0] ?? "jury@kritva.app";
+  if (passkey) notes.push(`Sign-in: the passkey also signs in (as ${passkeyEmail}).`);
+  return { settings: { webUrl, allowed, sender, passkey, passkeyEmail }, notes };
 }
 
 function isLocal(url: URL): boolean {
@@ -278,6 +289,23 @@ export function registerAuthRoutes(app: Hono, deps: AuthDeps): void {
     const session = deps.store.createSession(email, now());
     setCookie(c, SESSION_COOKIE, session.id, { httpOnly: true, secure: secure(c), sameSite: "Strict", path: "/", maxAge: Math.floor(SESSION_MS / 1000) });
     log({ kind: "signin_verified" });
+    return c.json({ ok: true, email });
+  });
+
+  app.post("/api/auth/passkey", async (c) => {
+    c.header("Cache-Control", "no-store");
+    const body = await c.req.json<{ passkey?: unknown }>().catch(() => ({}) as { passkey?: unknown });
+    const expected = deps.settings.passkey;
+    const given = typeof body.passkey === "string" ? body.passkey.trim() : "";
+    const hash = (value: string) => createHash("sha256").update(value).digest();
+    if (!expected || !given || !timingSafeEqual(hash(given), hash(expected))) {
+      log({ kind: "signin_passkey_failed" });
+      return c.json({ error: "wrong_passkey", message: "That passkey didn't work. Check it and try again." }, 401);
+    }
+    const email = deps.settings.passkeyEmail ?? "jury@kritva.app";
+    const session = deps.store.createSession(email, now());
+    setCookie(c, SESSION_COOKIE, session.id, { httpOnly: true, secure: secure(c), sameSite: "Strict", path: "/", maxAge: Math.floor(SESSION_MS / 1000) });
+    log({ kind: "signin_passkey" });
     return c.json({ ok: true, email });
   });
 

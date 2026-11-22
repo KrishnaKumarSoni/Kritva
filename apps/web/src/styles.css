@@ -3817,3 +3817,9 @@ details[open] > summary::before {
     scale: none !important;
   }
 }
+
+.stage-passkey {
+  margin-top: var(--space-5, 24px);
+  padding-top: var(--space-4, 16px);
+  border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+}

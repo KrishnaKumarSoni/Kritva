@@ -152,6 +152,63 @@ function SignInForm({ linkError }: { linkError: string | null }) {
           </motion.form>
         )}
       </AnimatePresence>
+      {state.kind !== "sent" && <PasskeyForm />}
     </motion.div>
+  );
+}
+
+/** Below the email form: a shared passkey signs in at once (KRITVA_PASSKEY on the server). */
+function PasskeyForm() {
+  const [passkey, setPasskey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    const value = passkey.trim();
+    if (!value) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.auth.passkey(value);
+      window.location.assign("/");
+    } catch (e) {
+      setBusy(false);
+      setError(e instanceof ApiError ? e.message : "Something went wrong. Try again.");
+    }
+  };
+  return (
+    <form className="stage-form stage-passkey" onSubmit={submit} noValidate>
+      <label className="stage-text" htmlFor="signin-passkey">
+        Or sign in with a passkey.
+      </label>
+      <div className="stage-field">
+        <input
+          id="signin-passkey"
+          className="stage-input"
+          type="password"
+          autoComplete="current-password"
+          spellCheck={false}
+          placeholder="Passkey"
+          value={passkey}
+          onChange={(e) => {
+            setPasskey(e.target.value);
+            if (error) setError(null);
+          }}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? "passkey-error" : undefined}
+          disabled={busy}
+        />
+        <button type="submit" className="button stage-submit" disabled={busy || !passkey.trim()}>
+          {busy ? <span className="spinner" aria-hidden="true" /> : null}
+          {busy ? "Signing in" : "Sign in"}
+          {!busy && <ArrowRightIcon width={14} height={14} aria-hidden="true" />}
+        </button>
+      </div>
+      {error && (
+        <p id="passkey-error" className="stage-error" role="alert">
+          {error}
+        </p>
+      )}
+    </form>
   );
 }
