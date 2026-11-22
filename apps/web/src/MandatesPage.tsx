@@ -6,9 +6,9 @@
  */
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiError, type IntakeDraftSummary, type IntakeView, type LibraryExample, type LibrarySummary, type LifecycleStep, type MandateState } from "./api.ts";
+import { api, ApiError, type IntakeDraftSummary, type IntakeView, type LibraryExample, type LibrarySummary, type LifecycleStep, type MandateState, type PrincipalSide } from "./api.ts";
 import { ArchiveIcon, PauseIcon, PlayIcon, PlusIcon, RefreshIcon, TrashIcon } from "./icons.tsx";
-import { IntakeChat, StateChip } from "./IntakeChat.tsx";
+import { IntakeChat, SideChip, StateChip } from "./IntakeChat.tsx";
 import { Menu, type MenuItem } from "./Menu.tsx";
 
 const spring = { type: "spring", duration: 0.35, bounce: 0 } as const;
@@ -21,7 +21,7 @@ interface Props {
 }
 
 type Selection = { kind: "mandate"; id: string } | { kind: "intake"; id: string };
-type Row = { key: string; selection: Selection; title: string; state: MandateState; updatedAt: string; meta: string };
+type Row = { key: string; selection: Selection; title: string; state: MandateState; updatedAt: string; meta: string; side: PrincipalSide | null };
 type Deleting = { selection: Selection; title: string };
 
 const GROUPS: Array<{ state: MandateState; title: string }> = [
@@ -132,8 +132,8 @@ export function MandatesPage({ onUse, initialId = null }: Props) {
   };
 
   const rows: Row[] = [
-    ...mandates.map((m): Row => ({ key: m.mandateId, selection: { kind: "mandate", id: m.mandateId }, title: m.title, state: m.state, updatedAt: m.updatedAt, meta: metaFor(m) })),
-    ...drafts.map((d): Row => ({ key: d.id, selection: { kind: "intake", id: d.id }, title: d.title, state: "draft", updatedAt: d.updatedAt, meta: `Setting up · ${Math.round(d.progress * 100)}%` })),
+    ...mandates.map((m): Row => ({ key: m.mandateId, selection: { kind: "mandate", id: m.mandateId }, title: m.title, state: m.state, updatedAt: m.updatedAt, meta: metaFor(m), side: m.principalSide ?? null })),
+    ...drafts.map((d): Row => ({ key: d.id, selection: { kind: "intake", id: d.id }, title: d.title, state: "draft", updatedAt: d.updatedAt, meta: `Setting up · ${Math.round(d.progress * 100)}%`, side: null })),
   ];
   const isSelected = (s: Selection) => selection?.kind === s.kind && selection.id === s.id;
   const newSelected = Boolean(view && !view.mandateId && !view.messages.some((m) => m.role === "user"));
@@ -199,6 +199,7 @@ export function MandatesPage({ onUse, initialId = null }: Props) {
                           <span className="library-item-title">{row.title}</span>
                           <span className="library-item-meta">
                             <StateChip state={row.state} />
+                            <SideChip side={row.side} />
                             <span>{row.meta}</span>
                           </span>
                         </button>

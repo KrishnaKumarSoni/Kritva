@@ -5,7 +5,7 @@
  */
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent } from "react";
-import { api, ApiError, type IntakeMessageView, type IntakeView, type LibraryExample, type MandateReview } from "./api.ts";
+import { api, ApiError, type IntakeMessageView, type IntakeView, type LibraryExample, type MandateReview, type PrincipalSide } from "./api.ts";
 import { AlertIcon, CheckIcon, ImageIcon, LockIcon, SendIcon, SparkIcon, XIcon } from "./icons.tsx";
 
 const spring = { type: "spring", duration: 0.35, bounce: 0 } as const;
@@ -321,6 +321,12 @@ function MessageBody({ message, pending = false }: { message: IntakeMessageView;
   );
 }
 
+/** Which side the principal is on, in words, so the meaning never rests on colour. */
+export function SideChip({ side }: { side: PrincipalSide | null | undefined }) {
+  if (!side) return null;
+  return <span className="state-chip side-chip">{side === "pays" ? "Buying" : "Selling"}</span>;
+}
+
 export function StateChip({ state }: { state: IntakeView["state"] }) {
   if (state === "new") return <span className="state-chip state-draft">New</span>;
   const label = { live: "Live", paused: "Paused", closed: "Closed", draft: "Draft" }[state];
@@ -368,6 +374,8 @@ function ReadyCard({ card, view, busy, going, onGoLive }: { card: Extract<NonNul
         {card.review && (
           <p className="ready-card-sub">
             You're the {card.review.parties.you}, dealing with the {card.review.parties.other}.
+            {card.review.side === "pays" && " Kritva will work to bring the price down for you."}
+            {card.review.side === "receives" && " Kritva will work to get you the best price."}
           </p>
         )}
       </div>

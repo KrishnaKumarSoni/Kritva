@@ -260,3 +260,34 @@ describe("Epic 11, Story 3: open and revise a saved mandate", () => {
     expect(JSON.stringify(opened)).not.toMatch(/18,000|Koramangala|bed/i);
   });
 });
+
+describe("Buying or selling: the side the principal is on", () => {
+  const maximum = (amount: number, quote: string) => ({ ...minimum(amount, quote, "ceiling"), kind: "maximum" as const });
+  const buying = { ...bed, title: "Buying a bed", principalSide: "pays", privateText: "You can negotiate the price, but don't pay more than ₹22,000. Ask me before accepting any offer." };
+
+  it("a stated side is saved, shown in the review and in the list", async () => {
+    const { create, confirm, call } = setup();
+    const m = (await create(bedExtraction([maximum(22_000, "don't pay more than ₹22,000")] as never), buying as never)).json;
+    expect(m.latest.review.side).toBe("pays");
+    expect(m.latest.blockers).toEqual([]);
+    expect((await confirm(m)).status).toBe(200);
+    const listed = (await call("GET", "/api/operator/library")).json.find((x: any) => x.mandateId === m.mandateId);
+    expect(listed.principalSide).toBe("pays");
+  });
+
+  it("a limit that points the other way blocks confirming until the side is settled", async () => {
+    const { create, confirm } = setup();
+    const m = (await create(bedExtraction(), { ...bed, principalSide: "pays" } as never)).json;
+    const issue = m.latest.review.issues.find((i: any) => i.blocking && /paying, or being paid/.test(i.text ?? i.message ?? ""));
+    expect(issue).toBeTruthy();
+    expect((await confirm(m, m.latest.review.issues.map((i: any) => i.id))).status).toBe(409);
+  });
+
+  it("an older mandate with no side reads it from the limit", async () => {
+    const { create, call } = setup();
+    const m = (await create(bedExtraction())).json;
+    expect(m.latest.review.side).toBe("receives");
+    expect((await call("GET", "/api/operator/library")).json[0].principalSide).toBe("receives");
+  });
+});
+

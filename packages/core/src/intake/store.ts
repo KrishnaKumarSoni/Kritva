@@ -23,7 +23,7 @@ export type ChecklistStatus = "known" | "assumed" | "missing";
 export type Checklist = Record<ChecklistId, ChecklistStatus>;
 
 export const EMPTY_CHECKLIST: Checklist = Object.fromEntries(CHECKLIST_ITEMS.map((i) => [i.id, "missing"])) as Checklist;
-export const EMPTY_FIELDS: LibraryInput = { title: "", principalRole: "", counterpartyRole: "", publicText: "", privateText: "" };
+export const EMPTY_FIELDS: LibraryInput = { title: "", principalRole: "", counterpartyRole: "", principalSide: null, publicText: "", privateText: "" };
 
 /** A mapped draft offered to the principal in the chat, with the open notes they accept by making it live. */
 export interface ReadyCard {

@@ -1,0 +1,289 @@
+{
+  "schemaVersion": "kritva.draft/1",
+  "caseId": "bicycle-purchase",
+  "principalSide": "pays",
+  "parties": [
+    {
+      "id": "principal",
+      "role": "buyer",
+      "name": null,
+      "isPrincipal": true
+    },
+    {
+      "id": "counterparty",
+      "role": "seller",
+      "name": null,
+      "isPrincipal": false
+    }
+  ],
+  "sources": [
+    {
+      "id": "public-facts",
+      "authorPartyId": "principal",
+      "disclosure": "public",
+      "format": "unspecified",
+      "label": "Public facts",
+      "text": "I'm looking to buy a used Firefox Meteor 700c bicycle in good condition. I can offer ₹15,000. I can collect it myself from anywhere in Bangalore."
+    },
+    {
+      "id": "private-instructions",
+      "authorPartyId": "principal",
+      "disclosure": "private",
+      "format": "unspecified",
+      "label": "Private instructions",
+      "text": "You can negotiate the price within my limit. Don't pay more than ₹17,000. Never tell them my highest price. Ask me before agreeing to any price."
+    }
+  ],
+  "terms": [
+    {
+      "id": "term_t_price",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "public-facts",
+          "quote": "I can offer ₹15,000."
+        },
+        {
+          "sourceId": "private-instructions",
+          "quote": "negotiate the price"
+        }
+      ],
+      "name": "price",
+      "description": "Purchase price for the bicycle.",
+      "valueType": "money",
+      "unit": null,
+      "currency": "INR"
+    },
+    {
+      "id": "term_t_collection_location",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "public-facts",
+          "quote": "collect it myself from anywhere in Bangalore"
+        }
+      ],
+      "name": "collection location",
+      "description": "Where the buyer would collect the bicycle.",
+      "valueType": "text",
+      "unit": null,
+      "currency": null
+    }
+  ],
+  "goals": [
+    {
+      "id": "goal_g_buy_bicycle",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "public-facts",
+          "quote": "I'm looking to buy a used Firefox Meteor 700c bicycle in good condition."
+        }
+      ],
+      "partyId": "principal",
+      "kind": "objective",
+      "description": "Buy a used Firefox Meteor 700c bicycle in good condition.",
+      "termIds": [],
+      "priority": null
+    }
+  ],
+  "facts": [
+    {
+      "id": "fact_f_desired_bicycle",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "public-facts",
+          "quote": "used Firefox Meteor 700c bicycle in good condition"
+        }
+      ],
+      "partyId": "principal",
+      "statement": "The buyer is looking for a used Firefox Meteor 700c bicycle in good condition.",
+      "termId": null,
+      "value": {
+        "type": "text",
+        "value": "used Firefox Meteor 700c bicycle in good condition"
+      }
+    },
+    {
+      "id": "fact_f_can_collect",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "public-facts",
+          "quote": "I can collect it myself from anywhere in Bangalore."
+        }
+      ],
+      "partyId": "principal",
+      "statement": "The buyer can collect the bicycle themselves from anywhere in Bangalore.",
+      "termId": "term_t_collection_location",
+      "value": {
+        "type": "text",
+        "value": "anywhere in Bangalore"
+      }
+    }
+  ],
+  "positions": [
+    {
+      "id": "position_p_price_offer",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "public-facts",
+          "quote": "I can offer ₹15,000."
+        }
+      ],
+      "partyId": "principal",
+      "termId": "term_t_price",
+      "value": {
+        "type": "money",
+        "amount": 15000,
+        "currency": "INR"
+      },
+      "conditionIds": []
+    },
+    {
+      "id": "position_p_collection_location",
+      "status": "stated",
+      "disclosure": "public",
+      "sourceRefs": [
+        {
+          "sourceId": "public-facts",
+          "quote": "I can collect it myself from anywhere in Bangalore."
+        }
+      ],
+      "partyId": "principal",
+      "termId": "term_t_collection_location",
+      "value": {
+        "type": "text",
+        "value": "anywhere in Bangalore"
+      },
+      "conditionIds": []
+    }
+  ],
+  "limits": [
+    {
+      "id": "limit_l_price_max",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "private-instructions",
+          "quote": "Don't pay more than ₹17,000."
+        }
+      ],
+      "partyId": "principal",
+      "termId": "term_t_price",
+      "kind": "maximum",
+      "value": {
+        "type": "money",
+        "amount": 17000,
+        "currency": "INR"
+      },
+      "conditionIds": [],
+      "exception": "unspecified"
+    }
+  ],
+  "targets": [],
+  "preferences": [],
+  "alternatives": [],
+  "permissions": [
+    {
+      "id": "permission_perm_negotiate_price",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "private-instructions",
+          "quote": "You can negotiate the price within my limit."
+        }
+      ],
+      "partyId": "principal",
+      "action": "propose_terms",
+      "mode": "autonomous",
+      "termIds": [
+        "term_t_price"
+      ],
+      "description": "The agent may negotiate the price within the stated limit.",
+      "conditionIds": [
+        "condition_c_price_within_limit"
+      ]
+    },
+    {
+      "id": "permission_perm_accept_price",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "private-instructions",
+          "quote": "Ask me before agreeing to any price."
+        }
+      ],
+      "partyId": "principal",
+      "action": "accept_agreement",
+      "mode": "requires_approval",
+      "termIds": [
+        "term_t_price"
+      ],
+      "description": "The agent must ask the principal before agreeing to any price.",
+      "conditionIds": []
+    },
+    {
+      "id": "permission_perm_disclose_highest_price",
+      "status": "stated",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "private-instructions",
+          "quote": "Never tell them my highest price."
+        }
+      ],
+      "partyId": "principal",
+      "action": "disclose_information",
+      "mode": "prohibited",
+      "termIds": [
+        "term_t_price"
+      ],
+      "description": "The agent must not disclose the principal's highest price.",
+      "conditionIds": []
+    }
+  ],
+  "conditions": [
+    {
+      "id": "condition_c_price_within_limit",
+      "status": "inferred",
+      "disclosure": "private",
+      "sourceRefs": [
+        {
+          "sourceId": "private-instructions",
+          "quote": "within my limit"
+        },
+        {
+          "sourceId": "private-instructions",
+          "quote": "Don't pay more than ₹17,000."
+        }
+      ],
+      "description": "The negotiated price is no more than the principal's stated limit of ₹17,000.",
+      "termId": "term_t_price",
+      "operator": "at_most",
+      "value": {
+        "type": "money",
+        "amount": 17000,
+        "currency": "INR"
+      }
+    }
+  ],
+  "issues": [],
+  "approval": {
+    "status": "confirmed",
+    "confirmedBy": "principal",
+    "confirmedAt": "2026-11-22T02:31:22.637Z",
+    "acknowledgedIssueIds": []
+  }
+}

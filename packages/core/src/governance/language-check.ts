@@ -43,7 +43,7 @@ Saying an amount that is in checked_terms is fine. Saying you don't have a detai
 For each concern, give a short "reason" naming the rule and what in the quote breaks it, and a "severity":
 - "violation": the quoted words clearly break one of the rules above as defined. Only these stop the reply.
 - "doubt": anything you are unsure about, or that only might be read that way.
-Ordinary acknowledgements ("I hear you", "I understand you'd like it lower", "noted"), restating the current asking amount (also with "for now" or "I can keep it at"), attributing a figure to what they said ("I see your budget is X"), and answering their question from permitted_facts are never violations.`;
+Ordinary acknowledgements ("I hear you", "I understand you'd like it lower", "noted"), restating the current asking amount or the current offer (also with "for now" or "I can keep it at"), attributing a figure to what they said ("I see your budget is X"), and answering their question from permitted_facts are never violations.`;
 
 const SCHEMA = {
   type: "object",

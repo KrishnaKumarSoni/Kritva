@@ -836,7 +836,7 @@ export class NegotiationEngine {
     }
     const n = state.view.negotiable;
     if (n && state.currentAsk !== null && state.currentAsk !== n.opening) {
-      permittedFacts.push(`The original public price was ${formatValue(numericValue(n, n.opening), this.#locale)}; ${formatValue(numericValue(n, state.currentAsk), this.#locale)} is the current offer to them, lowered from it.`);
+      permittedFacts.push(`The original public price was ${formatValue(numericValue(n, n.opening), this.#locale)}; ${formatValue(numericValue(n, state.currentAsk), this.#locale)} is the current offer to them, moved from it toward theirs.`);
     }
     if (plan.openForDiscussion) permittedFacts.push("The current terms are still open for discussion.");
     if (plan.move === "confirm_agreement") permittedFacts.push("With the agreement recorded, payment and handover are the remaining steps, to be arranged between the parties.");

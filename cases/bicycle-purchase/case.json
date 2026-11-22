@@ -1,0 +1,16 @@
+{
+  "caseId": "bicycle-purchase",
+  "description": "Buying a used bicycle, from a mandate made through the mandate library. The principal pays: Kritva offers, and a better deal is a lower price. It has no strategy guidance of its own, so it runs on the default strategy.",
+  "parties": [
+    { "id": "principal", "role": "buyer", "name": null, "isPrincipal": true },
+    { "id": "counterparty", "role": "seller", "name": null, "isPrincipal": false }
+  ],
+  "sources": {},
+  "mandates": {
+    "offer": {
+      "file": "mandates/offer.confirmed.json",
+      "description": "Firefox Meteor 700c, offering ₹15,000, maximum ₹17,000, collects anywhere in Bangalore.",
+      "label": "Bicycle purchase (library mandate)"
+    }
+  }
+}
