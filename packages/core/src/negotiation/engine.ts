@@ -831,11 +831,21 @@ export class NegotiationEngine {
     if (plan.move === "confirm_agreement") permittedFacts.push("With the agreement recorded, payment and handover are the remaining steps, to be arranged between the parties.");
     if (plan.move === "end_negotiation" && plan.end?.requestedBy === "principal") permittedFacts.push(`${publicPrincipalName || principalLabel(state.view)} decided not to go ahead; there is no agreement.`);
     if (plan.listingAvailable !== undefined) permittedFacts.push(`The listed subject is ${plan.listingAvailable ? "still available" : "no longer available"}.`);
+    // Around an approval: what the represented person decided, and any words they asked to pass on.
+    // Named both ways the reply may name them: the public name, or the role label.
+    const who = publicPrincipalName ? `${principalLabel(state.view)} (${publicPrincipalName})` : principalLabel(state.view);
+    const step = plan.followUp?.step;
+    if (step === "approved" && plan.approvalGranted) permittedFacts.push(`${who} has approved these exact terms. Nothing is agreed until the other party says yes again.`);
+    if (step === "countered") permittedFacts.push(`${who} can do these terms instead of the ones the other party accepted.`);
+    if (step === "declined") permittedFacts.push(`${who} can't do the terms the other party accepted. There is no agreement.`);
+    if (step === "close" || step === "validity" || step === "contact" || step === "phone") permittedFacts.push(`These terms wait for ${who}'s approval. Kritva will get back to the other party once ${who} decides.`);
+    if (plan.followUp?.messageFromPrincipal) permittedFacts.push(`${who} asked Kritva to pass this on: "${plan.followUp.messageFromPrincipal}"`);
     if (subject) permittedFacts.push(subject);
     const language = await languageCheck(this.#llm, {
       // The checker reviews generated words. The inserted terms already passed the structured gate and the final code check.
       reply: insertedTerms ? draft.replace(insertedTerms, EXACT_TERMS_SLOT) : draft,
       principal: publicPrincipalName || principalLabel(state.view),
+      principalNames: [principalLabel(state.view), publicPrincipalName ?? ""],
       validatedTermsMarker: insertedTerms ? EXACT_TERMS_SLOT : undefined,
       checkedTerms,
       permittedFacts,
@@ -846,7 +856,7 @@ export class NegotiationEngine {
       statedBudget: plan.statedBudget !== undefined && state.view.negotiable ? formatValue(numericValue(state.view.negotiable, plan.statedBudget), this.#locale) : null,
       questionObjective: question ? (plan.ask?.purpose ?? null) : null,
       selectedQuestion: question,
-      action: { move: plan.move, notice: plan.notice, opening: plan.opening === true, approvalGranted: plan.approvalGranted === true, outcome: state.outcome.kind },
+      action: { move: plan.move, notice: plan.notice, opening: plan.opening === true, approvalGranted: plan.approvalGranted === true, outcome: state.outcome.kind, followUp: plan.followUp?.step ?? null },
     });
     if (!language.ok) return fail(draft, [{ rule: "language_unavailable" as ReplyViolation["rule"], detail: "The language check could not run, so the composed reply was not used." }]);
     const hard = language.concerns.filter((c) => !STYLE_CONCERNS.has(c.type));
@@ -1197,7 +1207,8 @@ export class NegotiationEngine {
     const agent: Actor = { kind: AGENT, partyId: state.view.principalId };
     const offerId = d.decision === "countered" ? d.counterOfferId : d.decision === "approved" ? d.offerId : null;
     const terms = offerId ? ctx.offerTerms(offerId)?.terms ?? null : null;
-    const validUntil = state.followUp.validityOfferId === d.offerId ? state.followUp.validUntil : null;
+    // How long their offer stands carries over from an earlier round (a counter), so it is judged here too.
+    const validUntil = state.followUp.validUntil;
     const step = d.decision;
     let plan: Plan;
     if (d.decision === "declined") {

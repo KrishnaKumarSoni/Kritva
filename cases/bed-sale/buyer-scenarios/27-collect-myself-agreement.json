@@ -1,6 +1,6 @@
 {
   "name": "collect-myself-agreement",
-  "description": "Live chat regression: an enquiry at ₹18,500, a firm ₹19,500 with self-collection, a split to ₹19,800, the full read-back, buyer confirmation, then the seller's approval through to an agreement with payment and pickup pending.",
+  "description": "Live chat regression: an enquiry at ₹18,500, a firm ₹19,500 with self-collection, a split to ₹19,800, the full read-back, buyer confirmation (Kritva asks how long the offer stands), then the seller's approval, the buyer's yes again, and an agreement with payment and pickup pending.",
   "replay": true,
   "turns": [
     {
@@ -51,7 +51,25 @@
       }
     },
     {
-      "seller": "approved"
+      "seller": "approved",
+      "expect": {
+        "decision": "state_final_terms",
+        "says": [
+          "19,800"
+        ],
+        "neverSays": [
+          "we'?re agreed",
+          "we are agreed",
+          "\\bdeal\\b"
+        ]
+      }
+    },
+    {
+      "buyer": "Yes, still good. Thanks!",
+      "expect": {
+        "decision": "record_agreement",
+        "action": "accept"
+      }
     }
   ],
   "expect": {

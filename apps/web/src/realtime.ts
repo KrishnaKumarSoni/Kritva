@@ -19,6 +19,8 @@ export interface RealtimeCallbacks {
   onError: (message: string) => void;
   /** Something was said or recorded: the page should reload the conversation. */
   onActivity: () => void;
+  /** The call's recording (both sides, mixed), once the call has ended. */
+  onRecording?: (audio: Blob, durationMs: number) => void;
 }
 
 /** Characters spoken per second, for estimating how much of a cut-off reply was heard. */
@@ -39,6 +41,8 @@ export class RealtimeVoice {
   #texts = new Map<string, string>();
   #playing: { responseId: string; startedAt: number; audioStartMs: number | null } | null = null;
   #speechStoppedAt: number | null = null;
+  /** Records the call for the seller: the microphone and Kritva's voice, mixed. */
+  #recorder: { recorder: MediaRecorder; chunks: Blob[]; startedAt: number; context: AudioContext } | null = null;
 
   constructor(callbacks: RealtimeCallbacks) {
     this.#cb = callbacks;
@@ -80,7 +84,10 @@ export class RealtimeVoice {
     const audio = new Audio();
     audio.autoplay = true;
     this.#audio = audio;
-    pc.ontrack = (e) => (audio.srcObject = e.streams[0] ?? null);
+    pc.ontrack = (e) => {
+      audio.srcObject = e.streams[0] ?? null;
+      if (e.streams[0]) this.#record(e.streams[0]);
+    };
     for (const track of this.#stream.getAudioTracks()) {
       pc.addTrack(track, this.#stream);
       track.onended = () => this.#cb.onDisconnected();
@@ -93,6 +100,10 @@ export class RealtimeVoice {
       } catch {
         /* ignore malformed events */
       }
+    };
+    // The call's event channel closes when the call ends on the other side (for example Kritva hanging up).
+    channel.onclose = () => {
+      if (this.#pc === pc) this.#cb.onDisconnected();
     };
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === "failed" || pc.connectionState === "disconnected") this.#cb.onDisconnected();
@@ -179,8 +190,48 @@ export class RealtimeVoice {
     if (this.#state !== "connecting" && this.#state !== "ended" && this.#state !== "error") this.#set(muted ? "muted" : "listening");
   }
 
+  /** Starts recording both sides once Kritva's audio arrives. A browser that can't record simply doesn't. */
+  #record(remote: MediaStream) {
+    if (this.#recorder || !this.#stream || typeof MediaRecorder === "undefined") return;
+    try {
+      const context = new AudioContext();
+      const mix = context.createMediaStreamDestination();
+      context.createMediaStreamSource(this.#stream).connect(mix);
+      context.createMediaStreamSource(remote).connect(mix);
+      const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((t) => MediaRecorder.isTypeSupported(t));
+      const recorder = new MediaRecorder(mix.stream, mimeType ? { mimeType } : undefined);
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+      recorder.start(1_000);
+      this.#recorder = { recorder, chunks, startedAt: performance.now(), context };
+    } catch {
+      this.#recorder = null;
+    }
+  }
+
+  /** Stops the recording and hands it over. */
+  #stopRecording() {
+    const r = this.#recorder;
+    this.#recorder = null;
+    if (!r) return;
+    const done = () => {
+      void r.context.close().catch(() => undefined);
+      if (r.chunks.length > 0) this.#cb.onRecording?.(new Blob(r.chunks, { type: r.recorder.mimeType || "audio/webm" }), Math.round(performance.now() - r.startedAt));
+    };
+    if (r.recorder.state === "inactive") return done();
+    r.recorder.onstop = done;
+    try {
+      r.recorder.stop();
+    } catch {
+      done();
+    }
+  }
+
   /** Stops the call. A reply still playing counts as interrupted, never as delivered. */
   end() {
+    this.#stopRecording();
     if (this.#playing) this.#finish("interrupted");
     this.#channel?.close();
     this.#pc?.getSenders().forEach((s) => s.track?.stop());

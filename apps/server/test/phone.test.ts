@@ -25,6 +25,7 @@ import { heardPart, ServerPlayback, type Clock, type PlaybackReport } from "../s
 import { callerNumber, dialledNumbers, maskNumber, routeFor } from "../src/phone/sip-headers.ts";
 import { signWebhook, verifyWebhook, WebhookSignatureError } from "../src/phone/webhook-signature.ts";
 import { RealtimeCallError, realtimeSettingsFromEnv, type RealtimeCallControl, type RealtimeConnector, type RealtimeEvent, type RealtimeLink } from "../src/realtime-voice.ts";
+import { FollowUpCalls, followUpSettingsFromEnv } from "../src/phone/follow-up.ts";
 
 const CASES = resolve(import.meta.dirname, "../../../cases");
 const SECRET = `whsec_${Buffer.from("kritva-phone-test-secret-0123456").toString("base64")}`;
@@ -323,7 +324,7 @@ const until = async (check: () => boolean | Promise<boolean>, ms = 4_000) => {
   }
 };
 
-function setup(options: { library?: boolean; settings?: Partial<PhoneSettings> } = {}) {
+function setup(options: { library?: boolean; settings?: Partial<PhoneSettings>; followUps?: boolean } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "kritva-phone-"));
   const db = join(dir, "db.sqlite");
   const record = new NegotiationRecord(new SqliteRecordBackend(db));
@@ -336,7 +337,23 @@ function setup(options: { library?: boolean; settings?: Partial<PhoneSettings> }
   const connector = new FakeConnector();
   const settings: PhoneSettings = { webhookSecret: SECRET, projectId: "proj_test", sipHost: INDIA_SIP_HOST, routes: parseRoutes(`${NUMBER}=bed-sale`).routes, countryCode: "91", noiseReduction: "near_field", idleMs: 60_000, maxCallMs: 600_000, maxCalls: 5, ...options.settings };
   const logs: Array<Record<string, unknown>> = [];
+  /** A fake Vobiz: each Make Call request is kept; retries run at once. */
+  const vobiz = { calls: [] as Array<{ url: string; body: Record<string, any> }>, fail: false };
+  const followUps = options.followUps
+    ? new FollowUpCalls({
+        record,
+        engine,
+        settings: followUpSettingsFromEnv({ VOBIZ_AUTH_ID: "MA_TEST", VOBIZ_AUTH_TOKEN: "tok", KRITVA_FOLLOW_UP_FROM: "+91 80 7123 4567", KRITVA_PUBLIC_URL: "https://kritva.example" }, sipUri(settings)).settings!,
+        fetch: (async (url: string, init: RequestInit) => {
+          vobiz.calls.push({ url, body: JSON.parse(String(init.body)) });
+          return new Response(JSON.stringify(vobiz.fail ? { message: "no" } : { request_uuid: `vb_${vobiz.calls.length}` }), { status: vobiz.fail ? 400 : 200 });
+        }) as typeof fetch,
+        later: (fn) => fn(),
+        log: (e) => logs.push(e),
+      })
+    : null;
   const app = createApp({
+    followUps,
     record,
     engine,
     revisions: new MandateRevisions({ record, engine, mappingLlm: llm }),
@@ -384,7 +401,7 @@ function setup(options: { library?: boolean; settings?: Partial<PhoneSettings> }
   const mandate = mandates.find((m) => m.id === "bed-sale/demo")!.mandate;
   const priceTerm = mandate.terms.find((t) => t.valueType === "money")!.id;
   const offer = (amount: number) => ({ intent: "offer", offer_kind: "offer", offer_terms: [{ term_id: priceTerm, value: { type: "money", amount, currency: null, unit: null, text: null, boolean: null } }] });
-  return { app, record, engine, llm, library, connector, link, logs, ring, sessions, events, messages, deliveries, connections, play, offer };
+  return { app, record, engine, llm, library, connector, link, logs, ring, sessions, events, messages, deliveries, connections, play, offer, vobiz };
 }
 
 describe("Phone: incoming calls", () => {
@@ -586,5 +603,121 @@ describe("Phone: during a call", () => {
     t.play(1);
     await until(async () => (await t.connections(t.sessionId)).length === 2, 3_000);
     expect((await t.connections(t.sessionId))[1]).toMatchObject({ status: "ended", reason: "max_duration" });
+  });
+});
+
+// ---------- The approval wrap-up and the call-back ----------
+
+describe("Phone: approval after the call, and a call-back", () => {
+  /** A deal turn: the caller's words, read as given, through the negotiate tool. */
+  const deal = async (t: ReturnType<typeof setup>, n: number, words: string, interp: Record<string, unknown>) => {
+    const before = t.link.says().length;
+    t.llm.interpretations.push(interp);
+    t.link.emit({ type: "input_audio_buffer.committed", item_id: `item_u${n}` });
+    t.link.emit({ type: "conversation.item.input_audio_transcription.completed", item_id: `item_u${n}`, transcript: words });
+    t.link.emit({ type: "response.done", response: { id: `resp_tool_${n}`, status: "completed", metadata: null, output: [{ type: "function_call", name: "negotiate", call_id: `call_${n}`, arguments: JSON.stringify({ their_words: words, language: "en" }) }] } });
+    await until(() => t.link.says().length === before + 1);
+    return t.link.says().at(-1)!;
+  };
+  const followUp = (f: Record<string, unknown>) => ({ follow_up: { valid_until: null, validity_quote: null, contact: null, phone_number: null, use_this_number: false, best_time_quote: null, keep_contact: null, declined: [], ...f } });
+  const yes = { intent: "accept_stated_terms", accepts_stated_terms: true };
+
+  /** A call up to the wrap-up's closing line: offer, read-back, yes, how long it stands, call me on this number. */
+  const wrappedUp = async () => {
+    const t = setup({ followUps: true });
+    const sessionId = (await t.ring("rtc_first")).json.sessionId as string;
+    await until(() => t.link.says().length === 1);
+    t.play(0);
+    await deal(t, 1, "I can pay 19500", t.offer(19_500));
+    t.play(1);
+    await until(async () => (await t.deliveries(sessionId)).length === 2);
+    const asked = await deal(t, 2, "Yes, I confirm", yes);
+    expect(asked.text).toMatch(/How long does your offer stand\?/);
+    t.play(2);
+    await deal(t, 3, "Good till tonight", { intent: "other", ...followUp({ valid_until: new Date(Date.now() + 3 * 3_600_000).toISOString(), validity_quote: "Good till tonight" }) });
+    t.play(3);
+    const close = await deal(t, 4, "Call me back on this number", { intent: "other", ...followUp({ contact: "call", use_this_number: true }) });
+    return { ...t, sessionId, close };
+  };
+
+  it("after the closing line is heard, Kritva hangs up; the number is kept only because they agreed", async () => {
+    const t = await wrappedUp();
+    expect(t.close.text).toMatch(/not final until/i);
+    expect(t.connector.hungUp).toEqual([]);
+    t.play(4);
+    await until(async () => (await t.connections(t.sessionId)).some((c) => c.status === "ended"));
+    expect(t.connector.hungUp).toEqual(["rtc_first"]);
+    expect((await t.connections(t.sessionId)).at(-1)).toEqual({ status: "ended", transport: "phone", reason: "server" });
+    const op = (await (await t.app.request(`/api/operator/sessions/${t.sessionId}`)).json()) as any;
+    expect(op.state.followUp).toMatchObject({ contact: "call", phone: "91******3210", validity: "Good till tonight" });
+    expect(op.state.pendingApproval).not.toBeNull();
+  });
+
+  it("the seller approves later: Kritva calls back, the call joins the same negotiation, and the buyer's yes closes it", async () => {
+    const t = await wrappedUp();
+    t.play(4);
+    await until(async () => (await t.connections(t.sessionId)).some((c) => c.status === "ended"));
+    const pending = ((await (await t.app.request(`/api/operator/sessions/${t.sessionId}`)).json()) as any).state.pendingApproval;
+    const res = await t.app.request(`/api/operator/sessions/${t.sessionId}/approvals/${pending.requestId}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ decision: "approved", offerId: pending.offerId, mandateRevision: pending.mandateRevision }) });
+    const decided = (await res.json()) as any;
+    expect(res.status).toBe(200);
+    expect(decided.followUp.via).toBe("call");
+    expect(decided.reply).toBeNull();
+    expect(decided.state.outcome.kind).toBe("in_progress");
+    expect(t.vobiz.calls).toHaveLength(1);
+    expect(t.vobiz.calls[0]!.url).toBe("https://api.vobiz.ai/api/v1/Account/MA_TEST/Call/");
+    expect(t.vobiz.calls[0]!.body).toMatchObject({ from: "918071234567", to: "919876543210" });
+    const token = new URL(t.vobiz.calls[0]!.body.answer_url).searchParams.get("t")!;
+
+    // The buyer answers: Vobiz asks for the call's script.
+    const answer = await t.app.request(`/api/webhooks/vobiz/answer?t=${token}`, { method: "POST" });
+    const script = await answer.text();
+    expect(script).toContain(`KritvaFollowUp=${token}`);
+    expect(script).toContain("sip:proj_test@sip-in.api.openai.com:5061;transport=tls");
+    expect(script).toContain('recordSession="true"');
+
+    // The bridged call reaches OpenAI: it joins the same negotiation, with no route needed.
+    const sessionsBefore = (await t.sessions()).length;
+    const said = t.link.says().length;
+    const raw = JSON.stringify({ type: "realtime.call.incoming", data: { call_id: "rtc_back", sip_headers: [{ name: "To", value: "<sip:proj_test@sip-in.api.openai.com>" }, { name: "X-VH-KritvaFollowUp", value: token }] } });
+    const ts = Math.floor(Date.now() / 1000);
+    const rung = await t.app.request("/api/webhooks/openai", { method: "POST", headers: { "content-type": "application/json", "webhook-id": "wh_back", "webhook-timestamp": String(ts), "webhook-signature": signWebhook(raw, "wh_back", ts, SECRET) }, body: raw });
+    expect(((await rung.json()) as any).sessionId).toBe(t.sessionId);
+    expect((await t.sessions()).length).toBe(sessionsBefore);
+    await until(() => t.link.says().length === said + 1);
+    const opening = t.link.says().at(-1)!;
+    expect(opening.text).toMatch(/Kritva/);
+    expect(opening.text).toContain("₹19,500");
+    t.play(t.link.says().length - 1);
+    await until(async () => (await t.deliveries(t.sessionId)).some((d) => d.messageId === opening.messageId));
+
+    const agreed = await deal(t, 5, "Yes, still good", yes);
+    expect((await t.engine.state(t.sessionId)).outcome.kind).toBe("agreement");
+    t.play(t.link.says().length - 1);
+    await until(() => t.connector.hungUp.includes("rtc_back"));
+    expect(agreed.text).toContain("₹19,500");
+  });
+
+  it("no answer twice: one retry, then the follow-up lapses with no agreement", async () => {
+    const t = await wrappedUp();
+    t.play(4);
+    await until(async () => (await t.connections(t.sessionId)).some((c) => c.status === "ended"));
+    const pending = ((await (await t.app.request(`/api/operator/sessions/${t.sessionId}`)).json()) as any).state.pendingApproval;
+    await t.app.request(`/api/operator/sessions/${t.sessionId}/approvals/${pending.requestId}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ decision: "approved", offerId: pending.offerId, mandateRevision: pending.mandateRevision }) });
+    const token = (i: number) => new URL(t.vobiz.calls[i]!.body.hangup_url).searchParams.get("t")!;
+    await t.app.request(`/api/webhooks/vobiz/hangup?t=${token(0)}`, { method: "POST" });
+    await until(() => t.vobiz.calls.length === 2);
+    await t.app.request(`/api/webhooks/vobiz/hangup?t=${token(1)}`, { method: "POST" });
+    await until(async () => (await t.engine.state(t.sessionId)).status === "no_agreement");
+    const op = (await (await t.app.request(`/api/operator/sessions/${t.sessionId}`)).json()) as any;
+    expect(op.state.followUp.status).toBe("lapsed");
+    expect(op.state.followUp.attempts.map((a: any) => a.outcome)).toEqual(["calling", "no_answer", "calling", "no_answer"]);
+  });
+
+  it("an unknown token is refused politely, and webhooks with a used token do nothing", async () => {
+    const t = setup({ followUps: true });
+    const res = await t.app.request("/api/webhooks/vobiz/answer?t=nope", { method: "POST" });
+    expect(await res.text()).toContain("<Hangup/>");
+    expect((await t.app.request("/api/webhooks/vobiz/hangup?t=nope", { method: "POST" })).status).toBe(200);
   });
 });

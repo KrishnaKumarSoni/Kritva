@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { api, ApiError, type BuyerView, type MandateOption, type OperatorView } from "./api.ts";
+import { api, ApiError, type BuyerView, type Decision, type MandateOption, type OperatorView, type TermValue } from "./api.ts";
 import { Chat } from "./Chat.tsx";
 import { InsightsPanel } from "./InsightsPanel.tsx";
 import { MandatesPage } from "./MandatesPage.tsx";
@@ -143,17 +143,33 @@ export function App() {
   };
   const retry = failed ? () => send(failed.text, failed.id) : null;
 
-  const respond = async (requestId: string, decision: "approved" | "rejected") => {
-    if (!sessionId) return;
+  // A new approval waiting: say so in the tab title, and with a notification when the tab is in the background.
+  const waitingId = access ? (operator?.state.pendingApproval?.requestId ?? null) : null;
+  const notified = useRef<string | null>(null);
+  useEffect(() => {
+    const base = document.title.replace(/^\(1\) /, "");
+    document.title = waitingId ? `(1) ${base}` : base;
+    if (!waitingId || notified.current === waitingId) return;
+    notified.current = waitingId;
+    if (document.visibilityState === "visible" || typeof Notification === "undefined") return;
+    if (Notification.permission === "granted") new Notification("Kritva: your approval is needed", { body: "An offer is waiting for your decision." });
+  }, [waitingId]);
+
+  /** Approve, counter or decline. True when the decision was recorded. */
+  const decide = async (requestId: string, decision: Decision, extra: { message?: string; counterTerms?: Array<{ termId: string; value: TermValue }> }): Promise<boolean> => {
+    if (!sessionId) return false;
     setResponding(true);
     try {
       const request = operator?.state.pendingApproval;
       if (!request || request.requestId !== requestId) throw new ApiError(409, "That request changed. Review the current one.");
       // The decision names the exact offer version and instruction revision on screen.
-      await api.respond(sessionId, requestId, decision, request.offerId, request.mandateRevision);
+      await api.decide(sessionId, requestId, decision, request.offerId, request.mandateRevision, extra);
+      setConsoleError(null);
       await refresh(sessionId);
+      return true;
     } catch (e) {
       setConsoleError(e instanceof ApiError ? e.message : "Unable to record your decision. Try again.");
+      return false;
     } finally {
       setResponding(false);
     }
@@ -205,6 +221,8 @@ export function App() {
     event.preventDefault();
     if (!askKey) { setAskKey(true); return; }
     setCheckingKey(true);
+    // Opening the console is the moment to ask once whether Kritva may say when an approval is waiting.
+    if (typeof Notification !== "undefined" && Notification.permission === "default") void Notification.requestPermission().catch(() => undefined);
     api.rememberSellerKey(key.trim());
     try { await loadMandates(); } finally { setCheckingKey(false); }
   };
@@ -289,7 +307,8 @@ export function App() {
             <InsightsPanel
               view={operator}
               responding={responding}
-              onRespond={respond}
+              sessionId={sessionId}
+              onDecide={decide}
               onPause={setPaused}
               onEditInstructions={operator?.mandateId?.startsWith("library:") ? editInstructions : null}
             />

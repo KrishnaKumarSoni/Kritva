@@ -36,7 +36,7 @@ Flag a concern for anything in the reply that:
 - promise_outside_terms: promises a service, extra, payment arrangement or term not in checked_terms.
 - turn_mismatch: answers a superseded earlier turn, ignores the current request, or restates an unrelated fact instead of addressing the current message. Check the current message before reading earlier context.
 - redundant_question: asks for information the other party already supplied, or asks a question unrelated to the selected question objective. A question distinguishing two still-open possibilities is not redundant.
-- action_mismatch: changes the action in "action.move" or "action.notice". An opening before the other party has spoken only welcomes them and invites them to speak. For "state_final_terms", asking the other party to confirm the full package is required, and that question is not a claim of agreement. Flag that move only if the reply says the package is already agreed, asks for something other than full confirmation, or otherwise changes the action. For "counter" and "hold", putting the amount in checked_terms to them as your offer ("I can do <amount>", "How about <amount>?") is the action, not a mismatch. A budget ceiling, enquiry, or price explanation does not authorize a new offer, an acceptance, or a counter. For "request_approval", saying it needs the approval of the person represented, so it cannot be confirmed yet, is the action. An agreement confirmation may announce explicit approval only when "action.approvalGranted" is true. While paused, waiting for approval or ended, reflect that state without making a new commitment.
+- action_mismatch: changes the action in "action.move" or "action.notice". An opening before the other party has spoken only welcomes them and invites them to speak. For "state_final_terms", asking the other party to confirm the full package is required, and that question is not a claim of agreement. Flag that move only if the reply says the package is already agreed, asks for something other than full confirmation, or otherwise changes the action. For "counter" and "hold", putting the amount in checked_terms to them as your offer ("I can do <amount>", "How about <amount>?") is the action, not a mismatch. A budget ceiling, enquiry, or price explanation does not authorize a new offer, an acceptance, or a counter. For "request_approval", saying it needs the approval of the person represented, so it cannot be confirmed yet, is the action. An agreement confirmation may announce explicit approval only when "action.approvalGranted" is true. While paused, waiting for approval or ended, reflect that state without making a new commitment. "action.followUp" names a step around the represented person's approval: "validity", "contact" and "phone" ask how long the offer stands or how to reach them; "close" says it is not final until the represented person confirms and that you will get back to them (that promise is the action); "approved" says the represented person confirmed the terms and asks whether they still work for the other party (with "action.approvalGranted" true, that is the action, not a claim of agreement); "countered" puts the represented person's new terms to them as what that person can do; "declined" says that person can't do it and asks whether you may keep in touch; "keep_contact" thanks them for answering. A message the represented person asked to pass on is in permitted_facts.
 
 Saying an amount that is in checked_terms is fine. Saying you don't have a detail is fine. Return no concerns when there are none.
 
@@ -184,6 +184,34 @@ function flagsOnlyARecordedApproval(reply: string, quote: string, principal: str
   });
 }
 
+/** Words a follow-up line may use around the terms: news of the decision and the question back. Never agreement words. */
+const FOLLOW_UP_WORDS = new Set(["thanks", "thank", "great", "good", "news", "the", "has", "have", "is", "it", "this", "that", "that's", "these", "those", "terms", "package", "confirmed", "confirm", "approved", "can", "could", "do", "instead", "still", "for", "you", "your", "would", "work", "works", "does", "okay", "ok", "now", "so", "and", "here", "what", "they", "them", "their", "offer", "a", "an", "on", "with", "at", "to", "is", "s", "'s", "come", "came", "back", "how", "about", "does", "sound", "all", "set", "right", "hi"]);
+
+/**
+ * A follow-up after the principal decided ("Good news, <name>'s confirmed [[TERMS]]. Still good for
+ * you?", "<name> can do [[TERMS]]. Would that work?"): code recorded the decision (and for an
+ * approval, approvalGranted), so a sentence made only of that news, the name and the terms asserts
+ * nothing new. Agreement words never pass here; the code reply check also blocks them.
+ */
+function flagsOnlyAFollowUp(reply: string, quote: string, names: string[], action: { followUp?: string | null; approvalGranted: boolean } | undefined, marker: string | undefined): boolean {
+  const step = action?.followUp;
+  if (!marker || (step !== "approved" && step !== "countered") || (step === "approved" && !action!.approvalGranted)) return false;
+  const quoted = normalizeForQuoteMatch(quote).replace(/[.!?]$/, "");
+  const mark = normalizeForQuoteMatch(marker);
+  if (!normalizeForQuoteMatch(reply).includes(mark)) return false;
+  // Every sentence the flagged words touch must be only the follow-up's news, the name and the terms.
+  const touched = reply
+    .split(/(?<=[.!?])\s+/)
+    .map((line) => normalizeForQuoteMatch(line).replace(/[.!?]$/, ""))
+    .filter((sentence) => sentence.length > 0 && (sentence.includes(quoted) || quoted.includes(sentence)));
+  return touched.length > 0 && touched.every((line) => {
+    let sentence = line.replace(mark, " ");
+    for (const name of names) if (name) sentence = sentence.replace(normalizeForQuoteMatch(name), " ");
+    const rest = sentence.replace(/'s\b/g, " 's").split(/[^\p{L}']+/u).filter(Boolean);
+    return rest.every((word) => FOLLOW_UP_WORDS.has(word));
+  });
+}
+
 const DECLINE_PHRASE = /\b(?:isn't|is not|aren't|are not|won't be|can't be|cannot be) (?:included|available|offered|possible|part of (?:this|the) (?:sale|deal|terms))\b/;
 const DECLINE_FILLER = new Set(["so", "that", "part", "the", "sorry", "but", "unfortunately", "i'm", "afraid", "to", "at", "in", "for", "and", "it", "is", "as", "here", "this", "time", "option", "an", "a", "i", "can't", "offer", "that's", "not", "something", "can", "isn't", "though"]);
 
@@ -203,7 +231,7 @@ function flagsOnlyADecline(reply: string, quote: string, declinedTerms: string[]
 
 export async function languageCheck(
   llm: StructuredLlm,
-  input: { reply: string; principal?: string | null; checkedTerms: string[]; permittedFacts: string[]; counterpartyWords: string[]; currentMessage?: string | null; publicAmounts?: string[]; statedBudget?: string | null; questionObjective?: string | null; selectedQuestion?: string | null; declinedTerms?: string[]; validatedTermsMarker?: string; action?: { move: string; notice: string | null; opening: boolean; approvalGranted: boolean; outcome: string } },
+  input: { reply: string; principal?: string | null; checkedTerms: string[]; permittedFacts: string[]; counterpartyWords: string[]; currentMessage?: string | null; publicAmounts?: string[]; statedBudget?: string | null; questionObjective?: string | null; selectedQuestion?: string | null; declinedTerms?: string[]; validatedTermsMarker?: string; principalNames?: string[]; action?: { move: string; notice: string | null; opening: boolean; approvalGranted: boolean; outcome: string; followUp?: string | null } },
 ): Promise<{ ok: true; concerns: LanguageConcern[] } | { ok: false }> {
   try {
     const response = await llm.generate({
@@ -235,6 +263,7 @@ export async function languageCheck(
         if (["action_mismatch", "invented_fact", "private_disclosure", "promise_outside_terms"].includes(c.type) && flagsOnlyTheOffer(input.reply, c.quote, input.checkedTerms, input.action?.move)) return false;
         if ((c.type === "counterparty_claim_as_fact" || c.type === "invented_fact") && flagsOnlyAnIntroduction(input.reply, c.quote, input.principal)) return false;
         if ((c.type === "invented_fact" || c.type === "action_mismatch") && flagsOnlyARecordedApproval(input.reply, c.quote, input.principal, input.action, input.validatedTermsMarker)) return false;
+        if ((c.type === "invented_fact" || c.type === "action_mismatch") && flagsOnlyAFollowUp(input.reply, c.quote, [input.principal ?? "", ...(input.principalNames ?? [])], input.action, input.validatedTermsMarker)) return false;
         if (c.type === "invented_fact" && flagsOnlyADecline(input.reply, c.quote, input.declinedTerms ?? [], input.currentMessage)) return false;
         if (c.type === "invented_fact" && onlyAdmitsNotKnowing(c.quote)) return false;
         return (c.type !== "counterparty_claim_as_fact" && c.type !== "private_disclosure") || !flagsOnlyAnAttributedBudget(input.reply, c.quote, input.statedBudget);

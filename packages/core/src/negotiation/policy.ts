@@ -610,7 +610,8 @@ function keepContactKey(state: NegotiationState): string | null {
 export function wrapUpStep(state: NegotiationState, offerId: string, context: StrategyContext): NonNullable<Plan["followUp"]>["step"] | null {
   const f = state.followUp;
   const asked = (key: string) => context.counterparty?.questions.some((q) => q.issueKey === key && q.status !== "open") === true;
-  const hasValidity = f.validityOfferId === offerId && (f.validUntil !== null || f.validity !== null);
+  // What they said about how long it stands carries over to a later round (a counter's new terms).
+  const hasValidity = f.validUntil !== null || f.validity !== null;
   if (!hasValidity && !asked(FOLLOW_UP_KEYS.validity(offerId))) return "validity";
   if (f.contact === null && !asked(FOLLOW_UP_KEYS.contact)) return "contact";
   if ((f.contact === "call" || f.contact === "whatsapp") && f.phone === null && !asked(FOLLOW_UP_KEYS.phone)) return "phone";

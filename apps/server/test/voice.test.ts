@@ -158,11 +158,15 @@ describe("Epic 13: voice uses the text core and the shared record", () => {
     await speak(id, "Yes, I confirm all of those terms.", { intent: "accept_stated_terms", accepts_stated_terms: true });
     const op = (await call("GET", `/api/operator/sessions/${id}`)).json;
     const pending = op.state.pendingApproval;
-    llm.compositions.push("The seller approved the terms. We're agreed on [[TERMS]].");
+    llm.compositions.push("Good news, the seller has confirmed [[TERMS]]. Is that still good for you?");
     const approved = await call("POST", `/api/operator/sessions/${id}/approvals/${pending.requestId}`, { decision: "approved", offerId: pending.offerId, mandateRevision: pending.mandateRevision });
-    expect(approved.json.reply.text).toMatch(/^The seller approved the terms\. We're agreed on king-size bed, ₹19,500/);
+    expect(approved.json.reply.text).toMatch(/^Good news, the seller has confirmed king-size bed, ₹19,500/);
     await hear(id, approved.json.reply.messageId);
     expect(speech.spoken).toContain(approved.json.reply.text);
+    // Only the buyer's yes after the approval records the agreement.
+    llm.compositions.push("Wonderful, we're agreed on [[TERMS]]. Thank you!");
+    const yes = await speak(id, "Yes, still good.", { intent: "accept_stated_terms", accepts_stated_terms: true });
+    expect(yes.json.outcome.kind).toBe("agreement");
   });
 
   it("replaces a composed read-back that omits the exact terms slot with a checked fallback", async () => {
@@ -269,6 +273,9 @@ describe("Epic 13, Story 3: interruptions and spoken agreements", () => {
     const p = op.state.pendingApproval;
     const approved = await call("POST", `/api/operator/sessions/${id}/approvals/${p.requestId}`, { decision: "approved", offerId: p.offerId, mandateRevision: p.mandateRevision });
     expect(approved.status).toBe(200);
+    expect((await call("GET", `/api/operator/sessions/${id}`)).json.commitments.outcome).not.toBe("agreement");
+    await hear(id, approved.json.reply.messageId);
+    await speak(id, "Yes, still good.", { intent: "accept_stated_terms", accepts_stated_terms: true });
     const after = (await call("GET", `/api/operator/sessions/${id}`)).json;
     expect(after.commitments.outcome).toBe("agreement");
     expect(after.commitments.agreement.obligations).toEqual(expect.arrayContaining(["Payment of ₹19,500"]));

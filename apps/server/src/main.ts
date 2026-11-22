@@ -7,6 +7,8 @@ import { createAgentFromEnv, createIntakeAgentFromEnv, createMappingLlmFromEnv, 
 import { createApp } from "./app.ts";
 import { OpenAIRealtimeConnector, realtimeSettingsFromEnv } from "./realtime-voice.ts";
 import { phoneFromEnv } from "./phone/routes.ts";
+import { FollowUpCalls, followUpSettingsFromEnv } from "./phone/follow-up.ts";
+import { sipUri } from "./phone/config.ts";
 import { loadCaseRuntime } from "./main-helpers.ts";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
@@ -27,6 +29,11 @@ const engine = new NegotiationEngine({ record, llm: createTurnLlmFromEnv(), ...c
 const revisions = new MandateRevisions({ record, engine, mappingLlm });
 // The intake agent: a separate chat agent that gathers a new or changed mandate before any negotiation.
 const intake = new IntakeService({ store: new SqliteIntakeStore(join(dataDir, "kritva.sqlite")), agent: createIntakeAgentFromEnv(), library, defaultCurrency: process.env.KRITVA_DEFAULT_CURRENCY ?? "Indian rupees (₹)" });
+// Call-backs after the seller decides (Vobiz). Without them, every follow-up goes to the buyer's chat.
+const phone = phoneFromEnv();
+const followUpConfig = followUpSettingsFromEnv(process.env, phone ? sipUri(phone.settings) : null);
+const followUps = phone && followUpConfig.settings ? new FollowUpCalls({ record, engine, settings: followUpConfig.settings, log: (entry) => console.log("[follow-up]", JSON.stringify(entry)) }) : null;
+console.log(followUps ? "Call-backs: on (Vobiz)." : `Call-backs: off${phone ? `. ${followUpConfig.problems.join(" ")}` : " (phone calls are off)"}. Follow-ups go to the buyer's chat.`);
 const configuredKey = process.env.KRITVA_OPERATOR_KEY?.trim();
 const operatorKey = configuredKey || randomBytes(24).toString("base64url");
 const app = createApp({
@@ -48,7 +55,10 @@ const app = createApp({
       ? { connector: new OpenAIRealtimeConnector(process.env.OPENAI_API_KEY), settings: realtimeSettingsFromEnv(), log: (entry) => console.log("[voice]", JSON.stringify(entry)) }
       : null,
   // Phone calls (docs/Kritva_Phone_Calls.md): on when OPENAI_WEBHOOK_SECRET and KRITVA_PHONE_ROUTES are set.
-  phone: phoneFromEnv(),
+  phone,
+  followUps,
+  recordingsDir: join(dataDir, "recordings"),
+  vobizAuth: process.env.VOBIZ_AUTH_ID && process.env.VOBIZ_AUTH_TOKEN ? { authId: process.env.VOBIZ_AUTH_ID, authToken: process.env.VOBIZ_AUTH_TOKEN } : null,
 });
 const port = Number(process.env.PORT ?? 8787);
 

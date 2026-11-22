@@ -259,6 +259,11 @@ describe("follow-up details are grounded in their own words", () => {
     const far = readFollowUp(input("Good till next year"), { follow_up: followUp({ valid_until: "2027-11-22T23:59:00+05:30", validity_quote: "Good till next year" }) })!;
     expect(far).toMatchObject({ validity: "Good till next year", validUntil: null });
   });
+  it("keeps a way to reach them only when they named one", () => {
+    expect(readFollowUp(input("It's good till tonight."), { follow_up: followUp({ contact: "chat", validity_quote: "good till tonight" }) })!.contact).toBeNull();
+    expect(readFollowUp(input("Just message me here."), { follow_up: followUp({ contact: "chat" }) })!.contact).toBe("chat");
+    expect(readFollowUp(input("मुझे कॉल कर दीजिए"), { follow_up: followUp({ contact: "call" }) })!.contact).toBe("call");
+  });
   it("reads nothing when no offer is waiting", () => {
     expect(readFollowUp({ ...input("Good till tonight"), followUp: null }, { follow_up: followUp({ validity_quote: "Good till tonight" }) })).toBeUndefined();
   });

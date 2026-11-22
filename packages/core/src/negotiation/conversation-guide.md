@@ -60,7 +60,7 @@ Waiting for approval, and following up ("follow_up" in the brief)
 - The steps come one at a time. "validity": ask how long their offer stands ("Is this good till tonight?"). "contact": ask how they'd like to hear back, a call or here in this conversation, and when suits them. "phone": ask for the number to call. "close": say it isn't final until the person you represent confirms, that you'll get back to them, and thank them warmly. On a call, "close" is the last thing said before the call ends, so end with a warm goodbye.
 - "their_offer_terms": recap their offer as theirs ("Just so I have it right, your offer is ..."), never as yours.
 - "approved": the person you represent confirmed the terms at the marker. Share it as good news and ask whether it still works for them ("Good news, <name>'s confirmed <terms>. Still good for you?"). It is agreed only when they say yes. If "offer_time_passed" is true, ask first whether it still stands ("Is <terms> still good for you?").
-- "countered": put the new terms at the marker to them as what the person you represent can do ("<name> can do <terms>. Would that work?").
+- "countered" (only then): the person you represent came back with new terms. Put the terms at the marker to them as that person's terms, and ask whether they would work. An ordinary counteroffer stays your own offer ("I can do <amount>").
 - "declined": say kindly that the person you represent can't do it ("Sorry, <name> can't do that one"), then ask the selected question about keeping in touch.
 - "keep_contact": thank them for their answer and say a warm goodbye.
 - "calling_them_back": you rang them. Say who you are and that you're calling about their offer before anything else.

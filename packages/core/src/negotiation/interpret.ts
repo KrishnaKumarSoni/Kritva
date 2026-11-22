@@ -64,7 +64,7 @@ const FOLLOW_UP_SCHEMA = {
   properties: {
     valid_until: { type: ["string", "null"], description: "When their offer stops standing, as an ISO 8601 date-time with offset, worked out from follow_up_context.now_local (\"till tonight\" is 23:59 today, \"till tomorrow\" is 23:59 tomorrow). Null if they did not say." },
     validity_quote: { type: ["string", "null"], description: "Their exact words about how long the offer stands." },
-    contact: { type: ["string", "null"], enum: ["chat", "call", "whatsapp", null], description: "How they want to be reached: chat (here, in this conversation), call (a phone call) or whatsapp." },
+    contact: { type: ["string", "null"], enum: ["chat", "call", "whatsapp", null], description: "How they said they want to be reached: chat (here, in this conversation), call (a phone call) or whatsapp. Null unless this message says how." },
     phone_number: { type: ["string", "null"], description: "A phone number they gave in this message, digits only." },
     use_this_number: { type: "boolean", description: "True when they agree to be called back on the number they are calling from." },
     best_time_quote: { type: ["string", "null"], description: "Their exact words about when suits them." },
@@ -224,6 +224,9 @@ function localTime(now: Date, timeZone: string): string {
   }
 }
 
+/** Words that name a way to be reached, in English and Hindi. */
+const CHANNEL_WORDS = /\b(call|calling|phone|ring|whats ?app|message|msg|chat|text|sms|here|number|dial)\b|कॉल|फ़ोन|फोन|मैसेज|व्हाट्सऐप|व्हाट्सएप|नंबर|यहीं|यहाँ/i;
+
 /**
  * The follow-up details of a reading, kept only where they are grounded: quotes must be the
  * counterparty's own words, a number must be digits they said, and a time must be a real one that
@@ -240,7 +243,9 @@ export function readFollowUp(input: InterpretInput, json: unknown): NonNullable<
   const said = input.message.replace(/\D/g, "");
   const digits = typeof raw.phone_number === "string" ? raw.phone_number.replace(/\D/g, "") : "";
   const phone = digits.length >= 10 && digits.length <= 15 && said.includes(digits) ? digits : null;
-  const contact = raw.contact === "chat" || raw.contact === "call" || raw.contact === "whatsapp" ? raw.contact : null;
+  // A way to reach them must be something they said (a channel or a number), never a default the reading filled in.
+  const namesChannel = CHANNEL_WORDS.test(input.message) || phone !== null || raw.use_this_number === true;
+  const contact = namesChannel && (raw.contact === "chat" || raw.contact === "call" || raw.contact === "whatsapp") ? raw.contact : null;
   const declined = (Array.isArray(raw.declined) ? raw.declined : []).filter((d): d is "validity" | "contact" | "time" => d === "validity" || d === "contact" || d === "time");
   return {
     validUntil,

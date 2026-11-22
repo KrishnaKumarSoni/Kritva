@@ -215,11 +215,11 @@ function followUpRequirements(input: ComposeInput, payload: Record<string, unkno
       break;
     case "approved":
       must.push(f.expired
-        ? `Their offer's time has passed. Say ${who} has confirmed the terms at the marker, then ask first whether it is still good for them. It is agreed only when they say yes.`
-        : `Say first, warmly, that ${who} has confirmed the terms at the marker (for example "Good news, ${who}'s confirmed ..."), then ask whether it's still good for them. Do not say you are agreed: it is agreed only when they say yes.`);
+        ? `Their offer's time has passed. Say ${who} has confirmed ${EXACT_TERMS_SLOT} (for example "${who} has confirmed ${EXACT_TERMS_SLOT}. Is that still good for you?"), asking first whether it still works for them. It is agreed only when they say yes.`
+        : `Say first, warmly, that ${who} has confirmed ${EXACT_TERMS_SLOT} (for example "Good news, ${who}'s confirmed ${EXACT_TERMS_SLOT}. Still good for you?"), then ask whether it's still good for them. Do not say you are agreed: it is agreed only when they say yes.`);
       break;
     case "countered":
-      must.push(`Say ${who} can do the terms at the marker instead (for example "${who} can do ..."), then ask whether that would work. Do not say you are agreed, and do not mention their earlier offer's amount.`);
+      must.push(`Say ${who} can do ${EXACT_TERMS_SLOT} instead (for example "${who} can do ${EXACT_TERMS_SLOT}. Would that work?"), then ask whether that would work. Do not say you are agreed, and do not mention their earlier offer's amount.`);
       break;
     case "declined":
       must.push(`Say kindly that ${who} can't do those terms (for example "Sorry, ${who} can't do that one"). Make no other offer and mention no amount.`);

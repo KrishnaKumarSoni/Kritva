@@ -199,6 +199,8 @@ When you are given a reply to say, say exactly that reply, word for word, and no
 
 Rules for your own words: never say any amount or price; never agree, accept, approve, promise, hold, reserve or confirm anything; never invent a detail; never mention tools, checks, engines, rules or handing anything over.
 
+When terms need approval: recap the exact terms, ask how long the offer stands and the best way and time to reach them, say clearly it is not final until ${b.principalName || `the ${b.principalRole || "person you represent"}`} confirms, thank them warmly, and end the call. Never say or imply agreement. The replies you are given do this step by step; say them word for word, and the call ends after the last one.
+
 Language: reply in the language they speak, in its own script: Hindi in Devanagari (never Urdu script), Tamil in Tamil script, English in English, and the same for other languages. If they mix Hindi and English, reply in the same natural mix. Do not switch language because of an accent, a name, a filler word or one borrowed word.
 
 Voice: a friendly person on the phone. Warm, relaxed, clear and unhurried; never salesy or over-excited.`;
@@ -278,6 +280,14 @@ export interface CallDeps {
   afterSeq: number;
   log?: (entry: Record<string, unknown>) => void;
   pollMs?: number;
+  /** How the call opens: a greeting, or (on a call-back) the principal's decision. */
+  opening?: "greet" | "follow_up";
+  /** On a phone call: the caller's number, used only if they agree to be called back on it. */
+  contactNumber?: string | null;
+  /** Ends the call (hangs up at OpenAI). Called once the reply that ends the call has been heard. */
+  hangup?: () => Promise<void>;
+  /** Called once when the call closes, for any reason. */
+  onClosed?: () => void;
 }
 
 /**
@@ -299,6 +309,8 @@ export class RealtimeCall {
   #poll: ReturnType<typeof setInterval> | null = null;
   #status: string | null = null;
   #closed = false;
+  /** A reply after which the call ends: once its delivery is reported, or by the deadline. */
+  #endAfter: { messageId: string; deadline: number } | null = null;
   /** What each spoken message says, to compare with what was actually spoken. */
   readonly #lastSaid = new Map<string, string>();
   readonly #resaid = new Set<string>();
@@ -332,8 +344,13 @@ export class RealtimeCall {
   async start(): Promise<void> {
     this.#busy += 1;
     try {
-      const greeted = await this.#d.engine.greet({ sessionId: this.#d.sessionId, channel: "voice" });
-      if (greeted.ok && greeted.reply) this.#say(greeted.reply.messageId, greeted.reply.text);
+      // A call-back opens with the principal's decision; with nothing to follow up, it greets.
+      const followed = this.#d.opening === "follow_up" ? await this.#d.engine.followUp({ sessionId: this.#d.sessionId, channel: "voice", callBack: true }) : null;
+      if (followed?.ok && followed.reply) this.#say(followed.reply.messageId, followed.reply.text);
+      else {
+        const greeted = await this.#d.engine.greet({ sessionId: this.#d.sessionId, channel: "voice" });
+        if (greeted.ok && greeted.reply) this.#say(greeted.reply.messageId, greeted.reply.text);
+      }
     } finally {
       this.#busy -= 1;
     }
@@ -345,6 +362,19 @@ export class RealtimeCall {
     this.#closed = true;
     if (this.#poll) clearInterval(this.#poll);
     this.#d.link.close();
+    this.#d.onClosed?.();
+  }
+
+  /** The reply that ends the call was heard (or its time ran out): hang up, once. */
+  async #endCall(): Promise<void> {
+    this.#endAfter = null;
+    this.#log({ kind: "call_ended_by_kritva" });
+    try {
+      await this.#d.hangup?.();
+    } catch (error) {
+      this.#log({ kind: "hangup_failed", error: String(error) });
+    }
+    this.close();
   }
 
   #log(entry: Record<string, unknown>) {
@@ -467,7 +497,7 @@ export class RealtimeCall {
         return this.#sayLine(line(RETRY, this.#language), "Asked them to repeat: nothing was heard.");
       }
       const messageId = `msg_${(itemId ?? String(call.call_id ?? "")).replace(/[^\w-]/g, "").slice(0, 90) || crypto.randomUUID()}`;
-      const result = await this.#d.engine.handleCounterpartyMessage({ sessionId: this.#d.sessionId, text: heard.slice(0, 2_000), channel: "voice", messageId, utteranceId: itemId, language: this.#language });
+      const result = await this.#d.engine.handleCounterpartyMessage({ sessionId: this.#d.sessionId, text: heard.slice(0, 2_000), channel: "voice", messageId, utteranceId: itemId, language: this.#language, contactNumber: this.#d.contactNumber ?? null });
       this.#log({ kind: "deal_turn", ms: Math.round(performance.now() - started), engine: result.ok ? result.timings : null, ok: result.ok, language: this.#language });
       if (!result.ok) {
         this.#output(call, { reply_to_say: null, note: "The turn could not be taken." });
@@ -479,6 +509,8 @@ export class RealtimeCall {
       }
       this.#output(call, { reply_to_say: result.reply.text });
       this.#say(result.reply.messageId, result.reply.text);
+      // The wrap-up's last line, or the agreement after a call-back: the call ends once it is heard.
+      if (result.endCall && this.#d.hangup) this.#endAfter = { messageId: result.reply.messageId, deadline: Date.now() + 8_000 + result.reply.text.length * 90 };
     } finally {
       this.#busy -= 1;
     }
@@ -543,6 +575,14 @@ export class RealtimeCall {
   async #watch(): Promise<void> {
     if (this.#closed || this.#busy > 0) return;
     const ctx = await this.#d.record.context(this.#d.sessionId);
+    const ending = this.#endAfter;
+    if (ending) {
+      const report = ctx.events.findLast((e) => e.type === "delivery_reported" && (e.payload as PayloadOf<"delivery_reported">).messageId === ending.messageId);
+      const status = report ? (report.payload as PayloadOf<"delivery_reported">).status : null;
+      // Heard in full: end. Cut off: they are talking, so the call goes on and the next reply decides.
+      if (status === "interrupted") this.#endAfter = null;
+      else if (status !== null || Date.now() > ending.deadline) return this.#endCall();
+    }
     const status = ctx.status;
     if (status !== this.#status) {
       // While the negotiation is not active, every turn goes to the engine, which says why.
@@ -590,7 +630,27 @@ export function registerRealtimeRoutes(app: Hono, deps: RealtimeDeps): void {
     }
     calls.get(id)?.close();
     const afterSeq = (await deps.record.context(id)).events.at(-1)?.seq ?? 0;
-    const call = new RealtimeCall({ engine: deps.engine, record: deps.record, sessionId: id, link, afterSeq, log: deps.log });
+    // The call's end is recorded once: Kritva ending it (after the wrap-up), or the browser leaving.
+    let ended = false;
+    const recordEnd = async (reason: "server" | "hung_up") => {
+      if (ended) return;
+      ended = true;
+      await deps.record.append(id, { id: `voice_end_${created.callId}`.slice(0, 128), type: "voice_connection", channel: "voice", payload: { status: "ended", transport: "browser", reason } }, { kind: "system", partyId: null });
+    };
+    const control = deps.connector as RealtimeConnector & Partial<RealtimeCallControl>;
+    const call = new RealtimeCall({
+      engine: deps.engine,
+      record: deps.record,
+      sessionId: id,
+      link,
+      afterSeq,
+      log: deps.log,
+      hangup: async () => {
+        await recordEnd("server");
+        await control.hangup?.(created.callId);
+      },
+      onClosed: () => void recordEnd("hung_up").catch(() => undefined),
+    });
     calls.set(id, call);
     await deps.record.append(id, { id: `voice_${created.callId}`.slice(0, 128), type: "voice_connection", channel: "voice", payload: { status: "connected" } }, { kind: "system", partyId: null });
     void call.start().catch((error) => deps.log?.({ kind: "start_failed", sessionId: id, error: String(error) }));

@@ -15,6 +15,11 @@ import { registerVoiceRoutes } from "./voice-routes.ts";
 import { registerRealtimeRoutes, realtimeSettingsFromEnv, type RealtimeCallControl, type RealtimeConnector, type RealtimeSettings } from "./realtime-voice.ts";
 import type { PhoneSettings } from "./phone/config.ts";
 import { registerPhoneRoutes } from "./phone/routes.ts";
+import type { FollowUpCalls } from "./phone/follow-up.ts";
+import { maskNumber } from "./phone/sip-headers.ts";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { Value as TermValue } from "@kritva/core";
 import {
   formatValue,
   negotiationInsights,
@@ -72,6 +77,12 @@ export interface AppDeps {
   realtime?: { connector: RealtimeConnector | null; settings?: RealtimeSettings; log?: (entry: Record<string, unknown>) => void } | null;
   /** Phone calls through a SIP trunk into OpenAI (docs/Kritva_Phone_Calls.md). Off when absent. */
   phone?: { settings: PhoneSettings; connector: RealtimeConnector & RealtimeCallControl; log?: (entry: Record<string, unknown>) => void; pollMs?: number; acceptBackoffMs?: number[] } | null;
+  /** Call-backs after the principal decides, through Vobiz. Off when absent: follow-ups then go to the chat. */
+  followUps?: FollowUpCalls | null;
+  /** Where browser call recordings are kept. Off when absent. */
+  recordingsDir?: string | null;
+  /** Vobiz credentials, to play a call-back's recording through the console. */
+  vobizAuth?: { authId: string; authToken: string } | null;
   /** Required by the network server. In-process tools can call the app as the operator. */
   operatorKey?: string;
 }
@@ -119,8 +130,50 @@ export function createApp(deps: AppDeps): Hono {
 
   registerRealtimeRoutes(app, { record, engine, connector: deps.realtime?.connector ?? null, settings: deps.realtime?.settings ?? realtimeSettingsFromEnv(), log: deps.realtime?.log });
   if (deps.phone) {
-    registerPhoneRoutes(app, { record, engine, library: deps.library ?? null, listings: deps.listings ?? [], connector: deps.phone.connector, settings: deps.phone.settings, realtime: deps.realtime?.settings ?? realtimeSettingsFromEnv(), log: deps.phone.log, pollMs: deps.phone.pollMs, acceptBackoffMs: deps.phone.acceptBackoffMs });
+    registerPhoneRoutes(app, { record, engine, library: deps.library ?? null, listings: deps.listings ?? [], connector: deps.phone.connector, settings: deps.phone.settings, realtime: deps.realtime?.settings ?? realtimeSettingsFromEnv(), log: deps.phone.log, pollMs: deps.phone.pollMs, acceptBackoffMs: deps.phone.acceptBackoffMs, followUps: deps.followUps ?? null });
   }
+  deps.followUps?.register(app);
+
+  /** A browser call's recording, uploaded by the buyer's page when the call ends. Kept for the principal. */
+  app.post("/api/buyer/sessions/:id/voice/recording", async (c) => {
+    const id = c.req.param("id");
+    if (!deps.recordingsDir) return c.json({ error: "recording_off" }, 501);
+    const ctx = await record.context(id).catch(() => null);
+    if (!ctx?.mandate) return c.json({ error: "session_not_found" }, 404);
+    // Only right after a call in this session, once per call.
+    const calls = ctx.events.filter((e) => e.type === "voice_connection");
+    const last = calls.at(-1);
+    if (!last || Date.now() - Date.parse(last.recordedAt) > 10 * 60_000) return c.json({ error: "no_recent_call" }, 409);
+    const type = (c.req.header("Content-Type") ?? "").split(";")[0]!.trim();
+    if (!/^audio\/(webm|ogg|mp4|mpeg|wav)$/.test(type)) return c.json({ error: "invalid_audio" }, 400);
+    const audio = new Uint8Array(await c.req.arrayBuffer());
+    if (audio.byteLength === 0 || audio.byteLength > 40 * 1024 * 1024) return c.json({ error: "invalid_audio" }, 400);
+    const callStart = [...calls].reverse().find((e) => (e.payload as { status: string }).status === "connected");
+    const recId = `rec_${(callStart?.id ?? last.id).replace(/[^\w-]/g, "")}`.slice(0, 128);
+    if (ctx.events.some((e) => e.id === recId)) return c.json({ ok: true, duplicate: true });
+    const file = `${id.replace(/[^\w-]/g, "")}/${recId}.${type.split("/")[1]}`;
+    await mkdir(join(deps.recordingsDir, id.replace(/[^\w-]/g, "")), { recursive: true });
+    await writeFile(join(deps.recordingsDir, file), audio);
+    const ms = Number(c.req.header("X-Duration-Ms"));
+    const saved = await record.append(id, { id: recId, type: "recording_saved", channel: null, payload: { source: "browser", file, contentType: type, durationMs: Number.isFinite(ms) && ms >= 0 ? Math.min(Math.round(ms), 86_400_000) : null } }, { kind: "system", partyId: null });
+    return saved.ok ? c.json({ ok: true }) : c.json({ error: saved.error.code }, 409);
+  });
+
+  /** Plays a recording for the principal: a stored browser recording, or a call-back's, fetched from Vobiz. */
+  app.get("/api/operator/sessions/:id/recordings/:recId", async (c) => {
+    const state = await engine.state(c.req.param("id")).catch(() => null);
+    const rec = state?.recordings.find((r) => r.id === c.req.param("recId"));
+    if (!rec) return c.json({ error: "not_found" }, 404);
+    if (rec.source === "browser") {
+      if (!deps.recordingsDir || rec.file.includes("..")) return c.json({ error: "not_found" }, 404);
+      const audio = await readFile(join(deps.recordingsDir, rec.file)).catch(() => null);
+      return audio ? c.body(new Uint8Array(audio), 200, { "Content-Type": rec.contentType, "Cache-Control": "no-store" }) : c.json({ error: "not_found" }, 404);
+    }
+    if (!/^https:\/\/[\w.-]*vobiz\.ai\//.test(rec.file)) return c.json({ error: "not_found" }, 404);
+    const res = await fetch(rec.file, { headers: deps.vobizAuth ? { "X-Auth-ID": deps.vobizAuth.authId, "X-Auth-Token": deps.vobizAuth.authToken } : {}, signal: AbortSignal.timeout(15_000) }).catch(() => null);
+    if (!res?.ok) return c.json({ error: "recording_unavailable", message: "The recording isn't available from the phone provider yet." }, 502);
+    return c.body(new Uint8Array(await res.arrayBuffer()), 200, { "Content-Type": res.headers.get("Content-Type") ?? rec.contentType, "Cache-Control": "no-store" });
+  });
 
   /** Prepared mandates from cases/, plus saved mandates with a confirmed revision. Unconfirmed drafts never appear. */
   app.get("/api/operator/mandates", (c) =>
@@ -192,15 +245,41 @@ export function createApp(deps: AppDeps): Hono {
   });
 
   app.post("/api/operator/sessions/:id/approvals/:requestId", async (c) => {
-    const body = await c.req.json<{ decision?: string; note?: string; offerId?: string; mandateRevision?: number }>().catch(() => ({}) as Record<string, never>);
-    if (body.decision !== "approved" && body.decision !== "rejected") return c.json({ error: "invalid_decision" }, 400);
+    const body = await c.req.json<{ decision?: string; note?: string; message?: string; counterTerms?: unknown; offerId?: string; mandateRevision?: number }>().catch(() => ({}) as Record<string, never>);
+    const decision = body.decision;
+    if (decision !== "approved" && decision !== "rejected" && decision !== "countered" && decision !== "declined") return c.json({ error: "invalid_decision" }, 400);
     if (typeof body.offerId !== "string" || !body.offerId || typeof body.mandateRevision !== "number" || !Number.isInteger(body.mandateRevision) || body.mandateRevision < 1) {
       return c.json({ error: "approval_version_required", message: "Review the current offer and instruction revision before deciding." }, 400);
     }
+    // A counter's terms are typed values for mandate terms; the engine checks them against the mandate.
+    let counterTerms: OfferTerm[] | null = null;
+    if (decision === "countered") {
+      const raw = Array.isArray(body.counterTerms) ? body.counterTerms.slice(0, 50) : [];
+      counterTerms = [];
+      for (const item of raw) {
+        const termId = (item as { termId?: unknown })?.termId;
+        const value = TermValue.safeParse((item as { value?: unknown })?.value);
+        if (typeof termId !== "string" || !value.success) return c.json({ error: "invalid_counter", message: "Each counter term needs a term and a value." }, 400);
+        counterTerms.push({ termId, value: value.data });
+      }
+    }
+    const message = typeof body.message === "string" ? body.message.trim().slice(0, 500) : null;
+    const sessionId = c.req.param("id");
     // The decision names the offer version and mandate revision the principal reviewed; a mismatch is refused.
-    const result = await engine.respondToApproval({ sessionId: c.req.param("id"), requestId: c.req.param("requestId"), decision: body.decision, note: body.note ?? null, expected: { offerId: body.offerId, mandateRevision: body.mandateRevision } });
+    const result = await engine.respondToApproval({ sessionId, requestId: c.req.param("requestId"), decision, note: body.note ?? null, message, counterTerms, expected: { offerId: body.offerId, mandateRevision: body.mandateRevision } });
     if (!result.ok) return c.json({ error: result.code, message: result.message }, result.code === "not_pending" ? 409 : 400);
-    return c.json({ reply: result.reply, state: operatorState(result.state, locale) });
+    let reply = result.reply;
+    let via: "text" | "voice" | "call" = result.followUp.via;
+    if (via === "call" && result.followUp.phone) {
+      const placed = deps.followUps ? await deps.followUps.start(sessionId, result.followUp.phone) : { ok: false };
+      // Without call-backs set up (or when the call can't be placed), the follow-up goes to the chat instead.
+      if (!placed.ok && !deps.followUps) {
+        const sent = await engine.followUp({ sessionId, channel: "text", callBack: false });
+        reply = sent.ok ? sent.reply : null;
+        via = "text";
+      }
+    }
+    return c.json({ reply, followUp: { via }, state: operatorState(await engine.state(sessionId), locale) });
   });
 
   /** End without agreement. Records who stopped and why; an agreement already recorded cannot be ended. */
@@ -627,7 +706,9 @@ function operatorState(state: NegotiationState, locale: string) {
           requestedAction: state.pendingApproval.requestedAction,
           breachedRules: state.pendingApproval.breachedRuleIds.map((id) => ruleText(state, id, locale)),
           // The exact terms under review: the pending offer itself, not the buyer-facing outcome.
-          terms: termsView(state.view, state.lastProposed?.offerId === state.pendingApproval.offerId ? state.lastProposed.terms : state.outcome.terms, locale),
+          terms: termsView(state.view, pendingTerms(state), locale),
+          // The same terms as typed values, for a counter the principal edits.
+          editable: orderTerms(state.view, pendingTerms(state) ?? []).map((t) => ({ termId: t.termId, name: state.view.terms.get(t.termId)?.name ?? t.termId, value: t.value, negotiated: t.termId === state.view.negotiable?.termId })),
         }
       : null,
     paused: state.status === "paused",
@@ -636,6 +717,57 @@ function operatorState(state: NegotiationState, locale: string) {
       : null,
     acceptRequiresApproval: state.view.acceptRequiresApproval,
     counterpartyOffers: state.counterpartyAmounts.map((a) => money(a)),
+    followUp: followUpView(state, locale),
+    recordings: state.recordings.map((r) => ({ id: r.id, source: r.source, durationMs: r.durationMs, recordedAt: r.recordedAt })),
+  };
+}
+
+/** The terms waiting on the principal: the pending offer itself. */
+function pendingTerms(state: NegotiationState): OfferTerm[] | null {
+  const p = state.pendingApproval;
+  if (!p) return null;
+  if (state.lastProposed?.offerId === p.offerId) return state.lastProposed.terms;
+  return state.outcome.termsHash === p.termsHash ? state.outcome.terms : null;
+}
+
+/**
+ * What the approval card shows besides the terms: how long the offer stands, how to reach the
+ * counterparty, the principal's decision and where the follow-up is. The number is shown masked.
+ */
+function followUpView(state: NegotiationState, locale: string) {
+  const f = state.followUp;
+  // How long their offer stands carries over from an earlier round (after a counter).
+  const validFor = f.validity !== null || f.validUntil !== null;
+  const lastAttempt = f.attempts.at(-1) ?? null;
+  const status = !f.decision
+    ? null
+    : state.status === "agreed"
+      ? "agreed"
+      : state.status === "no_agreement" && (lastAttempt?.outcome === "no_answer" || lastAttempt?.outcome === "failed")
+        ? "lapsed"
+        : state.status === "no_agreement" && f.decision.decision !== "declined"
+          ? "ended"
+          : f.decision.decision === "declined"
+          ? "declined"
+          : lastAttempt?.outcome === "calling"
+            ? "calling"
+            : lastAttempt?.outcome === "no_answer" || lastAttempt?.outcome === "failed"
+              ? "retrying"
+              : f.followedUp
+                ? "waiting_for_yes"
+                : "following_up";
+  return {
+    validUntil: validFor ? f.validUntil : null,
+    validity: validFor ? f.validity : null,
+    contact: f.contact,
+    phone: maskNumber(f.phone),
+    bestTime: f.bestTime,
+    keepContact: f.keepContact,
+    channel: state.callConnected ? "voice" : null,
+    supersededTerms: state.pendingApproval && state.supersededApproval ? termsView(state.view, state.supersededApproval.terms, locale) : null,
+    decision: f.decision ? { decision: f.decision.decision, at: f.decision.recordedAt, message: f.decision.messageToCounterparty } : null,
+    status,
+    attempts: f.attempts.map((a) => ({ attempt: a.attempt, outcome: a.outcome, channel: a.channel, at: a.recordedAt })),
   };
 }
 

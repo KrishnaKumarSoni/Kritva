@@ -53,7 +53,7 @@ describe("Recorded live chat conversations replay turn by turn", () => {
         expect({ turn: i + 1, reply: now.reply, offer: now.offerAmount, decision: now.decision }).toEqual({ turn: i + 1, reply: recorded.reply, offer: recorded.offerAmount, decision: recorded.decision });
         const turn = fixture.turns[i]!;
         // The scenario's own expectations still hold on the replayed turn.
-        if ("buyer" in turn) expect(checkTurn(turn.expect, now)).toEqual([]);
+        expect(checkTurn(turn.expect, now)).toEqual([]);
       });
       expect(llm.unused()).toEqual({});
     });

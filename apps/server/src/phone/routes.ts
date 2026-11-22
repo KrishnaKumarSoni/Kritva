@@ -45,6 +45,8 @@ export interface PhoneDeps {
   pollMs?: number;
   /** Waits before each accept attempt (tests use none). */
   acceptBackoffMs?: number[];
+  /** Call-backs Kritva placed: an incoming call that is one of them joins its negotiation. */
+  followUps?: { claim(headers: SipHeader[]): { sessionId: string } | null } | null;
 }
 
 /** What starting a negotiation for a call needs: the confirmed mandate and where it came from. */
@@ -109,7 +111,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
   };
 
   /** After the accept: join the call and run it. A call that cannot be joined is hung up at once. */
-  const connect = async (callId: string, sessionId: string) => {
+  const connect = async (callId: string, sessionId: string, how: { opening: "greet" | "follow_up"; contactNumber: string | null } = { opening: "greet", contactNumber: null }) => {
     connecting += 1;
     try {
       let link;
@@ -122,7 +124,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
         return;
       }
       const afterSeq = (await record.context(sessionId)).events.at(-1)?.seq ?? 0;
-      const call = new PhoneCall({ engine, record, sessionId, callId, link, control: deps.connector, settings, afterSeq, log, pollMs: deps.pollMs, onEnded: () => calls.delete(callId) });
+      const call = new PhoneCall({ engine, record, sessionId, callId, link, control: deps.connector, settings, afterSeq, log, pollMs: deps.pollMs, onEnded: () => calls.delete(callId), opening: how.opening, contactNumber: how.contactNumber });
       calls.set(callId, call);
       await call.start().catch(async (error) => {
         log({ kind: "phone_start_failed", callId, sessionId, error: String(error) });
@@ -133,7 +135,24 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
     }
   };
 
+  /** A call-back Kritva placed through the provider: it continues its own negotiation. */
+  const followUp = async (callId: string, sessionId: string): Promise<{ status: 200 | 500; body: Record<string, unknown> }> => {
+    log({ kind: "phone_follow_up", callId, sessionId });
+    const briefing = await engine.voiceBriefing(sessionId);
+    if (!briefing) return reject(callId, 404, "follow_up_session_missing");
+    const accepted = await acceptWithRetry(callId, realtimeSession(deps.realtime, briefing, { noiseReduction: settings.noiseReduction }));
+    if (!accepted.ok) {
+      log({ kind: "phone_accept_failed", callId, sessionId, error: accepted.error });
+      await deps.connector.hangup(callId).catch(() => undefined);
+      return { status: 200, body: { ok: false, error: "accept_failed" } };
+    }
+    void connect(callId, sessionId, { opening: "follow_up", contactNumber: null });
+    return { status: 200, body: { ok: true, sessionId, followUp: true } };
+  };
+
   const incoming = async (callId: string, headers: SipHeader[]): Promise<{ status: 200 | 500; body: Record<string, unknown> }> => {
+    const placed = deps.followUps?.claim(headers) ?? null;
+    if (placed) return followUp(callId, placed.sessionId);
     const { route, dialled } = routeFor(headers, settings.routes, settings.countryCode);
     // Header names (not values) show which headers the provider sends; the caller's number is masked.
     log({ kind: "phone_incoming", callId, dialled, caller: maskNumber(callerNumber(headers, settings.countryCode)), headerNames: headers.map((h) => h.name), route: route ? { number: route.number, target: route.target } : null });
@@ -161,7 +180,7 @@ export function registerPhoneRoutes(app: Hono, deps: PhoneDeps): PhoneHandle {
       return { status: 200, body: { ok: false, error: accepted.gone ? "call_gone" : "accept_failed" } };
     }
     log({ kind: "phone_accepted", callId, sessionId, target: route.target, attempts: accepted.attempts });
-    void connect(callId, sessionId);
+    void connect(callId, sessionId, { opening: "greet", contactNumber: callerNumber(headers, settings.countryCode) });
     return { status: 200, body: { ok: true, sessionId } };
   };
 

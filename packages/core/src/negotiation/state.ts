@@ -64,6 +64,8 @@ export interface NegotiationState {
   followUp: FollowUpState;
   /** A voice call is connected right now. */
   callConnected: boolean;
+  /** An approval request the counterparty's change of terms made void, while its replacement is open. */
+  supersededApproval: { offerId: string; terms: OfferTerm[] } | null;
   /** Call recordings kept for the principal, oldest first. */
   recordings: Array<{ id: string; source: "browser" | "vobiz"; file: string; contentType: string; durationMs: number | null; recordedAt: string }>;
   /** The status to return to when a pause ends. */
@@ -164,6 +166,7 @@ export function projectState(ctx: SessionContext): NegotiationState {
   let lastCounterpartyCheck: NegotiationState["lastCounterpartyCheck"] = null;
   const followUp: FollowUpState = { validUntil: null, validity: null, validityOfferId: null, contact: null, phone: null, bestTime: null, keepContact: null, closedOfferIds: [], decision: null, followedUp: false, attempts: [] };
   let callConnected = false;
+  let supersededApproval: NegotiationState["supersededApproval"] = null;
   const recordings: NegotiationState["recordings"] = [];
 
   const amountOf = (terms: OfferTerm[]) => {
@@ -274,6 +277,7 @@ export function projectState(ctx: SessionContext): NegotiationState {
         };
         followUp.followedUp = false;
         followUp.attempts = [];
+        supersededApproval = null;
         answered.add(p.requestId);
         if (pendingApproval?.requestId === p.requestId) pendingApproval = null;
         break;
@@ -314,7 +318,11 @@ export function projectState(ctx: SessionContext): NegotiationState {
         if (s.to === "paused") statusBeforePause = s.from;
         else if (s.from === "paused") statusBeforePause = null;
         // Leaving the approval wait for any reason but a pause supersedes the pending request.
-        if (s.to !== "awaiting_approval" && s.to !== "paused") pendingApproval = null;
+        if (s.to !== "awaiting_approval" && s.to !== "paused" && pendingApproval) {
+          const terms = ctx.offerTerms(pendingApproval.offerId)?.terms;
+          supersededApproval = s.to === "active" && terms ? { offerId: pendingApproval.offerId, terms } : null;
+          pendingApproval = null;
+        }
         break;
       }
     }
@@ -362,5 +370,6 @@ export function projectState(ctx: SessionContext): NegotiationState {
     followUp,
     callConnected,
     recordings,
+    supersededApproval,
   };
 }

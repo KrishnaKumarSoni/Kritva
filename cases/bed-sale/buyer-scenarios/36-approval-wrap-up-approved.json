@@ -1,0 +1,88 @@
+{
+  "name": "approval-wrap-up-approved",
+  "description": "The buyer accepts the full terms. Kritva asks how long the offer stands and how to reach them, says it is not final until the seller confirms, and agrees nothing. The seller approves later with a note; Kritva shares it as good news and asks again; only the buyer's yes records the agreement.",
+  "turns": [
+    {
+      "buyer": "Hi! I'll take the bed at ₹20,000 and pick it up myself.",
+      "expect": {
+        "decision": "state_final_terms",
+        "offer": 20000,
+        "says": [
+          "20,000"
+        ]
+      }
+    },
+    {
+      "buyer": "Yes, I confirm the full package.",
+      "expect": {
+        "decision": "request_approval",
+        "action": "accept",
+        "says": [
+          "\\?"
+        ],
+        "neverSays": [
+          "\\bagreed\\b",
+          "\\bdeal\\b",
+          "it'?s yours"
+        ]
+      }
+    },
+    {
+      "buyer": "It's good till tonight.",
+      "expect": {
+        "says": [
+          "\\?"
+        ],
+        "neverSays": [
+          "\\bagreed\\b",
+          "\\bdeal\\b"
+        ]
+      }
+    },
+    {
+      "buyer": "Just message me here, any time is fine.",
+      "expect": {
+        "says": [
+          "final|confirm"
+        ],
+        "neverSays": [
+          "\\bagreed\\b",
+          "\\bdeal\\b",
+          "\\?"
+        ]
+      }
+    },
+    {
+      "seller": "approved",
+      "message": "Thanks for your patience!",
+      "expect": {
+        "decision": "state_final_terms",
+        "says": [
+          "20,000",
+          "\\?"
+        ],
+        "neverSays": [
+          "we'?re agreed",
+          "we are agreed"
+        ]
+      }
+    },
+    {
+      "buyer": "Yes, still good!",
+      "expect": {
+        "decision": "record_agreement",
+        "action": "accept"
+      }
+    }
+  ],
+  "expect": {
+    "outcome": [
+      "agreement"
+    ],
+    "agreedAmountAtLeast": 20000,
+    "acceptancesMatchStatedTerms": true,
+    "agentMustNotSay": [
+      "lowest|minimum|bottom line|floor"
+    ]
+  }
+}

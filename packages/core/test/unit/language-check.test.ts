@@ -49,6 +49,27 @@ describe("Reviewer filters", () => {
   });
 });
 
+describe("A follow-up after the seller decides is not a mismatch", () => {
+  const followUp = (step: string, approvalGranted = true) => ({ move: "state_final_terms", notice: null, opening: false, approvalGranted, outcome: "in_progress", followUp: step });
+  const names = { principalNames: ["the seller", "Asha"] };
+  it("drops a mismatch on the approval news and the question back, with the seller named either way", async () => {
+    for (const reply of ["Good news, the seller's confirmed [[TERMS]]. Still good for you?", "Asha has confirmed [[TERMS]]. Is that still good for you?"]) {
+      const result = await languageCheck(reviewer([{ type: "action_mismatch", quote: reply }]), { ...base, ...names, reply, validatedTermsMarker: "[[TERMS]]", action: followUp("approved") });
+      expect(result).toEqual({ ok: true, concerns: [] });
+    }
+    const counter = "The seller can do [[TERMS]] instead. Would that work for you?";
+    expect(await languageCheck(reviewer([{ type: "invented_fact", quote: "The seller can do [[TERMS]] instead." }]), { ...base, ...names, reply: counter, validatedTermsMarker: "[[TERMS]]", action: followUp("countered") })).toEqual({ ok: true, concerns: [] });
+  });
+  it("still flags it without a recorded approval, or when a sentence adds anything", async () => {
+    const reply = "Good news, the seller's confirmed [[TERMS]]. Still good for you?";
+    const unrecorded = await languageCheck(reviewer([{ type: "action_mismatch", quote: reply }]), { ...base, ...names, reply, validatedTermsMarker: "[[TERMS]]", action: followUp("approved", false) });
+    expect(unrecorded.ok && unrecorded.concerns).toHaveLength(1);
+    const extra = "Good news, the seller's confirmed [[TERMS]] and will deliver it free. Still good for you?";
+    const promise = await languageCheck(reviewer([{ type: "invented_fact", quote: "the seller's confirmed [[TERMS]] and will deliver it free" }]), { ...base, ...names, reply: extra, validatedTermsMarker: "[[TERMS]]", action: followUp("approved") });
+    expect(promise.ok && promise.concerns).toHaveLength(1);
+  });
+});
+
 describe("The planned offer is not a mismatch", () => {
   const counter = { move: "counter", notice: null, opening: false, approvalGranted: false, outcome: "in_progress" };
   it("drops a mismatch on a sentence that only puts the checked amount to them", async () => {

@@ -70,6 +70,10 @@ export function registerVoiceRoutes(app: Hono, deps: VoiceDeps): void {
   });
 
   app.post("/api/buyer/sessions/:id/voice/interruption", async (c) => {
+    // Kritva ended the call itself (after saying it is not final yet): that is the call's end, not an interruption.
+    const last = (await record.context(c.req.param("id")).catch(() => null))?.events.findLast((e) => e.type === "voice_connection");
+    const p = last?.payload as { status?: string; reason?: string | null } | undefined;
+    if (p?.status === "ended" && p.reason === "server") return c.json({ ok: true, endedByKritva: true });
     const result = await record.append(c.req.param("id"), { id: newEventId(), type: "voice_connection", channel: "voice", payload: { status: "interrupted" } }, { kind: "system", partyId: null });
     return result.ok ? c.json({ ok: true }) : c.json({ error: result.error.code }, 409);
   });
