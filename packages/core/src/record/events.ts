@@ -193,7 +193,7 @@ export const PAYLOADS = {
   /** A question that would resolve an unknown or conflict affecting a possible agreement. Strategy decides whether to ask it. */
   question_prepared: z.strictObject({
     issueKey: z.string().min(1).max(200),
-    issueKind: z.enum(["budget_scope", "obstacle", "authority", "conditional", "contradiction", "terms_probe", "comparison"]),
+    issueKind: z.enum(["budget_scope", "obstacle", "authority", "conditional", "contradiction", "terms_probe", "comparison", "follow_up"]),
     purpose: ShortText,
     text: ShortText,
     relatedEventIds: z.array(Id).max(10),
@@ -263,8 +263,47 @@ export const PAYLOADS = {
     offerId: Id,
     termsHash: z.string().length(64),
     mandateRevision: z.number().int().min(1),
-    decision: z.enum(["approved", "rejected"]),
+    /** "rejected" is the older name for "declined". A counter names the principal's own new terms. */
+    decision: z.enum(["approved", "rejected", "countered", "declined"]),
     note: z.string().max(500).nullable(),
+    /** For "countered": the offer, recorded just before, with the principal's new terms. */
+    counterOfferId: Id.nullable().default(null),
+    /** Words the principal wants passed on to the counterparty, still subject to every reply check. */
+    messageToCounterparty: z.string().trim().max(500).nullable().default(null),
+  }),
+  /**
+   * What the agent learned for following up on a pending offer: how long it stands, how and when to
+   * reach the counterparty, whether they may be contacted later. Every field is optional; each event
+   * says only what it adds. "closed" marks the wrap-up line for these terms as said.
+   */
+  follow_up_noted: z.strictObject({
+    sourceMessageId: Id.nullable().default(null),
+    /** The offer the details are for, when they belong to one. */
+    offerId: Id.nullable().default(null),
+    validUntil: z.string().datetime({ offset: true }).nullable().default(null),
+    validity: ShortText.nullable().default(null),
+    contact: z.enum(["chat", "call", "whatsapp"]).nullable().default(null),
+    /** Digits with country code, only once they agreed to be called on it. Operator-only. */
+    phone: z.string().regex(/^\d{10,15}$/).nullable().default(null),
+    bestTime: ShortText.nullable().default(null),
+    keepContact: z.boolean().nullable().default(null),
+    closed: z.boolean().default(false),
+  }),
+  /** A follow-up attempt and what happened to it. */
+  follow_up_attempted: z.strictObject({
+    responseId: Id,
+    channel: z.enum(["text", "call"]),
+    attempt: z.number().int().min(1).max(5),
+    outcome: z.enum(["calling", "reached", "no_answer", "failed", "sent"]),
+    providerCallId: z.string().max(200).nullable().default(null),
+  }),
+  /** A call recording kept for the principal. */
+  recording_saved: z.strictObject({
+    source: z.enum(["browser", "vobiz"]),
+    /** A stored file name under the server's recordings folder, or the provider's URL. */
+    file: z.string().min(1).max(500),
+    contentType: z.string().min(1).max(100),
+    durationMs: z.number().int().min(0).max(86_400_000).nullable().default(null),
   }),
   /** The counterparty accepted exactly these stated terms. */
   acceptance_recorded: z.strictObject({
@@ -313,6 +352,8 @@ export const PAYLOADS = {
     requestedBy: z.enum(["principal", "counterparty", "agent", "system"]).nullable().default(null),
     /** Terms still open when the negotiation paused or ended. */
     unresolved: z.array(ShortText).max(20).default([]),
+    /** Why it ended without agreement, where it is one of these. */
+    outcome: z.enum(["declined_by_principal", "lapsed", "went_elsewhere"]).nullable().default(null),
   }),
   /** Appends a corrected payload for an earlier event. The original stays. */
   correction: z.strictObject({

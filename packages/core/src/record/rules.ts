@@ -365,6 +365,28 @@ export function validateNewEvent(event: NewEvent, actorInput: unknown, ctx: Sess
         (e) => e.type === "approval_responded" && (e.payload as PayloadOf<"approval_responded">).requestId === p.requestId,
       );
       if (answered) add("payload.requestId", "this approval request was already answered");
+      if (p.decision === "countered") {
+        const counter = p.counterOfferId ? ctx.payloadOf(p.counterOfferId, "offer_proposed") : null;
+        if (!counter) add("payload.counterOfferId", "a counter must reference the principal's new offer, recorded before it");
+        else if (counter.termsHash === p.termsHash) add("payload.counterOfferId", "a counter must change the terms");
+      } else if (p.counterOfferId !== null) add("payload.counterOfferId", "only a counter names a new offer");
+      break;
+    }
+    case "follow_up_noted": {
+      const p = parsed.data as PayloadOf<"follow_up_noted">;
+      if (!isAgentSide) add("actor.kind", "follow-up details are recorded by the agent or system");
+      if (p.sourceMessageId !== null) refOf("payload.sourceMessageId", p.sourceMessageId, ["message"]);
+      if (p.offerId !== null) refOf("payload.offerId", p.offerId, ["offer_proposed"]);
+      break;
+    }
+    case "follow_up_attempted": {
+      const p = parsed.data as PayloadOf<"follow_up_attempted">;
+      if (!isAgentSide) add("actor.kind", "follow-up attempts are recorded by the agent or system");
+      refOf("payload.responseId", p.responseId, ["approval_responded"]);
+      break;
+    }
+    case "recording_saved": {
+      requireActor(["system"]);
       break;
     }
     case "acceptance_recorded": {
@@ -408,6 +430,10 @@ export function validateNewEvent(event: NewEvent, actorInput: unknown, ctx: Sess
           if (approval.decision !== "approved") add("payload.approvalId", "the principal did not approve");
           if (approval.termsHash !== p.termsHash) add("payload.approvalId", "approval is for different terms");
           if (approval.mandateRevision !== p.mandateRevision) add("payload.approvalId", "approval is for a different mandate revision");
+          // The principal's approval never closes a deal by itself: the counterparty says yes again after it.
+          const approvalSeq = ctx.byId.get(p.approvalId)?.seq ?? Infinity;
+          const acceptanceSeq = ctx.byId.get(p.acceptanceId)?.seq ?? -Infinity;
+          if (approvalRequired && acceptanceSeq < approvalSeq) add("payload.acceptanceId", "the counterparty must accept again after the principal's approval");
         }
       }
       break;

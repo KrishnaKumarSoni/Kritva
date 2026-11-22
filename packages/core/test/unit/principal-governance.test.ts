@@ -99,7 +99,11 @@ describe("Epic 4, Story 2: what Kritva may do", () => {
     const t = await say("Yes, I confirm.", { intent: "accept_stated_terms", accepts_stated_terms: true });
     expect(t.state.outcome.kind).toBe("pending_approval");
     const approved = await engine.respondToApproval({ sessionId, requestId: t.state.pendingApproval!.requestId, decision: "approved" });
-    expect(approved.ok && approved.state.outcome.kind).toBe("agreement");
+    if (!approved.ok || !approved.reply) throw new Error("no follow-up");
+    expect(approved.state.outcome.kind).toBe("in_progress");
+    await engine.reportDelivery({ sessionId, messageId: approved.reply.messageId, channel: "text", status: "delivered" });
+    const yes = await say("Yes, still good.", { intent: "accept_stated_terms", accepts_stated_terms: true });
+    expect(yes.state.outcome.kind).toBe("agreement");
   });
 
   it('"Never below ₹18,000; no exceptions": lower offers cannot use the exception path', async () => {
@@ -227,7 +231,10 @@ describe("Epic 4, Story 3: confirmed changes", () => {
     const t = await setup(listingOnlyDeliveryMandate(18_000));
     await t.say("₹20,000.", offer(20_000));
     const accepted = await t.say("Yes.", { intent: "accept_stated_terms", accepts_stated_terms: true });
-    await t.engine.respondToApproval({ sessionId: t.sessionId, requestId: accepted.state.pendingApproval!.requestId, decision: "approved" });
+    const approved = await t.engine.respondToApproval({ sessionId: t.sessionId, requestId: accepted.state.pendingApproval!.requestId, decision: "approved" });
+    if (!approved.ok || !approved.reply) throw new Error("no follow-up");
+    await t.engine.reportDelivery({ sessionId: t.sessionId, messageId: approved.reply.messageId, channel: "text", status: "delivered" });
+    await t.say("Yes, still good.", { intent: "accept_stated_terms", accepts_stated_terms: true });
     const draft = await draftFor(t, 19_000);
     await t.revisions.confirm({ sessionId: t.sessionId, draftId: draft.draftId, acknowledgedIssueIds: [] });
     const s = await t.state();
@@ -397,7 +404,9 @@ describe("Epic 6, Story 3: approval within its scope", () => {
     await t.say("Yes, I accept ₹17,500.", { intent: "accept_stated_terms", accepts_stated_terms: true });
     expect((await t.state()).outcome.kind).not.toBe("agreement");
     const rejected = await t.engine.respondToApproval({ sessionId: t.sessionId, requestId: t.requestId, decision: "rejected" });
-    expect(rejected.ok && rejected.state.outcome.kind).toBe("in_progress");
+    // A decline ends the negotiation without agreement; a counter is how the seller keeps it going.
+    expect(rejected.ok && rejected.state.outcome.kind).toBe("no_agreement");
+    expect((await t.events()).some((e) => e.type === "agreement_recorded")).toBe(false);
   });
 
   it("a rejected exception is not requested again for the same terms", async () => {
@@ -406,7 +415,7 @@ describe("Epic 6, Story 3: approval within its scope", () => {
     await t.say("₹17,500, final.", offer(17_500));
     const requests = (await t.events()).filter((e) => e.type === "approval_requested");
     expect(requests).toHaveLength(1);
-    expect((await t.state()).outcome.kind).toBe("in_progress");
+    expect((await t.state()).outcome.kind).toBe("no_agreement");
   });
 
   it("duplicate approval actions create no extra permission or agreement", async () => {

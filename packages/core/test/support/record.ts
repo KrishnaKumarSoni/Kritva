@@ -124,7 +124,10 @@ export async function recordAgreement(record: NegotiationRecord, sessionId: stri
   await mustAppend(record, sessionId, acceptance(`${prefix}-acc`, `${prefix}-f1`, `${prefix}-m3`, final), AGENT);
   await mustAppend(record, sessionId, approvalRequest(`${prefix}-req`, `${prefix}-f1`, final, `${prefix}-acc`), AGENT);
   await mustAppend(record, sessionId, approvalResponse(`${prefix}-apr`, `${prefix}-req`, `${prefix}-f1`, final), SELLER);
-  await mustAppend(record, sessionId, agreement(`${prefix}-agr`, `${prefix}-f1`, final, `${prefix}-acc`, `${prefix}-apr`), AGENT);
+  // The seller's approval never closes the deal by itself: the buyer says yes again after it.
+  await mustAppend(record, sessionId, inbound(`${prefix}-m4`, "Yes, still good."), BUYER);
+  await mustAppend(record, sessionId, acceptance(`${prefix}-acc2`, `${prefix}-f1`, `${prefix}-m4`, final), AGENT);
+  await mustAppend(record, sessionId, agreement(`${prefix}-agr`, `${prefix}-f1`, final, `${prefix}-acc2`, `${prefix}-apr`), AGENT);
   await mustAppend(record, sessionId, { id: `${prefix}-st`, type: "status_changed", channel: null, payload: { from: "active", to: "agreed", reason: "Buyer accepted and the seller approved." } }, AGENT);
   return { final };
 }

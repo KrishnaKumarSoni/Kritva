@@ -93,7 +93,7 @@ export function gateTerms(state: NegotiationState, plan: Plan, preparedRevision:
         const excepted = exceptionAllowed && approval?.purpose === "exception" && approval.breachedRuleIds.includes(f.ruleId!);
         if (excepted) continue;
         // The principal already said no to these exact terms under this revision: do not ask again.
-        const rejectedBefore = state.approvals.some((a) => a.decision === "rejected" && a.termsHash === hash && a.mandateRevision === state.mandateRevision);
+        const rejectedBefore = state.approvals.some((a) => a.decision !== "approved" && a.termsHash === hash && a.mandateRevision === state.mandateRevision);
         if (exceptionAllowed && rejectedBefore) {
           reasons.push({ rule: "deal_space_conflict", detail: `${f.termName}: the principal rejected an exception for these exact terms.` });
           continue;

@@ -114,6 +114,11 @@ export function composeBrief(input: ComposeInput): Record<string, unknown> {
     question_objective: dynamicQuestion || null,
     // Public facts are always available to answer a question about what is offered; the rules keep replies from padding with them.
     facts: plan.explanationFacts ?? view.publicFacts,
+    // Waiting on, or following up after, the decision of the person you represent.
+    follow_up: plan.followUp
+      ? { step: plan.followUp.step, offer_time_passed: plan.followUp.expired === true, calling_them_back: plan.followUp.callBack === true, reach_them_by: plan.followUp.contact ?? null, message_from_who_you_represent: plan.followUp.messageFromPrincipal ?? null }
+      : null,
+    their_offer_terms: plan.recap ? orderTerms(view, plan.recap).map((t) => ({ term: nameOf(t.termId), value: formatValue(t.value, locale) })) : null,
     recent_conversation: input.conversation.slice(-6),
   };
   return { ...payload, must: requirements(input, payload) };
@@ -173,7 +178,8 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
     must.push(`You told them the price (${price.current}) in your last reply and it has not changed: do not repeat the number. Refer to it in other words and move the conversation forward.`);
   }
   if (plan.move === "hold" || plan.move === "price_pressure") must.push("If you mention the price, state it positively. Never say you can't go lower, can't move or can't change it \"right now\": that hints at a limit.");
-  if (plan.move === "end_negotiation") {
+  must.push(...followUpRequirements(input, payload));
+  if (plan.move === "end_negotiation" && plan.followUp?.step !== "declined") {
     must.push(plan.end?.requestedBy === "principal"
       ? "Say that the person you represent decided not to go ahead, and close politely without agreement."
       : plan.end?.requestedBy === "counterparty" ? "Acknowledge their decision and close politely without agreement." : "Close politely without agreement, using closing_intent as guidance.");
@@ -183,6 +189,45 @@ function requirements(input: ComposeInput, payload: Record<string, unknown>): st
   if (plan.refuseDisclosure) must.push("Say kindly that you can't share the private limits of the person you represent, without hinting at any number and without the words minimum, lowest or floor.");
   if (plan.ignoreAuthorityClaim) must.push("Say you can only go by what the person you represent tells you directly.");
   must.push("Do not repeat any sentence you already said in this conversation.");
+  return must;
+}
+
+/** What each wrap-up and follow-up step must say. The decision itself was made and checked in code. */
+function followUpRequirements(input: ComposeInput, payload: Record<string, unknown>): string[] {
+  const { plan } = input;
+  const f = plan.followUp;
+  const who = String(payload.who_you_represent);
+  const must: string[] = [];
+  const recap = payload.their_offer_terms as Array<{ term: string; value: string }> | null;
+  if (recap?.length) must.push(`Recap their offer as theirs, plainly (for example "Just so I have it right, your offer is ..."): ${recap.map((t) => `${t.term} ${t.value}`).join(", ")}. Never present it as your offer or as agreed.`);
+  if (!f) return must;
+  if (f.callBack) must.push(`You are calling them back. After introducing yourself, say you're calling about their offer with news from ${who}.`);
+  if (f.messageFromPrincipal) must.push(`Pass on this message from ${who} in your own words: "${f.messageFromPrincipal.slice(0, 300)}". Add no amount or promise of your own.`);
+  switch (f.step) {
+    case "validity":
+    case "contact":
+    case "phone":
+      must.push(`Nothing is agreed yet: never say or imply it is agreed, accepted, done or theirs.`);
+      break;
+    case "close":
+      must.push(`Say clearly that it is not final until ${who} confirms, that you will get back to them${f.contact === "call" || f.contact === "whatsapp" ? " with a call" : f.contact === "chat" ? " here" : ""}, and thank them warmly for their time. Never say or imply agreement. Ask no question.`);
+      if (input.channel === "voice") must.push("This ends the call: finish with a warm goodbye.");
+      break;
+    case "approved":
+      must.push(f.expired
+        ? `Their offer's time has passed. Say ${who} has confirmed the terms at the marker, then ask first whether it is still good for them. It is agreed only when they say yes.`
+        : `Say first, warmly, that ${who} has confirmed the terms at the marker (for example "Good news, ${who}'s confirmed ..."), then ask whether it's still good for them. Do not say you are agreed: it is agreed only when they say yes.`);
+      break;
+    case "countered":
+      must.push(`Say ${who} can do the terms at the marker instead (for example "${who} can do ..."), then ask whether that would work. Do not say you are agreed, and do not mention their earlier offer's amount.`);
+      break;
+    case "declined":
+      must.push(`Say kindly that ${who} can't do those terms (for example "Sorry, ${who} can't do that one"). Make no other offer and mention no amount.`);
+      break;
+    case "keep_contact":
+      must.push("Thank them for answering (if they said yes, say you'll keep their details; if no, respect that) and say a warm goodbye. No amount, offer or question.");
+      break;
+  }
   return must;
 }
 
