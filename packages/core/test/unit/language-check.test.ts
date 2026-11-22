@@ -72,7 +72,7 @@ describe("A follow-up after the seller decides is not a mismatch", () => {
 
 describe("The planned offer in Hindi or Tamil is not a mismatch", () => {
   const counter = { move: "counter", notice: null, opening: false, approvalGranted: false, outcome: "in_progress" };
-  it.each(["मैं \u20b918,500 कर सकता हूँ।", "मैं \u20b918,500 पर दे सकता हूँ।", "நான் \u20b918,500 தர முடியும்."])("%s", async (reply) => {
+  it.each(["\u20b918,500 में दे सकती हूँ।", "मैं \u20b918,500 कर सकता हूँ।", "मैं \u20b918,500 पर दे सकता हूँ।", "நான் \u20b918,500 தர முடியும்."])("%s", async (reply) => {
     const quote = reply.replace(/[।.]$/u, "");
     const result = await languageCheck(reviewer([{ type: "action_mismatch", quote }]), { ...base, reply, checkedTerms: ["price: \u20b918,500"], action: counter });
     expect(result.ok && result.concerns).toEqual([]);

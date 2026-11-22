@@ -183,7 +183,7 @@ describe("Realtime voice: turns", () => {
     t.done([t.spoken("Sure, I can do ₹17,500 for you.")]);
     await until(() => t.link.says().length === 2);
     expect(t.link.sent.some((e) => e.type === "output_audio_buffer.clear")).toBe(true);
-    expect(t.link.says()[1]!.text).toMatch(/ignore what I just said/);
+    expect(t.link.says()[1]!.text).toMatch(/You just said something you should not have/);
     const blocked = (await t.record.context(t.sessionId)).events.filter((e) => e.type === "action_checked").map((e) => e.payload as PayloadOf<"action_checked">);
     expect(blocked.some((c) => c.decision === "block" && c.reasons.some((r) => r.rule === "unplanned_amount"))).toBe(true);
   });
@@ -197,7 +197,7 @@ describe("Realtime voice: turns", () => {
     t.link.emit({ type: "input_audio_buffer.committed", item_id: "item_d1" });
     t.done([t.spoken("Great, we have a deal!"), { type: "function_call", name: "negotiate", call_id: "call_2", arguments: JSON.stringify({ their_words: "I'll pay 19000", language: "en" }) }]);
     await until(() => t.link.says().length === 2);
-    expect(t.link.says()[1]!.text).toMatch(/ignore what I just said/);
+    expect(t.link.says()[1]!.text).toMatch(/You just said something you should not have/);
   });
 
   it("the engine's reply spoken with a different amount is said again, once", async () => {
@@ -343,7 +343,7 @@ describe("Realtime voice: no silence during a wait (the agent decides)", () => {
     t.done([t.spoken("x")], { kritva: "say", message_id: t.link.says()[0]?.messageId ?? "none" });
     await until(() => reports(t.link).length >= 1, 2_000);
     t.done([t.spoken("Good news, it's a deal at ₹17,000!")], { kritva: "wait", situation: "over" });
-    await until(() => t.link.says().some((x) => /ignore what I just said/.test(x.text)), 2_000);
+    await until(() => t.link.says().some((x) => /You just said something you should not have/.test(x.text)), 2_000);
     status = "active";
     call.close();
   });
@@ -449,7 +449,7 @@ describe("Realtime voice: the agent knows when the call is over, and ends it gra
     const { call, hangups } = await live(t);
     theySay(t, "item_bye4", "Fine, bye.");
     finish(t, "resp_bad", [t.spoken("Great, ₹17,500 it is then. Bye!"), endCall("call_end4")]);
-    await waitFor(() => t.link.says().some((x) => /ignore what I just said/.test(x.text)));
+    await waitFor(() => t.link.says().some((x) => /You just said something you should not have/.test(x.text)));
     await waitFor(() => outputs(t.link).some((o) => o.callId === "call_end4"));
     expect(outputs(t.link).find((o) => o.callId === "call_end4")).toMatchObject({ ended: false });
     t.link.emit({ type: "output_audio_buffer.stopped", response_id: "resp_bad" });
@@ -490,5 +490,28 @@ describe("Realtime voice: the agent knows when the call is over, and ends it gra
     // Out of band, the end_call is not in the conversation, so it gets no output.
     expect(outputs(t.link).some((o) => o.callId === "call_end6")).toBe(false);
     expect(call.closed).toBe(true);
+  });
+});
+
+describe("Realtime voice: short lines from the voice-lines guide", () => {
+  it("a correction is worded by the agent from the guide; an empty one falls back to the guide's fixed line once", async () => {
+    const t = await setup();
+    await t.startCall();
+    await until(() => t.link.says().length === 1);
+    t.done([t.spoken("x")], { kritva: "say", message_id: t.link.says()[0]!.messageId });
+    t.link.emit({ type: "input_audio_buffer.committed", item_id: "item_l1" });
+    t.link.emit({ type: "conversation.item.input_audio_transcription.completed", item_id: "item_l1", transcript: "Can you do it cheaper?" });
+    t.done([t.spoken("Sure, I can do ₹17,500 for you.")]);
+    await until(() => t.link.says().length === 2);
+    const line = t.link.sent.filter((e) => e.type === "response.create").at(-1)!.response;
+    expect(line.metadata).toMatchObject({ kritva: "line", kind: "correction" });
+    expect(line.tool_choice).toBe("none");
+    // The agent said nothing: the guide's fallback is said word for word, once.
+    t.done([], { kritva: "line", kind: "correction" });
+    await until(() => t.link.says().length === 3);
+    expect(t.link.says()[2]!.text).toMatch(/ignore that/i);
+    t.done([t.spoken("Sorry, please ignore that. Let me get it right.")], { kritva: "say", message_id: t.link.says()[2]!.messageId });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(t.link.says()).toHaveLength(3);
   });
 });

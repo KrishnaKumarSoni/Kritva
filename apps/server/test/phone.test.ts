@@ -679,10 +679,11 @@ describe("Phone: during a call", () => {
     const t = await answered({ idleMs: 250 });
     t.play(0);
     await until(() => t.link.says().length === 2, 3_000);
-    expect(t.link.says()[1]!.text).toBe("Hello? Are you still there?");
+    // Before the caller has said anything, the call speaks the guide's default language (Hindi).
+    expect(t.link.says()[1]!.text).toBe("Hello? आप line पर हैं?");
     t.play(1);
     await until(() => t.link.says().length === 3, 3_000);
-    expect(t.link.says()[2]!.text).toMatch(/end the call for now/);
+    expect(t.link.says()[2]!.text).toMatch(/call रख रही हूँ/);
     t.play(2);
     await until(async () => (await t.connections(t.sessionId)).length === 2, 3_000);
     expect((await t.connections(t.sessionId))[1]).toMatchObject({ status: "ended", reason: "idle" });
@@ -704,7 +705,7 @@ describe("Phone: during a call", () => {
     const t = await answered({ maxCallMs: 200 });
     t.play(0);
     await until(() => t.link.says().length === 2, 3_000);
-    expect(t.link.says()[1]!.text).toMatch(/end the call here/);
+    expect(t.link.says()[1]!.text).toMatch(/call यहीं रखती हूँ/);
     t.play(1);
     await until(async () => (await t.connections(t.sessionId)).length === 2, 3_000);
     expect((await t.connections(t.sessionId))[1]).toMatchObject({ status: "ended", reason: "max_duration" });

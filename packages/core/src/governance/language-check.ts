@@ -105,7 +105,7 @@ const OFFER_PHRASE = /^(?:(?:so|well|okay|ok|then|right),?\s+)?(?:i can do|i cou
  * them as the offer is the action itself, never a mismatch or an invented fact.
  */
 /** The same offer in Hindi or Tamil: "मैं <amount> कर सकता हूँ", "நான் <amount> தர முடியும்". */
-const OFFER_PHRASE_INDIC = /^(?:(?:तो|ठीक है|अच्छा|ओके|हाँ|हां),?\s+)?(?:मैं|हम)\s+(\S+?)\s+(?:(?:में|पर|तक)\s+)?(?:कर|दे)\s+(?:सकता|सकती|सकते)(?:\s+(?:हूँ|हूं|हैं|है))?$|^(?:நான்|நாங்கள்)\s+(\S+?)\s+(?:க்கு\s+)?(?:தர|கொடுக்க)\s+முடியும்$/u;
+const OFFER_PHRASE_INDIC = /^(?:(?:तो|ठीक है|अच्छा|ओके|हाँ|हां),?\s+)?(?:(?:मैं|हम)\s+)?(\S+?)\s+(?:(?:में|पर|तक)\s+)?(?:कर|दे)\s+(?:सकता|सकती|सकते)(?:\s+(?:हूँ|हूं|हैं|है))?$|^(?:நான்|நாங்கள்)\s+(\S+?)\s+(?:க்கு\s+)?(?:தர|கொடுக்க)\s+முடியும்$/u;
 const offerAmount = (text: string) => { const m = OFFER_PHRASE.exec(text) ?? OFFER_PHRASE_INDIC.exec(text); return (m?.[1] ?? m?.[2])?.trim(); };
 
 function flagsOnlyTheOffer(reply: string, quote: string, checkedTerms: string[], move: string | undefined): boolean {

@@ -306,19 +306,32 @@ export function scriptLanguage(text: string): string {
   return "en";
 }
 
-/** Said when the voice model's own words failed a check. Promises nothing and states no amount. */
-const CORRECTION: Record<string, string> = {
-  en: "Sorry, please ignore what I just said. I'll confirm that properly.",
-  hi: "माफ़ कीजिए, मैंने अभी जो कहा उसे छोड़ दीजिए। मैं ठीक से पक्का करके बताता हूँ।",
-  ta: "மன்னிக்கவும், நான் இப்போது சொன்னதை விட்டுவிடுங்கள். சரியாக உறுதிசெய்து சொல்கிறேன்.",
-};
-/** Said when the engine could not take the turn. Nothing was decided or sent. */
-const RETRY: Record<string, string> = {
-  en: "Sorry, I didn't quite get that. Could you say it again?",
-  hi: "माफ़ कीजिए, मैं ठीक से समझ नहीं पाया। क्या आप फिर से बता सकते हैं?",
-  ta: "மன்னிக்கவும், எனக்கு சரியாகப் புரியவில்லை. மீண்டும் ஒருமுறை சொல்ல முடியுமா?",
-};
-const line = (table: Record<string, string>, language: string) => table[language] ?? table.en!;
+/**
+ * The short lines a call says at set moments (a correction, asking them to repeat, the break-in before
+ * news), from the plain-text voice-lines guide: the agent words them, and the guide's fallback is said
+ * word for word only when its line is empty or fails a check.
+ */
+type LineKind = "correction" | "retry" | "break_in";
+const LINES_GUIDE = readFileSync(new URL("./voice-lines-guide.md", import.meta.url), "utf8").trim();
+const LINES = Object.fromEntries(
+  LINES_GUIDE.split(/^## /m).slice(1).map((part) => {
+    const [name = "", ...rest] = part.split("\n");
+    const body = rest.join("\n");
+    const [instruction = "", fallbackText = ""] = body.split(/^Fallback:\s*$/m);
+    const fallback = Object.fromEntries([...fallbackText.matchAll(/^- ([a-z]{2,3}): (.+)$/gm)].map((m) => [m[1]!, m[2]!.trim()]));
+    return [name.trim(), { instruction: instruction.trim(), fallback }];
+  }),
+) as Record<LineKind, { instruction: string; fallback: Record<string, string> }>;
+const LINES_INTRO = LINES_GUIDE.split(/^## /m)[0]!.trim();
+const fallbackLine = (kind: LineKind, language: string) => LINES[kind].fallback[language] ?? LINES[kind].fallback.en ?? "";
+
+/** The guide's default language as a code ("Hindi" → "hi"), for a call before they have spoken. */
+function defaultLanguageCode(): string {
+  if (!DEFAULT_LANGUAGE) return "en";
+  const names = new Intl.DisplayNames(["en"], { type: "language" });
+  return ["hi", "en", "ta", "te", "kn", "ml", "mr", "bn", "gu", "pa", "or", "ur"].find((code) => names.of(code)?.toLowerCase() === DEFAULT_LANGUAGE!.toLowerCase()) ?? "en";
+}
+
 
 /**
  * Waiting on a call. The model cannot hear silence or feel time passing, so code only reports the
@@ -326,12 +339,7 @@ const line = (table: Record<string, string>, language: string) => table[language
  * represented decides. The agent decides whether to speak and what to say, guided by the plain-text
  * waiting guide; it may call stay_quiet instead. Whatever it says is checked like its other words.
  */
-/** Said before telling them the deal went to someone else (docs/Kritva_Multiple_Counterparties.md, section 12). */
-const BREAK_IN: Record<string, string> = {
-  en: "Sorry, one second.",
-  hi: "माफ़ कीजिए, एक सेकंड।",
-  ta: "மன்னிக்கவும், ஒரு நொடி.",
-};
+
 /** quietMs: a pause worth reporting while waiting; overQuietMs: a quiet line worth reporting once the negotiation has finished. */
 export const WAIT_SENSOR = { quietMs: 4_000, sampleMs: 500, overQuietMs: 6_000 };
 const WAITING_GUIDE = readFileSync(new URL("./voice-waiting-guide.md", import.meta.url), "utf8").trim();
@@ -402,8 +410,8 @@ export interface CallDeps {
 export class RealtimeCall {
   readonly #d: CallDeps;
   #active = false;
-  #queue: Array<{ messageId: string; text: string; filler?: boolean }> = [];
-  #pendingSay: { messageId: string; text: string; filler?: boolean } | null = null;
+  #queue: Array<{ messageId: string; text: string; filler?: boolean; line?: LineKind }> = [];
+  #pendingSay: { messageId: string; text: string; filler?: boolean; line?: LineKind } | null = null;
   /** Several counterparties: the deal went elsewhere and Kritva is breaking in to say so. */
   #brokeInAfterTurn: number | null = null;
   #turns = 0;
@@ -425,7 +433,7 @@ export class RealtimeCall {
   #transcripts = new Map<string, string>();
   #transcriptWaiters = new Map<string, Array<(text: string) => void>>();
   #lastUserItem: string | null = null;
-  #language = "en";
+  #language = defaultLanguageCode();
   #busy = 0;
   #poll: ReturnType<typeof setInterval> | null = null;
   #status: string | null = null;
@@ -551,7 +559,9 @@ export class RealtimeCall {
     this.#pendingSay = next;
     // An engine reply may close the call (the agent decides from the conversation); a break-in never does.
     const mayEnd = !next.filler && this.#brokeInAfterTurn === null && this.#d.hangup !== undefined;
-    const response = next.filler
+    const response = next.line
+      ? { instructions: this.#lineInstructions(next.line), tool_choice: "none", metadata: { kritva: next.filler ? "filler" : "line", kind: next.line } }
+      : next.filler
       ? { instructions: verbatim(next.text), tool_choice: "none", metadata: { kritva: "filler", kind: "break_in" } }
       : mayEnd
         ? { instructions: verbatimMayEnd(spokenAmounts(next.text)), tools: [END_CALL_TOOL], tool_choice: "auto", metadata: { kritva: "say", message_id: next.messageId } }
@@ -573,7 +583,7 @@ export class RealtimeCall {
     const ctx = await this.#d.record.context(this.#d.sessionId);
     const closing = ctx.events.findLast((e) => e.type === "message" && (e.payload as PayloadOf<"message">).direction === "outbound");
     if (closing) this.#minSeq = closing.seq;
-    this.#queue.push({ messageId: "filler_break_in", text: BREAK_IN[this.#language] ?? BREAK_IN.en!, filler: true });
+    this.#queue.push({ messageId: "filler_break_in", text: fallbackLine("break_in", this.#language), filler: true, line: "break_in" });
     if (closing) {
       const text = (closing.payload as PayloadOf<"message">).text;
       this.#spoken.add(closing.id);
@@ -699,7 +709,8 @@ export class RealtimeCall {
       .trim();
     const end = output.find((o) => o.type === "function_call" && o.name === END_CALL_TOOL.name) ?? null;
     if (response.metadata?.kritva === "wait") return this.#waited(output, spoken, response, end);
-    // The break-in's short line before the news: said word for word, never a turn of its own.
+    // The short lines (a correction, a retry, the break-in): checked, never a turn of their own.
+    if (response.metadata?.kritva === "line" || (response.metadata?.kritva === "filler" && response.metadata?.kind === "break_in")) return this.#lined(String(response.metadata?.kind) as LineKind, spoken, response.metadata?.kritva === "filler");
     if (response.metadata?.kritva === "filler") return;
     const ours = response.metadata?.kritva === "say";
     if (ours) {
@@ -809,7 +820,9 @@ export class RealtimeCall {
       const amounts = (text: string) => findAmounts(text).sort((a, b) => a - b).join(",");
       const heard = transcript && (!modelWords || amounts(transcript) === amounts(modelWords)) ? transcript : modelWords || transcript;
       this.#log({ kind: "heard", source: heard === transcript ? "transcript" : "voice_model", transcript, modelWords });
-      this.#language = /^[a-z]{2,3}$/.test(args.language ?? "") ? args.language! : scriptLanguage(heard);
+      // The script they were transcribed in is a fact; the model's own label is a guess (it took Telugu for
+      // Tamil, and English asked for mid-call for Hindi). Only with nothing heard does the label count.
+      this.#language = heard ? scriptLanguage(heard) : /^[a-z]{2,3}$/.test(args.language ?? "") ? args.language! : this.#language;
       if (acknowledgement) {
         this.#lastOwnWords = acknowledgement;
         const problems = await this.#d.engine.checkVoiceWords(this.#d.sessionId, acknowledgement, heard);
@@ -818,7 +831,7 @@ export class RealtimeCall {
       }
       if (!heard) {
         this.#output(call, { reply_to_say: null, note: "Nothing was heard." });
-        return this.#sayLine(line(RETRY, this.#language), "Asked them to repeat: nothing was heard.");
+        return this.#speakLine("retry");
       }
       const messageId = `msg_${(itemId ?? String(call.call_id ?? "")).replace(/[^\w-]/g, "").slice(0, 90) || crypto.randomUUID()}`;
       this.#workingSince = Date.now();
@@ -828,7 +841,7 @@ export class RealtimeCall {
       this.#log({ kind: "deal_turn", ms: Math.round(performance.now() - started), engine: result.ok ? result.timings : null, ok: result.ok, language: this.#language });
       if (!result.ok) {
         this.#output(call, { reply_to_say: null, note: "The turn could not be taken." });
-        return this.#sayLine(line(RETRY, this.#language), "Asked them to repeat: the turn could not be read.");
+        return this.#speakLine("retry");
       }
       if (!result.reply) {
         this.#output(call, { reply_to_say: null, note: "Nothing to say right now." });
@@ -884,7 +897,34 @@ export class RealtimeCall {
   async #correct(problems: ReplyViolation[], said: string) {
     this.#log({ kind: "corrected", rules: problems.map((p) => p.rule), said: said.slice(0, 200) });
     this.#d.link.send({ type: "output_audio_buffer.clear" });
-    await this.#sayLine(line(CORRECTION, this.#language), "Corrected words the voice model said itself that failed a check.");
+    this.#speakLine("correction");
+  }
+
+  /** Says a short line (a correction or a retry) in the agent's own words, from the voice-lines guide. */
+  #speakLine(kind: LineKind) {
+    this.#queue.push({ messageId: `line_${kind}_${Date.now()}`, text: fallbackLine(kind, this.#language), line: kind });
+    this.#drain();
+  }
+
+  #lineInstructions(kind: LineKind): string {
+    return `${LINES_INTRO}\n\nNow: ${LINES[kind].instruction}\n\nSpeak ${languageLabel(this.#language)}.${kind === "break_in" ? "" : `\n\nHow you sound:\n${CONVERSATION_TONE}`}`;
+  }
+
+  /** What the agent said for a short line: kept as a fragment when it passes; otherwise the fallback, word for word, once. */
+  async #lined(kind: LineKind, spoken: string, beforeNews: boolean): Promise<void> {
+    this.#log({ kind: "line_said", line: kind, text: spoken.slice(0, 160) });
+    const problems = spoken ? await this.#d.engine.checkVoiceWords(this.#d.sessionId, spoken) : [];
+    if (spoken && problems.length === 0) {
+      this.#lastOwnWords = spoken;
+      await this.#d.engine.recordVoiceFragment({ sessionId: this.#d.sessionId, text: spoken, utteranceId: `line_${kind}_${Date.now()}` }).catch(() => undefined);
+      return;
+    }
+    this.#log({ kind: "line_fallback", line: kind, rules: problems.map((p) => p.rule) });
+    if (problems.length) this.#d.link.send({ type: "output_audio_buffer.clear" });
+    // Before the news there is no time to make up: the news follows; otherwise the fixed line is said once.
+    if (beforeNews) return;
+    const reason = kind === "retry" ? "Asked them to repeat." : "Corrected words the voice model said itself that failed a check.";
+    await this.#sayLine(fallbackLine(kind, this.#language), reason);
   }
 
   async #sayLine(text: string, reason: string) {
@@ -969,7 +1009,7 @@ export class RealtimeCall {
       response: {
         conversation: "none",
         input: [],
-        instructions: `${WAITING_GUIDE}\n\nSpeak ${language}. Never use dashes.\n\nNow: ${situation}${last}`,
+        instructions: `${WAITING_GUIDE}\n\nSpeak ${language}. Never use dashes.\n\nNow: ${situation}${last}\n\nHow you sound:\n${CONVERSATION_TONE}`,
         tools: [STAY_QUIET_TOOL],
         tool_choice: "auto",
         metadata: { kritva: "wait", situation: "working" },
