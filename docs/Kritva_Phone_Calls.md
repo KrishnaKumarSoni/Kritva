@@ -249,7 +249,7 @@ Known limits:
 - A hang-up and a dropped line look the same.
 - If the accept succeeds but OpenAI never connects the call, the session stays empty in the console.
 - Inherited from the browser call: when an interrupted reply's partial transcript lacks one of its amounts, the controller's fidelity check says the whole reply again once after the interruption. That is the controller's existing behaviour (`#checkFidelity`), unchanged here; it may deserve its own look.
-- Outbound calls through Twilio are not yet tried on a real call (section 15).
+- Inbound calls through Twilio are not yet tried on a real call; outbound calls are (section 15.4).
 
 ## 14. Tests
 
@@ -300,6 +300,10 @@ OpenAI's Realtime API cannot dial out: its outbound SIP calling exists only in t
 Hence the allowlist: until the user confirms these points, only numbers they list (their own, for testing) can be dialled.
 
 Still open: the greeting. The engine's opening line is written for a call the counterparty started; the outbound opener (`engine.greet({ ..., outbound: true })`) comes with the multiple-counterparties work.
+
+### 15.4 The first live outbound call through Twilio (2026-11-22, 06:27 UTC)
+
+To the user's own mobile, from the AWS server. Twilio placed the call from +1 912 502 1960 ($0.0496 a minute to an Indian mobile), the answer TwiML handed it to OpenAI ($0.004 a minute for the SIP leg), and the call joined its negotiation matched by the `X-Kritva-Call` header. **Audio worked both ways**: the caller's speech started turns, both replies played to the end (`output_audio_buffer.started` and `.stopped`, delivery from playback events), and the hang-up ended both sides with outcome `completed` after 36 s.
 
 ## 16. Listing codes and the front desk
 
