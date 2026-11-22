@@ -50,7 +50,7 @@ class FakeLink implements RealtimeLink {
     this.onEvent?.(event);
   }
   says() {
-    return this.sent.filter((e) => e.type === "response.create").map((e) => ({ text: String(e.response.instructions).split("\n").slice(1).join("\n"), messageId: e.response.metadata?.message_id as string }));
+    return this.sent.filter((e) => e.type === "response.create").map((e) => ({ text: ((lines: string[]) => lines.slice(lines.findIndex((l) => l.startsWith("Say exactly")) + 1).join("\n"))(String(e.response.instructions).split("\n")), messageId: e.response.metadata?.message_id as string }));
   }
 }
 

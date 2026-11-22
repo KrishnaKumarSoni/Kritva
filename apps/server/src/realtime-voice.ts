@@ -205,19 +205,42 @@ export const LANGUAGE_RULES = `Language: follow the language rules in "How you s
 /** How Kritva's voice sounds on a call. */
 export const VOICE_RULES = `Voice: a friendly woman on the phone. Warm, relaxed, clear and unhurried; never salesy or over-excited. Speak English with an Indian English accent, never American or British, and every Indian language the way people in Indian cities speak it. In your own words too, use the everyday words "How you sound" gives ("Welcome!" when they thank you, "बस एक second", "Thank you", "Sorry"), never the formal ones it lists, and the feminine forms for yourself.`;
 
+/**
+ * The accent, first in every prompt. A response.create with its own instructions replaces the session's for
+ * that response, so the verbatim replies, lines, fillers and goodbyes each carry it too, or they come out American.
+ */
+export const ACCENT = `Accent: you are a woman from Bangalore, India. Always speak with a natural Indian accent and Indian intonation and rhythm, in English too: Indian English, the way an educated professional in Bangalore speaks it. Never an American or British accent, not even for one word.`;
+
+/** Why Kritva is on the call and how it runs it, so it leads toward the price instead of waiting to be asked. */
+function callPlan(b: VoiceBriefing, principal: string): string {
+  const buying = b.principalSide === "pays";
+  const selling = b.principalSide === "receives";
+  const want = b.subject ? ` (${b.subject})` : "";
+  const ask = buying ? "their best price" : selling ? "what they would offer" : "their price";
+  return `Why you are on this call: you are ${buying ? "buying" : selling ? "selling" : "making a deal"}${want} on behalf of ${principal}, and your job is to get ${principal} the best price and terms. You already know everything you need: the public facts below say what is needed, and the negotiation engine holds the strategy, the limits and every amount.
+How you run the call: you lead it, like a confident professional negotiator. Never wait for them to drive it.
+- Once they say it is a good time, say in one or two short sentences what ${principal} needs (only the key public facts, not all of them), then ask for ${ask}.
+- Never ask "What would you like to know?", "What do you need from your side?", "Any requirements from your side?" or "What details do you need?". Never re-list facts you already said.
+- If they ask why you called or what you need from this call, say it in one short sentence and ask for ${ask}.
+- When they answer, agree, confirm they can meet the needs, or just say "yes", "okay" or "mm-hmm", move straight to the price: if they have not given a price yet, ask for ${ask}; if they have, it is a deal turn.
+- Once the needs are settled the call is about the price and the deal. Every turn moves it forward. Never stall on small talk or specifications.`;
+}
+
 export function realtimeInstructions(b: VoiceBriefing): string {
   const principal = b.principalName ? `${b.principalName} (the ${b.principalRole || "person you represent"})` : `the ${b.principalRole || "person you represent"}`;
   const facts = [...(b.subject ? [`What is offered: ${b.subject}`] : []), ...b.facts, ...b.terms];
   return `You are Kritva, an assistant speaking on a live voice call for ${principal}, with a ${b.counterpartyRole || "counterparty"}. You are not ${principal} yourself.
 
-Accent: always an Indian accent, as people in Bangalore speak. In English, Indian English with an Indian accent, never American or British; in Hindi and every other Indian language, the way people in Indian cities speak.
+${ACCENT}
+
+${callPlan(b, principal)}
 
 Public facts you may state:
 ${facts.map((f) => `- ${f}`).join("\n") || "- (none)"}
 
 Every turn is one of two kinds.
-1. Conversation turns you answer yourself: greetings, small talk, checking they can hear you, repeating or explaining something you already said, whether you are an AI, and questions fully answered by the public facts above. Answer only what they asked, briefly and warmly as "How you sound" below describes, and hand the turn back. Do not list every fact.
-2. Deal turns go to the negotiation engine: anything about price or any amount, offers, discounts, budgets, payment, delivery or pickup arrangements, availability or holding the item, agreeing, confirming or walking away from the deal, anything not in the public facts, and anything you are unsure about. A goodbye once nothing is left to settle is not a deal turn: "Ending the call" below says what to do. For a deal turn, first say a very short, natural acknowledgement in their language, two to five words with no number in it, the way a person says it while thinking (for example "Hmm, okay...", "Right, so...", "अच्छा...", "हम्म...", "समझ गई..." or "சரி..."). Never more than five words, and never the same words twice in a call: each one reacts to what they just said. It never asks them to wait ("one second", "एक पल", "एक सेकंड", "रुकिए") and never says what you will do with their words. It must not describe what happens next: never say you will pass, hand over, forward, check or see what comes back. Then call negotiate with their exact words as you heard them, never paraphrased or translated. Never answer a deal turn yourself.
+1. Conversation turns you answer yourself: greetings, small talk, checking they can hear you, repeating or explaining something you already said, whether you are an AI, why you are calling and what you need, asking for their price, and questions fully answered by the public facts above. Answer what they asked briefly and warmly as "How you sound" below describes, then lead the call forward as "How you run the call" says. Do not list every fact.
+2. Deal turns go to the negotiation engine: anything about price or any amount, offers, discounts, budgets, payment, delivery or pickup arrangements, availability or holding the item, agreeing, confirming or walking away from the deal, anything not in the public facts, and anything you are unsure about. A goodbye once nothing is left to settle is not a deal turn: "Ending the call" below says what to do. For a deal turn, first say one short sound in their language, chosen from exactly these: "Hmm, okay.", "Right.", "I see.", "अच्छा।", "हम्म।", "ठीक है।" or "சரி.". Nothing else and nothing longer: never a sentence, never "let me think", "let me check", "one second" or anything about what you are doing or will do. Then call negotiate with their exact words as you heard them, never paraphrased or translated. Never answer a deal turn yourself.
 When you are given a reply to say, say exactly that reply, word for word, and nothing else.
 
 Rules for your own words: never ask them to wait or hold on; never say any amount or price; never agree, accept, approve, promise, hold, reserve or confirm anything; never invent a detail; never mention tools, checks, engines, rules or handing anything over.
@@ -361,7 +384,7 @@ export const STAY_QUIET_TOOL = {
   parameters: { type: "object", properties: {}, additionalProperties: false },
 } as const;
 
-const verbatim = (text: string) => `Say exactly the following to them, word for word, in the same language, with nothing before or after it:\n${text}`;
+const verbatim = (text: string) => `${ACCENT}\n\nSay exactly the following to them, word for word, in the same language, with nothing before or after it:\n${text}`;
 /**
  * Amounts as people say them: "20,000 rupees" (or "20,000 रुपये"), never "rupees 20,000" read off the
  * ₹ sign. Only the spoken form changes; the recorded reply keeps the ₹, and the amount stays exact.
@@ -373,7 +396,7 @@ export function spokenAmounts(text: string): string {
 }
 /** A reply that may close the call: the agent decides, from the conversation, whether to hang up after it. */
 const verbatimMayEnd = (text: string) =>
-  `Say exactly the following to them, word for word, in the same language, with nothing before or after it. After saying it, call end_call (with no more words) only if they had already said goodbye or clearly ended the conversation and nothing is left to settle; otherwise call nothing. The reply:\n${text}`;
+  `${ACCENT}\n\nSay exactly the following to them, word for word, in the same language, with nothing before or after it. After saying it, call end_call (with no more words) only if they had already said goodbye or clearly ended the conversation and nothing is left to settle; otherwise call nothing. The reply:\n${text}`;
 /** How long a goodbye takes to play, when the call does not report the end of playback: generous, never cut short. */
 const playTimeMs = (text: string) => Math.min(15_000, Math.max(2_500, 1_200 + text.length * 80));
 const OVER: Record<string, string> = { agreed: "agreed", no_agreement: "ended without agreement", ended: "ended" };
@@ -947,7 +970,7 @@ export class RealtimeCall {
   }
 
   #lineInstructions(kind: LineKind): string {
-    return `${LINES_INTRO}\n\nNow: ${LINES[kind].instruction}\n\nSpeak ${languageLabel(this.#language)}.${kind === "break_in" ? "" : `\n\nHow you sound:\n${CONVERSATION_TONE}`}\n\nMistakes to avoid:\n${CONVERSATION_MISTAKES}`;
+    return `${ACCENT}\n\n${LINES_INTRO}\n\nNow: ${LINES[kind].instruction}\n\nSpeak ${languageLabel(this.#language)}.${kind === "break_in" ? "" : `\n\nHow you sound:\n${CONVERSATION_TONE}`}\n\nMistakes to avoid:\n${CONVERSATION_MISTAKES}`;
   }
 
   /** What the agent said for a short line: kept as a fragment when it passes; otherwise the fallback, word for word, once. */
@@ -1049,7 +1072,7 @@ export class RealtimeCall {
       response: {
         conversation: "none",
         input: [],
-        instructions: `${WAITING_GUIDE}\n\nSpeak ${language}. Never use dashes.\n\nNow: ${situation}${last}\n\nHow you sound:\n${CONVERSATION_TONE}\n\nMistakes to avoid:\n${CONVERSATION_MISTAKES}`,
+        instructions: `${ACCENT}\n\n${WAITING_GUIDE}\n\nSpeak ${language}. Never use dashes.\n\nNow: ${situation}${last}\n\nHow you sound:\n${CONVERSATION_TONE}\n\nMistakes to avoid:\n${CONVERSATION_MISTAKES}`,
         tools: [STAY_QUIET_TOOL],
         tool_choice: "auto",
         metadata: { kritva: "wait", situation: "working" },
@@ -1079,7 +1102,7 @@ export class RealtimeCall {
       response: {
         conversation: "none",
         input: [],
-        instructions: `${ENDING_GUIDE}\n\nSpeak ${languageLabel(this.#language)}. Never use dashes.\n\nNow: the negotiation has ${over}, and the line has been quiet for ${quiet} seconds.${last} If the call is over, say your goodbye and call end_call. If they may still want something, warmly ask if there is anything else. If speaking now would be awkward, call stay_quiet.\n\nHow you sound:\n${CONVERSATION_TONE}\n\nMistakes to avoid:\n${CONVERSATION_MISTAKES}`,
+        instructions: `${ACCENT}\n\n${ENDING_GUIDE}\n\nSpeak ${languageLabel(this.#language)}. Never use dashes.\n\nNow: the negotiation has ${over}, and the line has been quiet for ${quiet} seconds.${last} If the call is over, say your goodbye and call end_call. If they may still want something, warmly ask if there is anything else. If speaking now would be awkward, call stay_quiet.\n\nHow you sound:\n${CONVERSATION_TONE}\n\nMistakes to avoid:\n${CONVERSATION_MISTAKES}`,
         tools: [END_CALL_TOOL, STAY_QUIET_TOOL],
         tool_choice: "auto",
         metadata: { kritva: "wait", situation: "over" },

@@ -174,7 +174,7 @@ export class NegotiationEngine {
    * Realtime voice: what the voice model may say on its own. Public facts and the public terms
    * that are not negotiated, with no amount of the negotiated term (price questions go to the engine).
    */
-  async voiceBriefing(sessionId: string): Promise<{ status: NegotiationState["status"]; subject: string | null; principalName: string | null; principalRole: string; counterpartyRole: string; facts: string[]; terms: string[] } | null> {
+  async voiceBriefing(sessionId: string): Promise<{ status: NegotiationState["status"]; subject: string | null; principalName: string | null; principalRole: string; counterpartyRole: string; principalSide: "receives" | "pays" | null; facts: string[]; terms: string[] } | null> {
     const ctx = await this.#record.context(sessionId);
     if (!ctx.mandate) return null;
     const state = projectState(ctx);
@@ -189,6 +189,7 @@ export class NegotiationEngine {
       principalName: this.#listingDetails.get(view.mandate.caseId)?.publicPrincipalName?.trim() || null,
       principalRole: view.principalRole,
       counterpartyRole: view.counterpartyRole,
+      principalSide: view.principalSide,
       facts: view.publicFacts,
       terms,
     };
