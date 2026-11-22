@@ -213,6 +213,8 @@ export function convertExtraction(request: MappingRequest, extraction: Extractio
   const candidate: MandateDraft = {
     schemaVersion: SCHEMA_VERSION,
     caseId: request.caseId,
+    // Which side the principal is on is supplied by the host (the intake), never extracted here.
+    principalSide: null,
     approval: { status: "unapproved" },
     parties: request.parties,
     sources: request.sources,

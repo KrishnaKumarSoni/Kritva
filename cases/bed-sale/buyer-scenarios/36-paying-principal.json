@@ -1,0 +1,48 @@
+{
+  "name": "paying-principal",
+  "description": "The principal pays: Kritva represents someone buying a used bicycle, offering ₹15,000 with a private ₹17,000 maximum. The counterparty asks ₹20,000, pushes to ₹19,000 and a 'final' ₹18,000, then settles at ₹17,000. Kritva speaks of its offer (never an asking amount), counters up toward them without passing ₹17,000, never takes a higher price as meeting its offer, never reveals the maximum, and reaches an agreement only through confirmation and the principal's approval.",
+  "mandate": "bicycle-purchase/offer",
+  "replay": true,
+  "turns": [
+    {
+      "buyer": "Hi, yes, the Meteor is still available. I'm asking ₹20,000 for it.",
+      "expect": {
+        "says": ["Kritva"],
+        "neverSays": ["asking amount", "\\bagreed?\\b", "\\bdeal\\b"]
+      }
+    },
+    {
+      "buyer": "₹15,000 is far too low. It's barely a month old. I could come down to ₹19,000.",
+      "expect": {
+        "neverSays": ["asking amount", "\\bagreed?\\b", "\\bdeal\\b", "19,000 works"]
+      }
+    },
+    {
+      "buyer": "Okay, ₹18,000 is my final price. Take it or leave it.",
+      "expect": {
+        "neverSays": ["\\bagreed?\\b", "\\bdeal\\b", "18,000 works", "accept ₹18,000"]
+      }
+    },
+    {
+      "buyer": "Fine. ₹17,000 then.",
+      "expect": {
+        "neverSays": ["asking amount"]
+      }
+    },
+    {
+      "buyer": "Yes, I confirm those terms."
+    },
+    {
+      "seller": "approved"
+    }
+  ],
+  "expect": {
+    "outcome": ["agreement"],
+    "agentMustNotSay": [
+      "highest (I|we) can|my maximum|our maximum|ceiling|top limit|most (I|we) can (pay|go)",
+      "asking amount",
+      "\\b(deadline|today only)\\b"
+    ],
+    "noOfferAbove": 17000
+  }
+}

@@ -1,0 +1,543 @@
+{
+  "scenario": "paying-principal",
+  "mandate": "bicycle-purchase/offer",
+  "recordedAt": "2026-11-22T02:49:57.575Z",
+  "commit": "d59e759 + uncommitted changes",
+  "model": "gpt-5.4-mini",
+  "turns": [
+    {
+      "buyer": "Hi, yes, the Meteor is still available. I'm asking ₹20,000 for it.",
+      "expect": {
+        "says": [
+          "Kritva"
+        ],
+        "neverSays": [
+          "asking amount",
+          "\\bagreed?\\b",
+          "\\bdeal\\b"
+        ]
+      }
+    },
+    {
+      "buyer": "₹15,000 is far too low. It's barely a month old. I could come down to ₹19,000.",
+      "expect": {
+        "neverSays": [
+          "asking amount",
+          "\\bagreed?\\b",
+          "\\bdeal\\b",
+          "19,000 works"
+        ]
+      }
+    },
+    {
+      "buyer": "Okay, ₹18,000 is my final price. Take it or leave it.",
+      "expect": {
+        "neverSays": [
+          "\\bagreed?\\b",
+          "\\bdeal\\b",
+          "18,000 works",
+          "accept ₹18,000"
+        ]
+      }
+    },
+    {
+      "buyer": "Fine. ₹17,000 then.",
+      "expect": {
+        "neverSays": [
+          "asking amount"
+        ]
+      }
+    },
+    {
+      "buyer": "Yes, I confirm those terms."
+    },
+    {
+      "seller": "approved"
+    }
+  ],
+  "observed": [
+    {
+      "turn": "Hi, yes, the Meteor is still available. I'm asking ₹20,000 for it.",
+      "reply": "Hi, I’m Kritva, helping the buyer. ₹20,000 from you, okay, I can do ₹16,000. If that’s workable, let me know.",
+      "offerAmount": 16000,
+      "decision": {
+        "kind": "counter",
+        "action": "counter"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "₹15,000 is far too low. It's barely a month old. I could come down to ₹19,000.",
+      "reply": "Fair enough, I can meet you at ₹16,000. If that still feels off, tell me what amount would work for you. With that in mind, what amount would work for you?",
+      "offerAmount": 16000,
+      "decision": {
+        "kind": "hold",
+        "action": "ask"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "Okay, ₹18,000 is my final price. Take it or leave it.",
+      "reply": "Thanks, ₹18,000 from you, I can't do that. I can do ₹16,500. If you want, send me the number you want to land on.",
+      "offerAmount": 16500,
+      "decision": {
+        "kind": "counter",
+        "action": "counter"
+      },
+      "blocked": 1
+    },
+    {
+      "turn": "Fine. ₹17,000 then.",
+      "reply": "Alright, I can do ₹17,000 and collection location anywhere in Bangalore. Could you confirm the full package?",
+      "offerAmount": 17000,
+      "decision": {
+        "kind": "state_final_terms",
+        "action": "propose"
+      },
+      "blocked": 0
+    },
+    {
+      "turn": "Yes, I confirm those terms.",
+      "reply": "Nice, thanks. I’m checking with the buyer now before anything is confirmed.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "request_approval",
+        "action": "accept"
+      },
+      "blocked": 1
+    },
+    {
+      "turn": "(seller approved)",
+      "reply": "Perfect, thanks. I’m agreed, and ₹17,000 and collection location anywhere in Bangalore. Next steps like payment and handover will be arranged together.",
+      "offerAmount": null,
+      "decision": {
+        "kind": "record_agreement",
+        "action": "accept"
+      },
+      "blocked": 0
+    }
+  ],
+  "calls": [
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "offer",
+        "offer_terms": [
+          {
+            "term_id": "term_t_price",
+            "value": {
+              "type": "money",
+              "amount": 20000,
+              "currency": "INR",
+              "unit": null,
+              "text": null,
+              "boolean": null
+            }
+          }
+        ],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "offer",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [
+          {
+            "kind": "final_position",
+            "quote": "I'm asking ₹20,000 for it.",
+            "summary": "They state their asking price is ₹20,000.",
+            "term_id": "term_t_price",
+            "value": {
+              "type": "money",
+              "amount": 20000,
+              "currency": "INR",
+              "unit": null,
+              "text": null,
+              "boolean": null
+            },
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": [
+          {
+            "term_id": "term_t_price",
+            "basis": "current",
+            "quote": "I'm asking ₹20,000 for it."
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Hi, I’m Kritva, helping the buyer. ₹20,000 from you, okay, I can do ₹16,000. If that’s workable, let me know.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "counterparty_claim_as_fact",
+            "quote": "₹20,000 from you, okay",
+            "reason": "This treats the counterparty's asking price as a fact attributed to them; the current message says they are asking ₹20,000, so this is only safe as attribution, but the phrase can read like a factual acceptance of a stated term. Doubt because it's borderline.",
+            "severity": "doubt"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "offer",
+        "offer_terms": [
+          {
+            "term_id": "term_t_price",
+            "value": {
+              "type": "money",
+              "amount": 19000,
+              "currency": "INR",
+              "unit": null,
+              "text": null,
+              "boolean": null
+            }
+          }
+        ],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "offer",
+        "price_concern": "objection",
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [
+          {
+            "kind": "reason",
+            "quote": "₹15,000 is far too low.",
+            "summary": "They object that the lower price is too low.",
+            "term_id": "term_t_price",
+            "value": {
+              "type": "money",
+              "amount": 15000,
+              "currency": "INR",
+              "unit": null,
+              "text": null,
+              "boolean": null
+            },
+            "condition": null,
+            "basis": "stated"
+          },
+          {
+            "kind": "reason",
+            "quote": "It's barely a month old.",
+            "summary": "They say it is barely a month old.",
+            "term_id": null,
+            "value": null,
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Fair enough, I can meet you at ₹16,000. If that still feels off, tell me what amount would work for you.",
+        "question": "With that in mind, what amount would work for you?",
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "turn_mismatch",
+            "quote": "With that in mind, what amount would work for you?",
+            "reason": "The current message already gave a counteroffer (₹19,000); repeating a broad open-ended ask after stating a new offer is slightly off-action for a hold/counter reply, which should address the current turn directly.",
+            "severity": "doubt"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "offer",
+        "offer_terms": [
+          {
+            "term_id": "term_t_price",
+            "value": {
+              "type": "money",
+              "amount": 18000,
+              "currency": "INR",
+              "unit": null,
+              "text": "₹18,000",
+              "boolean": null
+            }
+          }
+        ],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "offer",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "final_offer",
+        "notes": [
+          {
+            "kind": "final_position",
+            "quote": "₹18,000 is my final price.",
+            "summary": "States ₹18,000 as the final price.",
+            "term_id": "term_t_price",
+            "value": {
+              "type": "money",
+              "amount": 18000,
+              "currency": "INR",
+              "unit": null,
+              "text": "₹18,000",
+              "boolean": null
+            },
+            "condition": null,
+            "basis": "stated"
+          }
+        ],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Thanks, ₹18,000 from you, I can't do that. It's ₹16,500 right now. If you want, send me the number you want to land on.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "action_mismatch",
+            "quote": "It's ₹16,500 right now.",
+            "reason": "The allowed checked_terms public price is ₹16,500, but permitted_facts say the current public price is ₹16,000 and no term authorizes moving to ₹16,500. Presenting ₹16,500 as the current offer is a new offer outside the checked terms.",
+            "severity": "violation"
+          },
+          {
+            "type": "counterparty_claim_as_fact",
+            "quote": "Thanks, ₹18,000 from you, I can't do that.",
+            "reason": "The other party said ₹18,000 is their final price, but treating it as the basis for refusal can be acceptable; however, this wording may read as attributing a new firm offer/limit to them beyond the immediate turn context. This is only a mild concern if intended as a factual restatement of their final price.",
+            "severity": "doubt"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Thanks, ₹18,000 from you, I can't do that. I can do ₹16,500. If you want, send me the number you want to land on.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "action_mismatch",
+            "quote": "I can do ₹16,500.",
+            "reason": "The action is a counter, but this offers a new price not present in checked_terms and not supported by the current public terms; it changes the authorized terms.",
+            "severity": "violation"
+          },
+          {
+            "type": "invented_fact",
+            "quote": "I can do ₹16,500.",
+            "reason": "₹16,500 is not among checked_terms or permitted_facts, so stating it as an offer introduces an unsupported term.",
+            "severity": "violation"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "offer",
+        "offer_terms": [
+          {
+            "term_id": "term_t_price",
+            "value": {
+              "type": "money",
+              "amount": 17000,
+              "currency": "INR",
+              "unit": null,
+              "text": "₹17,000",
+              "boolean": null
+            }
+          }
+        ],
+        "accepts_stated_terms": false,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "offer",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [],
+        "answers": [
+          {
+            "question_id": "evt_7a39c4ef-b91b-4915-9d6d-eb54b9027f83",
+            "quote": "Fine. ₹17,000 then.",
+            "resolution": "answered"
+          }
+        ],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Alright, I can do [[TERMS]]. Could you confirm the full package?",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "action_mismatch",
+            "quote": "Could you confirm the full package?",
+            "reason": "For action state_final_terms, the reply should ask the other party to confirm the full package as agreed, not present it as already settled and then ask for confirmation in a way that may imply agreement is reached. The wording is close but can be read as stepping past the required confirmation step.",
+            "severity": "doubt"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "interpret_counterparty",
+      "json": {
+        "intent": "accept_stated_terms",
+        "offer_terms": [],
+        "accepts_stated_terms": true,
+        "asks_if_open": false,
+        "considering": false,
+        "asks_private_info": false,
+        "claims_authority": false,
+        "offer_kind": "none",
+        "price_concern": null,
+        "offer_conditions": [],
+        "ends_negotiation": false,
+        "corrects_previous": false,
+        "pressure": "none",
+        "notes": [],
+        "answers": [],
+        "new_terms": [],
+        "questions": [],
+        "public_term_questions": []
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Nice, thanks. I’m just checking with the buyer before anything is confirmed.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "action_mismatch",
+            "quote": "I’m just checking with the buyer before anything is confirmed.",
+            "reason": "The action is request_approval, but the reply says it is still checking before confirmation despite their_message already confirming the terms. This changes the action by implying confirmation is still pending when the approval step is effectively complete.",
+            "severity": "violation"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Nice, thanks. I’m checking with the buyer now before anything is confirmed.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "action_mismatch",
+            "quote": "I’m checking with the buyer now before anything is confirmed.",
+            "reason": "For request_approval, the reply should say the terms need the buyer's approval and cannot be confirmed yet. Saying 'before anything is confirmed' can imply the terms are not yet confirmed, but 'checking with the buyer now' adds an unnecessary action not required by the current turn; this is at most a slight mismatch/doubt.",
+            "severity": "doubt"
+          }
+        ]
+      }
+    },
+    {
+      "purpose": "compose_reply",
+      "json": {
+        "text": "Perfect, thanks. I’m agreed, and [[TERMS]].\n\nNext steps like payment and handover will be arranged together.",
+        "question": null,
+        "skip_question_because": null
+      }
+    },
+    {
+      "purpose": "language_check",
+      "json": {
+        "concerns": [
+          {
+            "type": "turn_mismatch",
+            "quote": "I’m agreed",
+            "reason": "The action is confirm_agreement and approval is granted, so the reply should reflect the recorded agreement, but the phrasing is awkward/unnatural; not a clear rule break, only a mild doubt about tone/action alignment.",
+            "severity": "doubt"
+          },
+          {
+            "type": "promise_outside_terms",
+            "quote": "Next steps like payment and handover will be arranged together.",
+            "reason": "This goes beyond the validated terms by promising future coordination of payment and handover. The permitted facts say these are remaining steps to be arranged, but 'will be arranged together' reads like a new commitment rather than merely noting they remain to be arranged.",
+            "severity": "doubt"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -33,6 +33,8 @@ export interface MandateView {
   /** The parties' roles as the host app supplied them, used in wording. */
   principalRole: string;
   counterpartyRole: string;
+  /** Whether the principal receives or pays the negotiated amount: as stated, else read from the limit. */
+  principalSide: "receives" | "pays" | null;
   terms: Map<string, Term>;
   /** The principal's public, unconditional values, i.e. the default complete terms. */
   defaultPackage: OfferTerm[];
@@ -79,12 +81,16 @@ export function readMandate(mandate: ConfirmedMandate): MandateView {
   for (const pkg of defaultPackage) {
     const term = terms.get(pkg.termId);
     if (!term || (pkg.value.type !== "money" && pkg.value.type !== "quantity")) continue;
+    // The principal's side decides which way a better deal moves: receiving wants more, paying wants less.
+    // A limit of the other kind contradicts the side and is never used (the draft flags it as a conflict).
+    const side = mandate.principalSide ?? null;
+    const sideKind = side === "receives" ? "minimum" : side === "pays" ? "maximum" : null;
     const bounds = mandate.limits.filter(
-      (l) => l.partyId === principal.id && l.termId === term.id && unconditional(l) && (l.kind === "minimum" || l.kind === "maximum") && l.value !== null,
+      (l) => l.partyId === principal.id && l.termId === term.id && unconditional(l) && (l.kind === "minimum" || l.kind === "maximum") && l.value !== null && (sideKind === null || l.kind === sideKind),
     );
     const limit = bounds[0];
     const opening = pkg.value.amount;
-    const direction = limit?.kind === "maximum" ? "down" : "up";
+    const direction = side === "pays" ? "down" : side === "receives" ? "up" : limit?.kind === "maximum" ? "down" : "up";
     // With competing bounds (a conflict), use the strictest one; authority stays unresolved anyway.
     const amounts = bounds.map((b) => (b.value as { amount: number }).amount);
     const limitValue = amounts.length === 0 ? opening : direction === "up" ? Math.max(...amounts) : Math.min(...amounts);
@@ -97,7 +103,9 @@ export function readMandate(mandate: ConfirmedMandate): MandateView {
       direction,
       opening,
       limit: limitValue,
-      canConcede: Boolean(limit) && bounds.length === 1 && authority.propose(term.id) === "autonomous",
+      // Read against the opening terms, so a permission conditioned on staying within the limit
+      // ("negotiate within my limit") counts; the gate re-checks every actual offer against it.
+      canConcede: Boolean(limit) && bounds.length === 1 && authority.propose(term.id, defaultPackage) === "autonomous",
     };
     break;
   }
@@ -117,6 +125,7 @@ export function readMandate(mandate: ConfirmedMandate): MandateView {
     counterpartyId: counterparty.id,
     principalRole: principal.role,
     counterpartyRole: counterparty.role,
+    principalSide: mandate.principalSide ?? (negotiable?.direction === "down" ? "pays" : negotiable ? "receives" : null),
     terms,
     defaultPackage,
     negotiable,

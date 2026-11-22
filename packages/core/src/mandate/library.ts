@@ -17,7 +17,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import type { StructuredLlm } from "../llm/types.ts";
 import { mapToDraft, type MappingError } from "../mapping/mapper.ts";
-import { PermissionMode, type ConfirmedMandate, type MandateDraft, type Value } from "../schema/records.ts";
+import { PermissionMode, type ConfirmedMandate, type MandateDraft, type PrincipalSide, type Value } from "../schema/records.ts";
 
 type Mode = (typeof PermissionMode.options)[number];
 import { validateDraft, type ValidationIssue } from "../schema/validate.ts";
@@ -32,6 +32,8 @@ export interface LibraryInput {
   publicText: string;
   /** The principal's private instructions (limits, permissions). May be empty. */
   privateText: string;
+  /** Whether the principal receives or pays the negotiated amount. Null: not known yet. */
+  principalSide?: PrincipalSide | null;
 }
 
 /** One principal-authored edit to a draft record. */
@@ -143,13 +145,14 @@ export class MandateLibrary {
   }
 
   /** Saved mandates, newest activity last. Deleted mandates are left out. */
-  list(): Array<{ mandateId: string; title: string; caseId: string; activeRevision: number | null; hasOpenDraft: boolean; state: MandateState; updatedAt: string }> {
+  list(): Array<{ mandateId: string; title: string; caseId: string; activeRevision: number | null; hasOpenDraft: boolean; state: MandateState; updatedAt: string; principalSide: PrincipalSide | null }> {
     return this.#backend.listMandates().flatMap((m) => {
       const d = this.get(m.id)!;
       if (d.deleted) return [];
       const lifecycle = this.#backend.listLifecycle(m.id);
       const updatedAt = [m.createdAt, ...d.versions.map((v) => v.createdAt), ...lifecycle.map((e) => e.createdAt)].sort().at(-1)!;
-      return [{ mandateId: m.id, title: d.title, caseId: m.caseId, activeRevision: d.active?.revision ?? null, hasOpenDraft: d.latest?.status === "draft", state: d.state, updatedAt }];
+      const principalSide = principalSideOf(d.active?.mandate ?? d.latest?.draft ?? null) ?? d.input.principalSide ?? null;
+      return [{ mandateId: m.id, title: d.title, caseId: m.caseId, activeRevision: d.active?.revision ?? null, hasOpenDraft: d.latest?.status === "draft", state: d.state, updatedAt, principalSide }];
     });
   }
 
@@ -315,8 +318,44 @@ export class MandateLibrary {
     ];
     const mapped = await mapToDraft({ caseId, parties: [principal, counterparty], sources }, { llm: this.#mappingLlm });
     if (!mapped.ok) return { ok: false, code: mapped.error.code, message: mappingMessage(mapped.error) };
-    return { ok: true, value: mapped.draft };
+    return { ok: true, value: withPrincipalSide(mapped.draft, input.principalSide ?? null) };
   }
+}
+
+/**
+ * Whether the principal receives or pays: as stated on the mandate, else read from the principal's own
+ * unconditional limit on an amount (a minimum receives, a maximum pays). Null when neither says.
+ */
+export function principalSideOf(m: Pick<MandateDraft, "parties" | "limits"> & { principalSide?: PrincipalSide | null } | null): PrincipalSide | null {
+  if (!m) return null;
+  if (m.principalSide) return m.principalSide;
+  const principal = m.parties.find((p) => p.isPrincipal);
+  const limit = m.limits.find((l) => l.partyId === principal?.id && l.conditionIds.length === 0 && (l.kind === "minimum" || l.kind === "maximum") && (l.value?.type === "money" || l.value?.type === "quantity"));
+  return limit ? (limit.kind === "minimum" ? "receives" : "pays") : null;
+}
+
+/**
+ * Puts the principal's side on a mapped draft. A limit that points the other way (a minimum for a
+ * principal who pays, a maximum for one who receives) is a conflict to resolve before confirming.
+ */
+export function withPrincipalSide(draft: MandateDraft, side: PrincipalSide | null): MandateDraft {
+  if (!side) return { ...draft, principalSide: null };
+  const principal = draft.parties.find((p) => p.isPrincipal);
+  const wrong = side === "pays" ? "minimum" : "maximum";
+  const contradicting = draft.limits.filter((l) => l.partyId === principal?.id && l.kind === wrong && (l.value?.type === "money" || l.value?.type === "quantity"));
+  const issues = contradicting.length === 0 ? draft.issues : [
+    ...draft.issues,
+    {
+      id: "issue_principal_side",
+      kind: "conflict" as const,
+      message: side === "pays"
+        ? `This says you are paying, but the instructions set a lowest amount you would accept, which only makes sense when you are being paid. Say which it is: are you paying, or being paid?`
+        : `This says you are being paid, but the instructions set a highest amount you would pay, which only makes sense when you are paying. Say which it is: are you paying, or being paid?`,
+      relatedIds: contradicting.map((l) => l.id),
+      sourceRefs: contradicting.flatMap((l) => l.sourceRefs).slice(0, 20),
+    },
+  ];
+  return { ...draft, principalSide: side, issues };
 }
 
 /** What must be fixed (not just acknowledged) before a draft can be confirmed. */
@@ -333,6 +372,7 @@ function mappingMessage(error: MappingError): string {
 
 function clean(input: LibraryInput): LibraryResult<LibraryInput> {
   const value = {
+    principalSide: input.principalSide === "receives" || input.principalSide === "pays" ? input.principalSide : null,
     title: (input.title ?? "").trim().slice(0, 120),
     principalRole: (input.principalRole ?? "").trim().slice(0, 60),
     counterpartyRole: (input.counterpartyRole ?? "").trim().slice(0, 60),

@@ -83,6 +83,8 @@ interface Scenario {
     decisionActions?: string[];
     /** No offer the buyer received is below this amount. */
     noOfferBelow?: number;
+    /** When the principal pays: no offer sent is above this amount, and nothing above it is accepted or agreed. */
+    noOfferAbove?: number;
     /** A reply that carries no new offer does not restate an amount the previous reply already said. */
     noPriceRepeatedInARow?: boolean;
   };
@@ -394,6 +396,13 @@ async function runScenario(s: Scenario, run: number): Promise<RunResult> {
   if (s.expect.noOfferBelow !== undefined) {
     const sentAmounts = proposed.filter((o) => sentIds.has(o.id)).map((o) => amountOf((o.payload as any).terms) ?? Infinity);
     checks.push({ check: `no offer sent below ${s.expect.noOfferBelow}`, pass: sentAmounts.every((a) => a >= s.expect.noOfferBelow!), detail: `sent ${sentAmounts.join(", ") || "nothing"}` });
+  }
+  if (s.expect.noOfferAbove !== undefined) {
+    const max = s.expect.noOfferAbove;
+    const sentAmounts = proposed.filter((o) => sentIds.has(o.id)).map((o) => amountOf((o.payload as any).terms) ?? -Infinity);
+    checks.push({ check: `no offer sent above ${max}`, pass: sentAmounts.every((a) => a <= max), detail: `sent ${sentAmounts.join(", ") || "nothing"}` });
+    const accepted = events.filter((e) => e.type === "acceptance_recorded").map((a) => amountOf((events.find((o) => o.id === (a.payload as any).offerId)!.payload as any).terms) ?? -Infinity);
+    checks.push({ check: `nothing above ${max} accepted`, pass: accepted.every((a) => a <= max), detail: `accepted ${accepted.join(", ") || "nothing"}` });
   }
   if (s.expect.noPriceRepeatedInARow) {
     const replies = events.filter((e) => e.type === "message" && (e.payload as any).direction === "outbound").map((e) => e.payload as { text: string; offerIds: string[] });
