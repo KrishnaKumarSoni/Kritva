@@ -55,22 +55,23 @@ const TRACE_LIMIT = 400;
 /**
  * Lines the phone call says itself, by language (others fall back to English). They state no
  * amount and promise nothing, and they pass the same outgoing check as every voice line.
- * Placeholders for the interaction design.
+ * They follow the voice rules: everyday urban Hindi (English words where people use them, never
+ * formal words like "धन्यवाद"), and Kritva speaks as a woman ("रख रही हूँ", not "रख रहा हूँ").
  */
 const STILL_THERE: Record<string, string> = {
-  en: "Are you still there?",
-  hi: "क्या आप अभी भी लाइन पर हैं?",
-  ta: "நீங்கள் இன்னும் லைனில் இருக்கிறீர்களா?",
+  en: "Hello? Are you still there?",
+  hi: "Hello? आप line पर हैं?",
+  ta: "Hello? நீங்க line-ல இருக்கீங்களா?",
 };
 const GOODBYE: Record<string, string> = {
-  en: "I'll end the call for now. Please call again whenever you like. Thank you!",
-  hi: "मैं अभी कॉल रख रहा हूँ। जब चाहें फिर से कॉल कीजिए। धन्यवाद!",
-  ta: "இப்போதைக்கு அழைப்பை முடிக்கிறேன். எப்போது வேண்டுமானாலும் மீண்டும் அழையுங்கள். நன்றி!",
+  en: "I'll end the call for now. Call again whenever you like. Thank you!",
+  hi: "अभी के लिए call रख रही हूँ। जब मन हो, फिर से call कर लीजिए। Thank you!",
+  ta: "இப்போதைக்கு call-ஐ முடிக்கிறேன். எப்ப வேணும்னாலும் மறுபடியும் call பண்ணுங்க. Thank you!",
 };
 const TIME_UP: Record<string, string> = {
-  en: "We've been talking for a while, so I'll end the call here. Please call again any time. Thank you!",
-  hi: "काफ़ी देर हो गई है, इसलिए मैं यह कॉल यहीं ख़त्म कर रहा हूँ। कभी भी फिर से कॉल कीजिए। धन्यवाद!",
-  ta: "நீண்ட நேரம் பேசிவிட்டோம், அதனால் இந்த அழைப்பை இங்கே முடிக்கிறேன். எப்போது வேண்டுமானாலும் மீண்டும் அழையுங்கள். நன்றி!",
+  en: "We've been talking for a while, so I'll end the call here. Call again any time. Thank you!",
+  hi: "काफ़ी देर हो गई, तो call यहीं रखती हूँ। कभी भी दोबारा call कर लीजिए। Thank you!",
+  ta: "ரொம்ப நேரம் பேசிட்டோம், அதனால call-ஐ இங்கே முடிக்கிறேன். எப்ப வேணும்னாலும் மறுபடியும் call பண்ணுங்க. Thank you!",
 };
 const line = (table: Record<string, string>, language: string) => table[language] ?? table.en!;
 

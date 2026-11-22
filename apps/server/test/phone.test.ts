@@ -677,7 +677,7 @@ describe("Phone: during a call", () => {
     const t = await answered({ idleMs: 250 });
     t.play(0);
     await until(() => t.link.says().length === 2, 3_000);
-    expect(t.link.says()[1]!.text).toBe("Are you still there?");
+    expect(t.link.says()[1]!.text).toBe("Hello? Are you still there?");
     t.play(1);
     await until(() => t.link.says().length === 3, 3_000);
     expect(t.link.says()[2]!.text).toMatch(/end the call for now/);
