@@ -262,7 +262,7 @@ Run them with the rest of the server tests: `npx vitest run --testTimeout=30000`
 
 ## 15. Outbound calls (Kritva dials the counterparty)
 
-For negotiations where the principal gives Kritva numbers to call (the multiple-counterparties work decides how those are organised). Built on 2026-11-22 and tested with fakes; **not yet tried on a real call** (section 15.4).
+For negotiations where the principal gives Kritva numbers to call (the multiple-counterparties work decides how those are organised). Built on 2026-11-22. **The first live call connected but was silent both ways because of Vobiz's NAT on the bridge (section 15.4).**
 
 ### 15.1 How a call works
 
@@ -295,9 +295,19 @@ OpenAI's Realtime API cannot dial out: its outbound SIP calling exists only in t
 
 Hence the allowlist: until the user confirms these points, only numbers they list (their own, for testing) can be dialled.
 
-### 15.4 Not yet verified (the first real call will show)
+### 15.4 The first live outbound call (2026-11-22): connected, but silent
 
-- Whether Vobiz's `<Dial><User>` reaches `sip:proj_…@sip.api.openai.com:5061;transport=tls` (TLS on 5061 is all OpenAI accepts; Vobiz documents TLS only for inbound trunks). OpenAI took plain RTP media on the working inbound call, so SRTP should not be required.
-- The exact name of the header `sipHeaders` becomes. The matcher accepts any header naming `kritva_call`, and falls back to the one waiting call.
-- The number format Vobiz wants (`+91…` is sent; its docs show both with and without `+`), and the hang-up cause names it sends for no answer and busy.
-- The greeting: the engine's opening line is written for a call the counterparty started ("How can I help today?"). An outbound opener (who is calling and why) belongs to the engine's wording and the multiple-counterparties work.
+Placed to the user's own phone, with their approval, from the bed listing's negotiation.
+
+What worked, end to end in about 11 s: Vobiz accepted `+91…` numbers and rang the phone; the ring and answer callbacks arrived; the answer XML's `<Dial><User>` reached `sip:proj_…@sip.api.openai.com:5061;transport=tls` over TLS; the tag arrived as the header `X-VH-kritva_call` (matched by header, not by the fallback); OpenAI took plain RTP (`sip_media_security: "rtp"`); the call joined its own negotiation, the full session applied (`session.updated`, no error) and the greeting was generated. Vobiz reported the hang-up as "Normal Hangup".
+
+What did not: **no audio either way**. OpenAI never heard the person (no `input_audio_buffer.*` events) and never started playing Kritva's reply (no `output_audio_buffer.*`), and it did not pass on the hang-up. The cause is on Vobiz's side of the bridge: the bridged INVITE came from a Vobiz media server behind NAT (`Contact: <sip:Vobiz@10.1.35.193:5080;alias=18.96.230.113~5080~1>`, `Via: SIP/2.0/UDP 10.1.35.193:5080;received=18.96.230.113`, Record-Route `nat=yes`), while working inbound calls come from a public one (`Contact: <sip:mod_sofia@13.200.197.87:5080>`). A private address in the INVITE (and, very likely, in its SDP) leaves OpenAI no reachable place to send media or in-dialog requests.
+
+Since then, Vobiz's hang-up callback ends Kritva's side of a bridged call at once (before, the silence timer ended it after 81 s).
+
+Ways forward, none tried yet:
+- **Vobiz support**: ask them to advertise the public address (`18.96.230.113`) for `<Dial><User>` calls to an external SIP URI, as their inbound trunk media servers do. Call IDs: Vobiz `d5befe4d-fd03-4e4d-82ae-b966cc0653d4`, OpenAI `rtc_u7_Emrq1p3oNJbm5taiW7wqFAb3tEFOXjwO`, 2026-11-22 02:43 UTC.
+- **Bridge through Kritva's own number**: `<Dial><Number>` to Kritva's Vobiz number, so the second leg comes in through the inbound trunk, whose audio path works. It costs extra legs per minute, and the tag would not survive, so concurrent calls would rely on the "one call waiting" match.
+- **OpenAI's Live API** dials out itself through a SIP trunk, but needs `gpt-live-1` and a different call controller.
+
+Still open: the greeting. The engine's opening line is written for a call the counterparty started; the outbound opener (`engine.greet({ ..., outbound: true })`) comes with the multiple-counterparties work.

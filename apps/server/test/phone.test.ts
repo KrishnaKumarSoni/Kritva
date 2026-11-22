@@ -780,6 +780,22 @@ describe("Phone: outbound calls (Kritva dials the counterparty)", () => {
     expect(op.events.map((e: any) => e.title)).toContain("Kritva's call connected");
   });
 
+  it("when Vobiz reports the phone leg hung up, Kritva ends its side of the bridged call too", async () => {
+    const t = setup({ outbound: {} });
+    const sessionId = await t.newSession();
+    const { callId } = (await t.placeCall(sessionId)).json;
+    const token = t.telephony.placed[0]!.answerUrl.split("/").at(-2)!;
+    await t.vobiz(t.telephony.placed[0]!.answerUrl);
+    await t.bridge("rtc_out_bye", [{ name: "X-VH-kritva_call", value: token }]);
+    await until(async () => (await t.getCall(callId)).state === "connected");
+    // OpenAI never closes the sideband here; only Vobiz's hang-up callback says the call is over.
+    await t.vobiz(t.telephony.placed[0]!.hangupUrl, { HangupCauseName: "NORMAL_CLEARING" });
+    await until(async () => (await t.connections(sessionId)).length === 2);
+    expect((await t.connections(sessionId))[1]).toMatchObject({ status: "ended", reason: "hung_up", direction: "outbound" });
+    expect(t.connector.hungUp).toEqual(["rtc_out_bye"]);
+    expect((await t.getCall(callId)).outcome).toBe("completed");
+  });
+
   it("not answered: a hang-up before the answer is no_answer, or busy when Vobiz says so", async () => {
     const t = setup({ outbound: {} });
     const sessionId = await t.newSession();
