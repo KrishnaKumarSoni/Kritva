@@ -38,7 +38,8 @@ export interface OutboundSettings {
   countryCode: string;
 }
 
-export type OutboundState = "dialling" | "ringing" | "answered" | "connected" | "ended";
+/** queued: waiting for a free line (more calls than KRITVA_PHONE_MAX_CALLS were asked for at once). */
+export type OutboundState = "queued" | "dialling" | "ringing" | "answered" | "connected" | "ended";
 export type OutboundOutcome = "completed" | "no_answer" | "busy" | "failed" | "cancelled";
 
 /** What callers see of a call. The number is masked. */
@@ -56,7 +57,8 @@ export interface OutboundCallView {
   endReason: string | null;
 }
 
-export type OutboundError = "phone_off" | "invalid_number" | "not_allowed" | "session_not_active" | "busy" | "provider_error";
+/** Calls over the line limit are queued, not refused, so there is no "busy" error. */
+export type OutboundError = "phone_off" | "invalid_number" | "not_allowed" | "session_not_active" | "provider_error";
 
 interface OutboundCall {
   callId: string;
@@ -128,22 +130,62 @@ export class OutboundDialer {
     if (!s.allow.includes("*") && !s.allow.includes(to)) return fail("not_allowed", "Calling this number isn't allowed yet. Add it to KRITVA_PHONE_OUTBOUND_ALLOW once calling it is approved.");
     const briefing = await this.#d.engine.voiceBriefing(sessionId);
     if (!briefing || briefing.status !== "active") return fail("session_not_active", "This negotiation isn't active, so Kritva can't call about it.");
-    if (this.#active().length >= s.maxCalls) return fail("busy", "Kritva is already on as many calls as it may make at once.");
 
-    const call: OutboundCall = { callId: `oc_${randomBytes(9).toString("base64url")}`, token: randomBytes(18).toString("base64url"), sessionId, to, state: "dialling", outcome: null, providerCallId: null, realtimeCallId: null, startedAt: new Date(), answeredAt: null, connectedAt: null, endedAt: null, endReason: null };
+    const call: OutboundCall = { callId: `oc_${randomBytes(9).toString("base64url")}`, token: randomBytes(18).toString("base64url"), sessionId, to, state: "queued", outcome: null, providerCallId: null, realtimeCallId: null, startedAt: new Date(), answeredAt: null, connectedAt: null, endedAt: null, endReason: null };
     this.#calls.set(call.callId, call);
     this.#byToken.set(call.token, call);
+    // Over the line limit the call waits its turn; "Start negotiations" asks for every counterparty at once.
+    if (this.#lines().length >= s.maxCalls) {
+      this.#log({ kind: "outbound_queued", callId: call.callId, sessionId, to: maskNumber(to) });
+      this.#emit(call);
+      return { ok: true, call: view(call) };
+    }
+    const dialled = await this.#dial(call);
+    return dialled ? { ok: true, call: view(call) } : fail("provider_error", "The call couldn't be placed. Nothing was dialled.");
+  }
+
+  /** Asks Vobiz to ring the number. False when the provider refused (the call is then ended as failed). */
+  async #dial(call: OutboundCall): Promise<boolean> {
+    const s = this.#d.settings;
+    call.state = "dialling";
     const base = `${s.publicUrl.replace(/\/+$/, "")}/api/phone/vobiz/${call.token}`;
     try {
-      const placed = await this.#d.telephony.placeCall({ from: `+${s.callerId}`, to: `+${to}`, answerUrl: `${base}/answer`, ringUrl: `${base}/ring`, hangupUrl: `${base}/hangup`, timeLimitSeconds: s.timeLimitSeconds });
+      const placed = await this.#d.telephony.placeCall({ from: `+${s.callerId}`, to: `+${call.to}`, answerUrl: `${base}/answer`, ringUrl: `${base}/ring`, hangupUrl: `${base}/hangup`, timeLimitSeconds: s.timeLimitSeconds });
       call.providerCallId = placed.providerCallId;
     } catch (error) {
       this.#end(call, "failed", `provider: ${String(error).slice(0, 200)}`);
-      return fail("provider_error", "The call couldn't be placed. Nothing was dialled.");
+      return false;
     }
-    this.#log({ kind: "outbound_placed", callId: call.callId, sessionId, to: maskNumber(to), providerCallId: call.providerCallId });
+    // Cancelled while Vobiz was queuing it (the state can change during the await): end the provider's call too.
+    if ((call.state as OutboundState) === "ended") {
+      void this.#d.telephony.hangup(call.providerCallId).catch(() => undefined);
+      return true;
+    }
+    this.#log({ kind: "outbound_placed", callId: call.callId, sessionId: call.sessionId, to: maskNumber(call.to), providerCallId: call.providerCallId });
     this.#emit(call);
-    return { ok: true, call: view(call) };
+    return true;
+  }
+
+  /** Dials queued calls, oldest first, while lines are free. A queued call whose negotiation stopped is cancelled. */
+  #pump() {
+    const max = this.#d.settings.maxCalls;
+    for (const call of [...this.#calls.values()].filter((c) => c.state === "queued")) {
+      if (this.#lines().length >= max) return;
+      call.state = "dialling";
+      void this.#d.engine
+        .voiceBriefing(call.sessionId)
+        .then(async (b) => {
+          if (b?.status === "active") await this.#dial(call);
+          else this.#end(call, "cancelled", "The negotiation stopped before the call was placed.");
+        })
+        .catch((error) => this.#end(call, "failed", String(error)));
+    }
+  }
+
+  /** The counterparty's number for a call, digits with country code, in memory only (for the live-call registry while it lasts). */
+  dialledNumber(callId: string): string | null {
+    const call = this.#calls.get(callId);
+    return call && call.state !== "ended" ? call.to : null;
   }
 
   get(callId: string): OutboundCallView | null {
@@ -251,9 +293,9 @@ export class OutboundDialer {
     this.#end(call, call.connectedAt ? "completed" : "failed", reason === "hung_up" ? null : reason);
   }
 
-  /** Calls dialling, ringing, answered or connected. */
-  #active() {
-    return [...this.#calls.values()].filter((c) => c.state !== "ended");
+  /** Calls using a line: dialling, ringing, answered or connected (not queued, not ended). */
+  #lines() {
+    return [...this.#calls.values()].filter((c) => c.state !== "ended" && c.state !== "queued");
   }
 
   #end(call: OutboundCall, outcome: OutboundOutcome, reason: string | null) {
@@ -264,6 +306,8 @@ export class OutboundDialer {
     call.endReason = reason;
     this.#log({ kind: "outbound_ended", callId: call.callId, sessionId: call.sessionId, outcome, reason });
     this.#emit(call);
+    // A line is free: the next queued call goes out.
+    this.#pump();
   }
 
   #emit(call: OutboundCall) {

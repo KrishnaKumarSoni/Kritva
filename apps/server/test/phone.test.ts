@@ -714,6 +714,9 @@ describe("Phone: outbound calls (Kritva dials the counterparty)", () => {
 
   it("answered: the XML bridges to OpenAI over TLS with the token; the bridged call joins the same session, greets and is recorded as Kritva's call", async () => {
     const t = setup({ outbound: {} });
+    const greetings: Array<Record<string, unknown>> = [];
+    const greet = t.engine.greet.bind(t.engine);
+    t.engine.greet = (input) => (greetings.push(input), greet(input));
     const sessionId = await t.newSession();
     const { callId } = (await t.placeCall(sessionId)).json;
     const base = t.telephony.placed[0]!.answerUrl.replace(/\/answer$/, "");
@@ -731,6 +734,8 @@ describe("Phone: outbound calls (Kritva dials the counterparty)", () => {
     expect((await t.sessions()).length).toBe(sessionsBefore);
     await until(() => t.link.says().length === 1);
     expect((await t.getCall(callId)).state).toBe("connected");
+    // The engine is asked for an outbound opener (who is calling, for whom and why).
+    expect(greetings[0]).toMatchObject({ sessionId, channel: "voice", outbound: true });
     expect((await t.connections(sessionId))[0]).toEqual({ status: "connected", transport: "phone", reason: null, direction: "outbound" });
     // They hang up: the realtime side ends, Kritva makes sure Vobiz's leg ends too, and the call completed.
     t.link.hangUp();
@@ -774,6 +779,25 @@ describe("Phone: outbound calls (Kritva dials the counterparty)", () => {
     expect(((await res.json()) as any).outcome).toBe("cancelled");
     expect(t.telephony.hungUp).toEqual(["vobiz_1"]);
     expect(((await (await t.app.request(`/api/operator/sessions/${sessionId}/calls`)).json()) as any[])).toHaveLength(1);
+  });
+
+  it("over the line limit, calls wait in a queue and go out in order as lines free up; a queued call can be cancelled", async () => {
+    const t = setup({ outbound: { maxCalls: 1, allow: ["*"] } });
+    const [s1, s2, s3] = [await t.newSession(), await t.newSession(), await t.newSession()];
+    const first = (await t.placeCall(s1, "+919800000001")).json;
+    const second = (await t.placeCall(s2, "+919800000002")).json;
+    const third = (await t.placeCall(s3, "+919800000003")).json;
+    expect([first.state, second.state, third.state]).toEqual(["dialling", "queued", "queued"]);
+    expect(t.telephony.placed).toHaveLength(1);
+    // The principal cancels the third before its turn: nothing is dialled for it.
+    await t.app.request(`/api/operator/calls/${third.callId}/hangup`, { method: "POST" });
+    expect(await t.getCall(third.callId)).toMatchObject({ state: "ended", outcome: "cancelled" });
+    // The first goes unanswered: the second is dialled next.
+    await t.vobiz(t.telephony.placed[0]!.hangupUrl, { HangupCauseName: "NO_ANSWER" });
+    await until(() => t.telephony.placed.length === 2);
+    expect(t.telephony.placed[1]!.to).toBe("+919800000002");
+    expect((await t.getCall(second.callId)).state).toBe("dialling");
+    expect(t.telephony.hungUp).toEqual([]);
   });
 
   it("the setup view shows Kritva's number and the masked allowlist", async () => {

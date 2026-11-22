@@ -314,6 +314,8 @@ export interface CallDeps {
   pollMs?: number;
   /** Overrides for the wait sensor (tests). */
   waitSensor?: Partial<typeof WAIT_SENSOR>;
+  /** Kritva placed this call (a phone call it dialled), so the opening line says who is calling and why. */
+  outbound?: boolean;
 }
 
 /**
@@ -379,7 +381,10 @@ export class RealtimeCall {
   async start(): Promise<void> {
     this.#busy += 1;
     try {
-      const greeted = await this.#d.engine.greet({ sessionId: this.#d.sessionId, channel: "voice" });
+      // An outbound call (Kritva dialled them) asks for an opener that says who is calling, for whom and why.
+      // The engine reads `outbound` once the multiple-counterparties work adds it; until then it greets as usual.
+      const greeting = { sessionId: this.#d.sessionId, channel: "voice" as const, outbound: this.#d.outbound === true };
+      const greeted = await this.#d.engine.greet(greeting);
       if (greeted.ok && greeted.reply) this.#say(greeted.reply.messageId, greeted.reply.text);
     } finally {
       this.#busy -= 1;
