@@ -55,6 +55,15 @@ The model's own words (conversation turns and acknowledgements) never carry an a
 - A dropped connection or closed tab is reported as an interruption.
 - A phone call has no browser, so the server decides the same reports from the call's events (`docs/Kritva_Phone_Calls.md`, section 6).
 
+## 6a. No silence during a wait
+
+Silence on a call sounds like a dropped line, so Kritva speaks during every expected wait:
+
+- **While the engine works on a deal turn.** After the short acknowledgement, if the engine has not answered within about 2 seconds, Kritva says a short holding line ("One moment, I'm just checking that.", "एक पल, अभी देखते हैं।"), then another every 6 seconds, at most three per turn. The engine's reply follows as soon as it is ready.
+- **While the seller's approval is pending.** After 18 seconds with no sound on the line, Kritva says a holding line ("I'm still waiting to hear back on that. Thanks for holding."), and on the fourth says it is taking longer than usual and the buyer can stay on. The reply after the approval is spoken as soon as it is recorded.
+
+The lines are fixed per language (English, Hindi, Tamil); other languages get the same meaning in their language. They carry no amount and promise nothing, are kept as transcript fragments, never as messages, and never count as delivered replies. Timing is in `FILLER_TIMING` in `apps/server/src/realtime-voice.ts`; phone calls use the same controller.
+
 ## 7. Expectations (measured 2026-11-22, then estimated for the live call)
 
 Measured on 2026-11-22 with the live check (`apps/server/scripts/realtime-check.ts`), recorded Hindi, Tamil, English and Hinglish speech, the real engine and `gpt-realtime-2.1`. Times are from the end of their speech; they include about 0.3 to 0.8 s for the model to decide they finished.

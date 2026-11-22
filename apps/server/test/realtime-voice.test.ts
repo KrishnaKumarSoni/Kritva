@@ -15,7 +15,7 @@ import {
 } from "@kritva/core";
 import { createApp } from "../src/app.ts";
 import { loadConfirmedMandates, loadExamples, loadListings } from "../src/main-helpers.ts";
-import { realtimeSettingsFromEnv, scriptLanguage, type RealtimeConnector, type RealtimeEvent, type RealtimeLink } from "../src/realtime-voice.ts";
+import { RealtimeCall, realtimeSettingsFromEnv, scriptLanguage, type RealtimeConnector, type RealtimeEvent, type RealtimeLink } from "../src/realtime-voice.ts";
 
 const CASES = resolve(import.meta.dirname, "../../../cases");
 
@@ -266,3 +266,59 @@ describe("Realtime voice: language", () => {
     expect(briefs.join(" ")).toMatch(/Tamil/);
   });
 });
+
+describe("Realtime voice: no silence during a wait", () => {
+  const fillers = (link: FakeLink) => link.sent.filter((e) => e.type === "response.create" && e.response.metadata?.kritva === "filler");
+
+  it("while the engine works on a deal turn, a short line is spoken after a pause, a few times at most, and it is never a message", async () => {
+    const t = await setup();
+    const slow = t.engine.handleCounterpartyMessage.bind(t.engine);
+    t.engine.handleCounterpartyMessage = async (input) => {
+      await new Promise((r) => setTimeout(r, 450));
+      return slow(input);
+    };
+    const call = new RealtimeCall({ engine: t.engine, record: t.record, sessionId: t.sessionId, link: t.link, afterSeq: 0, fillerTiming: { firstAfterMs: 60, everyMs: 120, maxPerWait: 2 } });
+    t.llm.interpretations.push(t.offer(15_000));
+    t.link.emit({ type: "input_audio_buffer.committed", item_id: "item_f1" });
+    t.done([t.spoken("Got it, one moment."), { type: "function_call", name: "negotiate", call_id: "call_f", arguments: JSON.stringify({ their_words: "I'll pay 15000", language: "en" }) }]);
+    // The realtime API finishes each filler response; the engine's reply follows the last one.
+    let finished = 0;
+    const end = Date.now() + 4_000;
+    while (!t.link.says().some((x) => x.messageId) && Date.now() < end) {
+      while (finished < fillers(t.link).length) {
+        finished += 1;
+        t.done([t.spoken("One moment, I'm just checking that.")], { kritva: "filler" });
+      }
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(t.link.says().some((x) => x.messageId)).toBe(true);
+    expect(fillers(t.link).length).toBeGreaterThanOrEqual(1);
+    expect(fillers(t.link).length).toBeLessThanOrEqual(2);
+    expect(String(fillers(t.link)[0]!.response.instructions)).toMatch(/One moment/);
+    const msgs = await t.messages();
+    expect(msgs.some((m) => /One moment, I'm just checking/.test(m.text))).toBe(false);
+    call.close();
+  });
+
+  it("while the seller's approval is pending, a holding line is spoken after a quiet stretch, and not while the negotiation is active", async () => {
+    const t = await setup();
+    let status = "active";
+    const record = new Proxy(t.record, {
+      get(target, prop, receiver) {
+        if (prop === "context") return async (id: string) => ({ ...(await target.context(id)), status });
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const call = new RealtimeCall({ engine: t.engine, record, sessionId: t.sessionId, link: t.link, afterSeq: 0, pollMs: 25, fillerTiming: { holdEveryMs: 80 } });
+    await call.start();
+    t.done([t.spoken("x")], { kritva: "say", message_id: t.link.says()[0]?.messageId ?? "none" });
+    await new Promise((r) => setTimeout(r, 250));
+    expect(fillers(t.link)).toHaveLength(0);
+    status = "awaiting_approval";
+    await until(() => fillers(t.link).length >= 1, 2_000);
+    expect(fillers(t.link)[0]!.response.metadata.kind).toBe("hold");
+    call.close();
+  });
+});
+
