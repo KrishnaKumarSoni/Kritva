@@ -34,6 +34,12 @@ export function Landing() {
 
   useEffect(() => {
     document.title = "Kritva: many negotiations at once, none past your limit";
+    // One visit counted for the admin page: a count per day, no cookie, nothing that identifies the visitor.
+    try {
+      navigator.sendBeacon?.("/api/views", new Blob([JSON.stringify({ path: "/" })], { type: "application/json" }));
+    } catch {
+      /* counting is optional */
+    }
     // A signed-in visitor gets a way back to the console instead of "Sign in".
     const controller = new AbortController();
     fetch("/api/auth/me", { credentials: "same-origin", signal: controller.signal })

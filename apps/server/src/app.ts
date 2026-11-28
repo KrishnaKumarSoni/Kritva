@@ -8,6 +8,7 @@
  */
 import { Hono } from "hono";
 import { registerAuthRoutes, signedIn, type AuthSettings, type AuthStore } from "./auth.ts";
+import { registerAdminRoutes } from "./admin.ts";
 import { registerIntakeRoutes } from "./intake-routes.ts";
 import { registerLibraryRoutes, type LibraryDeps } from "./library-routes.ts";
 import type { ListingConfig } from "./main-helpers.ts";
@@ -146,6 +147,8 @@ export function createApp(deps: AppDeps): Hono {
   // The console is for the signed-in principal (an emailed sign-in link, auth.ts). Scripts and tools
   // may still use the access key (Authorization: Bearer ...).
   if (deps.auth) registerAuthRoutes(app, { store: deps.auth.store, settings: deps.auth.settings, operatorKey: deps.operatorKey, log: deps.auth.log });
+  // The admin page: who has access, usage, and access requests (admin.ts).
+  if (deps.auth) registerAdminRoutes(app, { store: deps.auth.store, settings: deps.auth.settings, operatorKey: deps.operatorKey, log: deps.auth.log, negotiations: () => record.listSessions() });
   if (deps.operatorKey || deps.auth) {
     app.use("/api/operator/*", async (c, next) => {
       c.header("Cache-Control", "no-store");

@@ -3896,3 +3896,428 @@ details[open] > summary::before {
   padding-top: var(--space-4, 16px);
   border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
 }
+
+/* ---------- Admin (/admin): access and usage. One orange action: "Give access" in the header. ---------- */
+.admin-page {
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+  padding: 36px var(--space-6) 48px;
+  width: 100%;
+  max-width: 1360px;
+  margin-inline: auto;
+}
+@media (max-width: 760px) {
+  .admin-page {
+    padding: 24px var(--space-4) 40px;
+  }
+}
+.admin-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+.admin-notice {
+  margin: 0;
+  min-height: 0;
+}
+.admin-notice-text {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 8px 12px;
+  border-radius: var(--radius-lg);
+  background: var(--color-neutral-solid);
+  color: var(--color-text-on-solid);
+  font-size: var(--text-ui);
+}
+.admin-loading,
+.admin-blocked {
+  padding: var(--space-6);
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+.admin-loading {
+  flex-direction: row;
+  align-items: center;
+  color: var(--color-text-secondary);
+  font-size: var(--text-ui);
+}
+
+/* Give access */
+.admin-give {
+  padding: var(--space-4) var(--space-5);
+  gap: var(--space-3);
+}
+.admin-give-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3) var(--space-5);
+}
+.admin-field {
+  display: grid;
+  gap: 6px;
+  flex: 1 1 18rem;
+  max-width: 28rem;
+  font-size: var(--text-ui);
+  font-weight: 500;
+}
+.admin-input {
+  min-height: var(--control-h);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+  box-shadow: inset 0 0 0 1px var(--color-border-strong);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: max(var(--text-input), 14px);
+  font-weight: 400;
+}
+.admin-input:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
+.admin-input[aria-invalid="true"] {
+  box-shadow: inset 0 0 0 1px var(--color-danger-solid);
+}
+.admin-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-h);
+  font-size: var(--text-ui);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.admin-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-neutral-solid);
+  margin: 0;
+}
+.admin-give-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Totals */
+.admin-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+@media (max-width: 1100px) {
+  .admin-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .admin-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.admin-stat {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 14px var(--space-4);
+  border-radius: var(--radius-xl);
+  background: var(--color-bg-surface);
+  box-shadow: var(--shadow-surface);
+}
+.admin-stat-wait {
+  background: var(--color-accent-surface);
+  box-shadow: inset 0 0 0 1px var(--color-accent-border);
+}
+.admin-stat-label {
+  font-size: var(--text-caption);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+.admin-stat-value {
+  font-family: var(--font-serif);
+  font-size: 2rem;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+.admin-stat-note {
+  font-size: var(--text-caption);
+  line-height: 1.4;
+  color: var(--color-text-tertiary);
+  text-wrap: pretty;
+}
+
+/* Usage chart: one series, a column per day, a 2px gap between columns, 4px rounded tops. */
+.admin-chart .panel-header {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.admin-segment {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 999px;
+  background: var(--color-bg-subtle);
+  box-shadow: inset 0 0 0 1px var(--color-border);
+}
+.admin-segment-item {
+  position: relative;
+  display: inline-flex;
+}
+.admin-segment-item input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.admin-segment-item span {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-h-sm);
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: var(--text-caption);
+  font-weight: 550;
+  color: var(--color-text-secondary);
+  transition-property: background-color, color, box-shadow;
+  transition-duration: 150ms;
+}
+.admin-segment-item input:checked + span {
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  box-shadow: 0 0 0 1px rgb(10 10 10 / 0.06), 0 1px 2px rgb(10 10 10 / 0.08);
+}
+.admin-segment-item input:focus-visible + span {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
+.admin-plot {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: 180px auto;
+  gap: 6px 10px;
+  padding: var(--space-5) var(--space-5) var(--space-4);
+}
+.admin-yaxis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  font-size: var(--text-caption);
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+  margin-block: -0.5em;
+}
+.admin-bars {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  border-block-end: 1px solid var(--color-border-strong);
+  background-image: linear-gradient(var(--color-border) 1px, transparent 1px), linear-gradient(var(--color-border) 1px, transparent 1px);
+  background-size: 100% 1px, 100% 1px;
+  background-position: 0 0, 0 50%;
+  background-repeat: no-repeat;
+  border-radius: 2px;
+}
+.admin-bars:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 4px;
+}
+.admin-col {
+  flex: 1 1 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.admin-bar {
+  width: 100%;
+  max-width: 24px;
+  min-height: 0;
+  border-radius: 4px 4px 0 0;
+  background: var(--color-accent-brand);
+  transition: height 300ms var(--ease-out), opacity 150ms;
+}
+.admin-bars:has(.is-active) .admin-col:not(.is-active) .admin-bar {
+  opacity: 0.45;
+}
+.admin-tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  translate: -50% 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  background: var(--color-neutral-solid);
+  color: var(--color-text-on-solid);
+  font-size: var(--text-caption);
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: var(--shadow-raised);
+}
+.admin-xaxis {
+  grid-column: 2;
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-caption);
+  color: var(--color-text-tertiary);
+}
+@media (prefers-reduced-motion: reduce) {
+  .admin-bar {
+    transition: none;
+  }
+}
+
+/* Requests and people */
+.admin-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+@media (max-width: 1000px) {
+  .admin-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.admin-list {
+  margin: 0;
+  padding: var(--space-2);
+  list-style: none;
+  display: grid;
+  gap: 2px;
+}
+.admin-request,
+.admin-person {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  padding: 12px var(--space-3);
+  border-radius: var(--radius-md);
+}
+.admin-request + .admin-request,
+.admin-person + .admin-person {
+  box-shadow: 0 -1px 0 var(--color-border);
+}
+.admin-request-who,
+.admin-person-who {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 14rem;
+}
+.admin-request-name {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-body);
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.admin-meta {
+  font-size: var(--text-caption);
+  color: var(--color-text-tertiary);
+  overflow-wrap: anywhere;
+}
+.admin-request-note {
+  margin-top: 4px;
+  font-size: var(--text-ui);
+  color: var(--color-text-secondary);
+  text-wrap: pretty;
+}
+.admin-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.admin-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-caption);
+  color: var(--color-text-secondary);
+}
+.admin-person-usage {
+  display: flex;
+  gap: var(--space-5);
+  margin: 0;
+}
+.admin-person-usage div {
+  display: grid;
+  gap: 2px;
+}
+.admin-person-usage dt {
+  font-size: var(--text-caption);
+  color: var(--color-text-tertiary);
+}
+.admin-person-usage dd {
+  margin: 0;
+  font-size: var(--text-ui);
+  font-weight: 500;
+}
+.admin-empty {
+  margin: 0;
+  padding: var(--space-5);
+  font-size: var(--text-ui);
+  color: var(--color-text-secondary);
+  text-wrap: pretty;
+}
+.admin-handled {
+  border-block-start: 1px solid var(--color-border);
+}
+.admin-subhead {
+  margin: 0;
+  padding: 12px var(--space-5) 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+.admin-request-done .admin-request-name {
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+.admin-inline-error {
+  margin: var(--space-3) var(--space-5) 0;
+}
+/* People rows line up: who, usage, then a fixed slot for the row's action. */
+.admin-person {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 8.5rem;
+  align-items: center;
+}
+.admin-person .admin-row-actions {
+  justify-content: flex-end;
+}
+.admin-person:has(.admin-confirm) .admin-row-actions {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+}
+.admin-person-usage div {
+  min-width: 5.25rem;
+}
+@media (max-width: 640px) {
+  .admin-person {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .admin-person .admin-row-actions {
+    justify-content: flex-start;
+  }
+  .admin-person-usage {
+    gap: var(--space-4);
+  }
+}

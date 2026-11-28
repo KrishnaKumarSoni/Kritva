@@ -6,6 +6,7 @@ import { Chat } from "./Chat.tsx";
 import { InsightsPanel } from "./InsightsPanel.tsx";
 import { MandatesPage } from "./MandatesPage.tsx";
 import { BoardPage } from "./BoardPage.tsx";
+import { AdminPage } from "./AdminPage.tsx";
 import { Stage, type StageMode } from "./Stage.tsx";
 import { Menu } from "./Menu.tsx";
 import { SignOutIcon } from "./icons.tsx";
@@ -17,17 +18,19 @@ function sessionFromHash(): string | null {
   return match?.[1] ?? null;
 }
 
-type View = "deals" | "negotiation" | "instructions";
-const NAV: Array<{ view: View; label: string; path: string }> = [
+type View = "deals" | "negotiation" | "instructions" | "admin";
+const NAV: Array<{ view: View; label: string; path: string; adminOnly?: boolean }> = [
   { view: "deals", label: "Deals", path: "/deals" },
   { view: "negotiation", label: "Negotiations", path: "/negotiations" },
   { view: "instructions", label: "Mandates", path: "/mandates" },
+  { view: "admin", label: "Admin", path: "/admin", adminOnly: true },
 ];
 
 /** Each console page has its own address: /deals, /negotiations (and /negotiations/<id>), /mandates (and /mandates/<id>). */
 function routeFromLocation(): { view: View; sessionId: string | null; mandateId: string | null } {
   const [first, second] = window.location.pathname.split("/").filter(Boolean);
   if (first === "deals") return { view: "deals", sessionId: null, mandateId: null };
+  if (first === "admin") return { view: "admin", sessionId: null, mandateId: null };
   if (first === "mandates") return { view: "instructions", sessionId: null, mandateId: second ?? null };
   // Older links name the negotiation in the hash (#session=...).
   return { view: "negotiation", sessionId: (first === "negotiations" ? second : undefined) ?? sessionFromHash(), mandateId: null };
@@ -121,6 +124,24 @@ export function App() {
   useEffect(() => {
     if (auth.status === "signed_in") void loadMandates();
   }, [auth.status, loadMandates]);
+  // Whether the signed-in person is an admin: the Admin page joins the top bar.
+  const [admin, setAdmin] = useState(false);
+  useEffect(() => {
+    if (auth.status !== "signed_in") {
+      setAdmin(false);
+      return;
+    }
+    let cancelled = false;
+    api.auth.me().then(
+      (me) => {
+        if (!cancelled) setAdmin(Boolean(me.admin));
+      },
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [auth.status]);
 
   /** Signing out ends the session and drops the curtain again. */
   const signOut = async () => {
@@ -139,7 +160,7 @@ export function App() {
       window.history.replaceState(null, "", sessionId ? `${window.location.search}#session=${sessionId}` : window.location.search || window.location.pathname);
       return;
     }
-    const path = view === "deals" ? "/deals" : view === "instructions" ? (openMandate ? `/mandates/${openMandate}` : "/mandates") : negMode === "session" && sessionId ? `/negotiations/${sessionId}` : "/negotiations";
+    const path = view === "deals" ? "/deals" : view === "admin" ? "/admin" : view === "instructions" ? (openMandate ? `/mandates/${openMandate}` : "/mandates") : negMode === "session" && sessionId ? `/negotiations/${sessionId}` : "/negotiations";
     const replace = firstSync.current;
     firstSync.current = false;
     if (window.location.pathname === path && !window.location.hash) return;
@@ -345,7 +366,7 @@ export function App() {
         </span>
         {access && (
           <nav className="topnav" aria-label="Pages">
-            {NAV.map((item) => (
+            {NAV.filter((item) => !item.adminOnly || admin || view === item.view).map((item) => (
               <a
                 key={item.view}
                 href={item.path}
@@ -398,6 +419,7 @@ export function App() {
           }}
         />
       )}
+      {access && view === "admin" && <AdminPage onSignInAgain={() => void signOut()} />}
       {access && view === "instructions" && (
         <MandatesPage
           initialId={openMandate}

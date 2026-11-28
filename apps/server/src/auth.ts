@@ -7,6 +7,10 @@
  *   POST /api/auth/signout          → the session ends and the cookie is cleared
  *   POST /api/auth/access   {email, name?, company?, note?} → an access request, kept and sent to the operator
  *
+ * Who may sign in: the addresses in KRITVA_SIGNIN_EMAILS, plus the ones an admin gave access in the
+ * console (admin.ts, kept in access_grants). Admins are KRITVA_ADMIN_EMAILS (else the first address in
+ * KRITVA_SIGNIN_EMAILS), and only when signed in with an emailed link: the shared passkey never is.
+ *
  * The link opens the web app at /signin#token=..., and the page posts the token. The token never
  * reaches a server log or a Referer header (it is in the fragment), and an email scanner that opens
  * the link does not use it up (it runs no script). Only hashes of tokens and session IDs are stored.
@@ -30,6 +34,8 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 export const SESSION_COOKIE = "kritva_session";
 const LINK_MS = 15 * 60_000;
 const SESSION_MS = 30 * 24 * 3_600_000;
+/** How often a session's "last used" time is written (the console polls every few seconds). */
+const SEEN_EVERY_MS = 5 * 60_000;
 /** Links one email may ask for in a window, so a typo or a script cannot flood an inbox. */
 const LINKS_PER_WINDOW = 5;
 const LINK_WINDOW_MS = 15 * 60_000;
@@ -128,6 +134,8 @@ export interface AuthSettings {
   passkeyEmail?: string;
   /** Who hears about access requests (KRITVA_ACCESS_NOTIFY, else the first address that may sign in). */
   notify?: string[];
+  /** Who may open the admin page (KRITVA_ADMIN_EMAILS, else the first address that may sign in). */
+  admins?: string[];
 }
 
 /** The demo passkey when KRITVA_PASSKEY is not set. Set KRITVA_PASSKEY=off to turn passkey sign-in off. */
@@ -172,7 +180,10 @@ export function authFromEnv(env: NodeJS.ProcessEnv = process.env, options: { ema
   const listed = (env.KRITVA_ACCESS_NOTIFY ?? "").split(",").map(normalizeEmail).filter((e): e is string => e !== null);
   const notify = listed.length ? listed : allowed.slice(0, 1);
   if (notify.length) notes.push(`Sign-in: access requests are sent to ${notify.length} address(es).`);
-  return { settings: { webUrl, allowed, sender, passkey, passkeyEmail, notify }, notes };
+  const namedAdmins = (env.KRITVA_ADMIN_EMAILS ?? "").split(",").map(normalizeEmail).filter((e): e is string => e !== null);
+  const admins = namedAdmins.length ? namedAdmins : allowed.slice(0, 1);
+  if (admins.length) notes.push(`Sign-in: ${admins.length} admin(s) may give access and see usage.`);
+  return { settings: { webUrl, allowed, sender, passkey, passkeyEmail, notify, admins }, notes };
 }
 
 function isLocal(url: URL): boolean {
@@ -211,7 +222,82 @@ export class AuthStore {
 CREATE INDEX IF NOT EXISTS auth_links_email ON auth_links (email, created_at);
 CREATE TABLE IF NOT EXISTS auth_sessions (id_hash TEXT PRIMARY KEY, email TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, ended_at INTEGER);
 CREATE TABLE IF NOT EXISTS access_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, name TEXT, company TEXT, note TEXT, created_at INTEGER NOT NULL);
-CREATE INDEX IF NOT EXISTS access_requests_email ON access_requests (email, created_at);`);
+CREATE INDEX IF NOT EXISTS access_requests_email ON access_requests (email, created_at);
+CREATE TABLE IF NOT EXISTS access_grants (email TEXT PRIMARY KEY, granted_by TEXT, granted_at INTEGER NOT NULL, revoked_at INTEGER, revoked_by TEXT);
+CREATE TABLE IF NOT EXISTS page_views (day TEXT NOT NULL, path TEXT NOT NULL, views INTEGER NOT NULL, PRIMARY KEY (day, path));`);
+    // Columns added after the tables first shipped: how a session signed in and when it was last used;
+    // what happened to an access request. Adding a column that exists throws, so each is tried alone.
+    for (const column of [
+      "ALTER TABLE auth_sessions ADD COLUMN via TEXT",
+      "ALTER TABLE auth_sessions ADD COLUMN last_seen_at INTEGER",
+      "ALTER TABLE access_requests ADD COLUMN status TEXT",
+      "ALTER TABLE access_requests ADD COLUMN handled_at INTEGER",
+      "ALTER TABLE access_requests ADD COLUMN handled_by TEXT",
+    ]) {
+      try {
+        this.#db.exec(column);
+      } catch {
+        // Already there.
+      }
+    }
+  }
+
+  // ---------- Access given in the console ----------
+
+  /** Whether an admin gave this email access (and nobody took it back). */
+  isGranted(email: string): boolean {
+    return Boolean(this.#db.prepare("SELECT 1 AS ok FROM access_grants WHERE email = ? AND revoked_at IS NULL").get(email));
+  }
+
+  grant(email: string, by: string | null, now: number): void {
+    this.#db.prepare("INSERT INTO access_grants (email, granted_by, granted_at) VALUES (?, ?, ?) ON CONFLICT (email) DO UPDATE SET granted_by = excluded.granted_by, granted_at = excluded.granted_at, revoked_at = NULL, revoked_by = NULL").run(email, by, now);
+    this.#db.prepare("UPDATE access_requests SET status = 'granted', handled_at = ?, handled_by = ? WHERE email = ? AND COALESCE(status, 'pending') = 'pending'").run(now, by, email);
+  }
+
+  /** Takes back access an admin gave, and ends that email's open sessions at once. */
+  revoke(email: string, by: string | null, now: number): boolean {
+    const changed = this.#db.prepare("UPDATE access_grants SET revoked_at = ?, revoked_by = ? WHERE email = ? AND revoked_at IS NULL RETURNING email").get(now, by, email);
+    this.#db.prepare("UPDATE auth_sessions SET ended_at = ? WHERE email = ? AND ended_at IS NULL").run(now, email);
+    return Boolean(changed);
+  }
+
+  grants(): Array<{ email: string; grantedBy: string | null; grantedAt: number }> {
+    const rows = this.#db.prepare("SELECT email, granted_by, granted_at FROM access_grants WHERE revoked_at IS NULL ORDER BY granted_at DESC").all() as Array<{ email: string; granted_by: string | null; granted_at: number }>;
+    return rows.map((r) => ({ email: r.email, grantedBy: r.granted_by, grantedAt: r.granted_at }));
+  }
+
+  /** Marks a waiting access request as dismissed. False when there is no such waiting request. */
+  dismissRequest(id: number, by: string | null, now: number): boolean {
+    return Boolean(this.#db.prepare("UPDATE access_requests SET status = 'dismissed', handled_at = ?, handled_by = ? WHERE id = ? AND COALESCE(status, 'pending') = 'pending' RETURNING id").get(now, by, id));
+  }
+
+  /** Access requests for the admin page: every waiting one, then the latest handled ones. */
+  requestList(limit = 50): Array<AccessRequest & { id: number; createdAt: number; status: "pending" | "granted" | "dismissed" }> {
+    const rows = this.#db.prepare("SELECT id, email, name, company, note, created_at, COALESCE(status, 'pending') AS status FROM access_requests ORDER BY CASE WHEN COALESCE(status, 'pending') = 'pending' THEN 0 ELSE 1 END, created_at DESC LIMIT ?").all(limit) as Array<{ id: number; email: string; name: string | null; company: string | null; note: string | null; created_at: number; status: "pending" | "granted" | "dismissed" }>;
+    return rows.map((r) => ({ id: Number(r.id), email: r.email, name: r.name, company: r.company, note: r.note, createdAt: r.created_at, status: r.status }));
+  }
+
+  // ---------- Usage, for the admin page ----------
+
+  /** Every session: who, how they signed in, when it began and when it was last used. */
+  sessionLog(since: number): Array<{ email: string; via: string | null; createdAt: number; lastSeenAt: number | null }> {
+    const rows = this.#db.prepare("SELECT email, via, created_at, last_seen_at FROM auth_sessions WHERE created_at >= ? OR last_seen_at >= ? ORDER BY created_at").all(since, since) as Array<{ email: string; via: string | null; created_at: number; last_seen_at: number | null }>;
+    return rows.map((r) => ({ email: r.email, via: r.via, createdAt: r.created_at, lastSeenAt: r.last_seen_at }));
+  }
+
+  /** Per email: sign-ins with a link, the last one, and the last time a session was used. */
+  usageByEmail(): Map<string, { signIns: number; lastSignIn: number | null; lastSeen: number | null }> {
+    const rows = this.#db.prepare("SELECT email, COUNT(*) AS n, MAX(created_at) AS last_in, MAX(COALESCE(last_seen_at, created_at)) AS last_seen FROM auth_sessions WHERE COALESCE(via, 'link') = 'link' GROUP BY email").all() as Array<{ email: string; n: number; last_in: number | null; last_seen: number | null }>;
+    return new Map(rows.map((r) => [r.email, { signIns: Number(r.n), lastSignIn: r.last_in, lastSeen: r.last_seen }]));
+  }
+
+  /** One more view of a public page on a day (YYYY-MM-DD). Counts only: no visitor is identified. */
+  countView(day: string, path: string): void {
+    this.#db.prepare("INSERT INTO page_views (day, path, views) VALUES (?, ?, 1) ON CONFLICT (day, path) DO UPDATE SET views = views + 1").run(day, path);
+  }
+
+  views(sinceDay: string): Array<{ day: string; path: string; views: number }> {
+    return (this.#db.prepare("SELECT day, path, views FROM page_views WHERE day >= ? ORDER BY day").all(sinceDay) as Array<{ day: string; path: string; views: number }>).map((r) => ({ ...r, views: Number(r.views) }));
   }
 
   /** Keeps one access request. */
@@ -254,16 +340,27 @@ CREATE INDEX IF NOT EXISTS access_requests_email ON access_requests (email, crea
     return used ? row.email : null;
   }
 
-  createSession(email: string, now: number): { id: string; expiresAt: number } {
+  /** A new session. `via` says how it signed in: "link" (an emailed link) or "passkey" (the shared passkey). */
+  createSession(email: string, now: number, via: "link" | "passkey" = "link"): { id: string; expiresAt: number } {
     const id = token();
-    this.#db.prepare("INSERT INTO auth_sessions (id_hash, email, created_at, expires_at) VALUES (?, ?, ?, ?)").run(hashOf(id), email, now, now + SESSION_MS);
+    this.#db.prepare("INSERT INTO auth_sessions (id_hash, email, created_at, expires_at, via, last_seen_at) VALUES (?, ?, ?, ?, ?, ?)").run(hashOf(id), email, now, now + SESSION_MS, via, now);
     return { id, expiresAt: now + SESSION_MS };
   }
 
   /** The signed-in email for a session ID, or null. */
   session(id: string, now: number): string | null {
-    const row = this.#db.prepare("SELECT email, expires_at, ended_at FROM auth_sessions WHERE id_hash = ?").get(hashOf(id)) as { email: string; expires_at: number; ended_at: number | null } | undefined;
-    return row && row.ended_at === null && row.expires_at > now ? row.email : null;
+    return this.sessionInfo(id, now)?.email ?? null;
+  }
+
+  /**
+   * Who a session is and how it signed in, or null. Sessions from before `via` existed say null.
+   * Marks the session as used, at most once every 5 minutes (the console polls every few seconds).
+   */
+  sessionInfo(id: string, now: number): { email: string; via: string | null } | null {
+    const row = this.#db.prepare("SELECT email, expires_at, ended_at, via, last_seen_at FROM auth_sessions WHERE id_hash = ?").get(hashOf(id)) as { email: string; expires_at: number; ended_at: number | null; via: string | null; last_seen_at: number | null } | undefined;
+    if (!row || row.ended_at !== null || row.expires_at <= now) return null;
+    if (row.last_seen_at === null || now - row.last_seen_at > SEEN_EVERY_MS) this.#db.prepare("UPDATE auth_sessions SET last_seen_at = ? WHERE id_hash = ?").run(now, hashOf(id));
+    return { email: row.email, via: row.via };
   }
 
   endSession(id: string, now: number): void {
@@ -284,6 +381,32 @@ export interface AuthDeps {
 
 /** Whether the request comes over https (directly, or through a proxy that says so). */
 const secure = (c: Context) => c.req.header("x-forwarded-proto") === "https" || new URL(c.req.url).protocol === "https:";
+
+/** Whether an email may sign in: listed in KRITVA_SIGNIN_EMAILS, or given access by an admin. An empty list lets anyone in (log delivery only). */
+export function mayAccess(email: string, settings: AuthSettings, store: AuthStore): boolean {
+  return !settings.allowed.length || settings.allowed.includes(email) || store.isGranted(email);
+}
+
+/** Who a request is, in detail: a signed-in session (with how it signed in), the access key, or null. */
+export function whoIs(c: Context, deps: { store?: AuthStore | null; operatorKey?: string; now?: () => number }): { kind: "session"; email: string; via: string | null } | { kind: "key" } | null {
+  const id = deps.store ? getCookie(c, SESSION_COOKIE) : undefined;
+  if (id && deps.store) {
+    const info = deps.store.sessionInfo(id, (deps.now ?? Date.now)());
+    if (info) return { kind: "session", ...info };
+  }
+  if (deps.operatorKey) {
+    const hash = (value: string) => createHash("sha256").update(value).digest();
+    if (timingSafeEqual(hash(c.req.header("Authorization") ?? ""), hash(`Bearer ${deps.operatorKey}`))) return { kind: "key" };
+  }
+  return null;
+}
+
+/** Whether a request may use the admin page: an admin signed in with an emailed link, or the access key. */
+export function isAdmin(who: ReturnType<typeof whoIs>, settings: AuthSettings): boolean {
+  if (!who) return false;
+  if (who.kind === "key") return true;
+  return who.via === "link" && (settings.admins ?? []).includes(who.email);
+}
 
 /** Who a request is signed in as: the session cookie's email, "key" for the access key, or null. */
 export function signedIn(c: Context, deps: { store?: AuthStore | null; operatorKey?: string; now?: () => number }): string | null {
@@ -321,7 +444,7 @@ export function registerAuthRoutes(app: Hono, deps: AuthDeps): void {
     const email = normalizeEmail(body.email);
     if (!email) return c.json({ error: "invalid_email", message: "Enter your email address." }, 400);
     const sent = { ok: true, message: "A sign-in link is on its way. It works once, for 15 minutes." };
-    if (deps.settings.allowed.length && !deps.settings.allowed.includes(email)) {
+    if (!mayAccess(email, deps.settings, deps.store)) {
       // Said plainly, so a visitor is not left waiting for an email that never comes.
       log({ kind: "signin_not_allowed" });
       return c.json({ error: "no_access", message: "This email doesn't have access to Kritva yet. Request access, or use the email your team gave Kritva." }, 403);
@@ -345,7 +468,7 @@ export function registerAuthRoutes(app: Hono, deps: AuthDeps): void {
     const body = await c.req.json<Record<string, unknown>>().catch(() => ({}) as Record<string, unknown>);
     const email = normalizeEmail(body.email);
     if (!email) return c.json({ error: "invalid_email", message: "Enter your email address." }, 400);
-    if (!deps.settings.allowed.length || deps.settings.allowed.includes(email)) return c.json({ ok: true, hasAccess: true, message: "This email already has access. Ask for a sign-in link." });
+    if (mayAccess(email, deps.settings, deps.store)) return c.json({ ok: true, hasAccess: true, message: "This email already has access. Ask for a sign-in link." });
     const done = { ok: true, hasAccess: false, message: "Request sent. We reply by email." };
     // A second request from the same email in a day is answered the same way, and kept only once.
     if (deps.store.accessRequestsSince(now() - ACCESS_WINDOW_MS, email) > 0) return c.json(done, 202);
@@ -390,7 +513,7 @@ export function registerAuthRoutes(app: Hono, deps: AuthDeps): void {
       return c.json({ error: "wrong_passkey", message: "That passkey didn't work. Check it and try again." }, 401);
     }
     const email = deps.settings.passkeyEmail ?? "jury@kritva.app";
-    const session = deps.store.createSession(email, now());
+    const session = deps.store.createSession(email, now(), "passkey");
     setCookie(c, SESSION_COOKIE, session.id, { httpOnly: true, secure: secure(c), sameSite: "Strict", path: "/", maxAge: Math.floor(SESSION_MS / 1000) });
     log({ kind: "signin_passkey" });
     return c.json({ ok: true, email });
@@ -398,8 +521,9 @@ export function registerAuthRoutes(app: Hono, deps: AuthDeps): void {
 
   app.get("/api/auth/me", (c) => {
     c.header("Cache-Control", "no-store");
-    const who = signedIn(c, deps);
-    return who ? c.json({ email: who === "key" ? null : who }) : c.json({ error: "signed_out", message: "Sign in to open the console." }, 401);
+    const who = whoIs(c, deps);
+    if (!who) return c.json({ error: "signed_out", message: "Sign in to open the console." }, 401);
+    return c.json({ email: who.kind === "key" ? null : who.email, admin: isAdmin(who, deps.settings) });
   });
 
   app.post("/api/auth/signout", (c) => {

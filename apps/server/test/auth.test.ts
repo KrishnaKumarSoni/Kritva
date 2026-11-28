@@ -69,7 +69,7 @@ describe("Sign-in: the emailed link", () => {
     expect(verified.setCookie).toMatch(/kritva_session=[\w-]+; Max-Age=2592000; Path=\/; HttpOnly; SameSite=Strict/);
     const cookie = verified.setCookie!.split(";")[0]!;
     expect((await t.request("GET", "/api/operator/mandates", { cookie })).status).toBe(200);
-    expect((await t.request("GET", "/api/auth/me", { cookie })).json).toEqual({ email: "krishna@example.com" });
+    expect((await t.request("GET", "/api/auth/me", { cookie })).json).toEqual({ email: "krishna@example.com", admin: false });
   });
 
   it("uses a link only once", async () => {

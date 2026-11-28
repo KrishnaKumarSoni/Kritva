@@ -470,6 +470,41 @@ export interface CounterpartyListView {
   entries: CounterpartyEntryView[];
 }
 
+/** The admin page (apps/server/src/admin.ts). */
+export interface AdminPerson {
+  email: string;
+  source: "settings" | "admin";
+  grantedBy: string | null;
+  grantedAt: number | null;
+  admin: boolean;
+  signIns: number;
+  lastSignIn: number | null;
+  lastSeen: number | null;
+}
+export interface AdminRequest {
+  id: number;
+  email: string;
+  name: string | null;
+  company: string | null;
+  note: string | null;
+  createdAt: number;
+  status: "pending" | "granted" | "dismissed";
+}
+export interface AdminOverview {
+  me: string | null;
+  totals: { people: number; active7: number; signIns30: number; passkeySignIns30: number; waiting: number; negotiations30: number; visits30: number };
+  days: Array<{ day: string; signIns: number; visits: number; negotiations: number }>;
+  people: AdminPerson[];
+  requests: AdminRequest[];
+}
+
+export const adminApi = {
+  overview: () => call<AdminOverview>("GET", "/api/admin/overview"),
+  give: (email: string, invite: boolean) => call<{ ok: true; email: string; already: boolean; invited: boolean }>("POST", "/api/admin/access", { email, invite }),
+  revoke: (email: string) => call<{ ok: true }>("DELETE", `/api/admin/access/${encodeURIComponent(email)}`),
+  dismiss: (id: number) => call<{ ok: true }>("POST", `/api/admin/requests/${id}/dismiss`),
+};
+
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string | null;
@@ -508,7 +543,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 export const api = {
   /** Signing in with an emailed link. */
   auth: {
-    me: () => call<{ email: string | null }>("GET", "/api/auth/me"),
+    me: () => call<{ email: string | null; admin?: boolean }>("GET", "/api/auth/me"),
     requestLink: (email: string) => call<{ ok: true; message: string; via?: "console" | "cloudflare" }>("POST", "/api/auth/link", { email }),
     verify: (token: string) => call<{ ok: true; email: string }>("POST", "/api/auth/verify", { token }),
     passkey: (passkey: string) => call<{ ok: true; email: string }>("POST", "/api/auth/passkey", { passkey }),

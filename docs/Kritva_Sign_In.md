@@ -41,6 +41,7 @@ POST /api/auth/signout         → the session ends; the cookie is cleared
 | `KRITVA_EMAIL_FROM` | (none) | The sender, for example `Kritva <signin@kritva.krishnakumarsoni.com>`. On a domain set up for Cloudflare Email Sending. |
 | `KRITVA_SIGNIN_EMAILS` | (none) | Who may sign in, comma-separated. Required for emailed links. |
 | `KRITVA_ACCESS_NOTIFY` | the first address in `KRITVA_SIGNIN_EMAILS` | Who gets access requests by email, comma-separated. |
+| `KRITVA_ADMIN_EMAILS` | the first address in `KRITVA_SIGNIN_EMAILS` | Who may open the admin page, comma-separated. |
 | `KRITVA_EMAIL_PROVIDER` | `cloudflare` on Cloudflare when `KRITVA_EMAIL_FROM` is set, else `console` | `console` prints links in the server log. `cloudflare` needs the Worker's `EMAIL` binding, so it works only on Cloudflare. |
 
 The server prints at startup how sign-in links are delivered and what is missing.
@@ -76,3 +77,14 @@ Until this is set up, links are printed in the server log, which is all a local 
 | `apps/web/src/GoLive.tsx` | The go-live moment. |
 | `apps/web/src/App.tsx` | Who is signed in, the link's token, the account menu. |
 | `apps/server/test/auth.test.ts` | One-time links, expiry, who may sign in, the link's address, the rate limit, a failed email, sign-out, and the scripts' key. |
+
+## Admin
+
+The console's **Admin** page (`/admin`, `apps/web/src/AdminPage.tsx`, API in `apps/server/src/admin.ts`) is for the addresses in `KRITVA_ADMIN_EMAILS`, and only when they signed in with an emailed link. The shared passkey signs in as the first listed address but never opens Admin; an admin whose session came from the passkey, or from before Admin existed, is asked to sign in again with a link. The access key (`Authorization: Bearer ...`) also works, for scripts.
+
+- **Give access**: an admin adds an email (or answers an access request). It is kept in `access_grants`, and the person may then sign in like anyone in `KRITVA_SIGNIN_EMAILS`. By default Kritva emails them where to sign in. Waiting requests from that email are marked handled.
+- **Remove access**: only for access given in the console. Their open sessions end at once. Addresses in `KRITVA_SIGNIN_EMAILS` are removed there, and nobody removes their own access.
+- **Requests**: every waiting request, with a button to give access or set it aside, and the latest handled ones.
+- **Usage, last 30 days, in India time**: people with access and how many were active in the last 7 days, sign-ins with an emailed link (passkey sign-ins counted apart), waiting requests, negotiations started, and landing page visits. Each person shows sign-ins, the last sign-in and when they last used the console (written at most every 5 minutes).
+- **Landing visits** are a count per day (`page_views`), sent once per page load by `POST /api/views`. No cookie, address or visitor ID is kept, and known bots are skipped.
+
