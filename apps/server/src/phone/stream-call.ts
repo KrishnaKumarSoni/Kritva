@@ -11,8 +11,9 @@
  *   playing time). If the caller talks over it, playback is cleared and the record gets the part heard;
  * - the end: silence, the time limit, the engine's "end the call", or the caller hanging up.
  *
- * Short waiting lines ("one moment") fill a slow turn. They say nothing about the deal and are not
- * recorded, like a breath on the line.
+ * A slow turn gets a short thinking sound ("Hmm...", "अच्छा..."), as voice-waiting-guide.md asks: never
+ * "one second" or "checking", varied from one pause to the next. It says nothing about the deal and is
+ * not recorded, like a breath on the line.
  */
 import { randomUUID } from "node:crypto";
 import { newEventId, type NegotiationEngine, type NegotiationRecord } from "@kritva/core";
@@ -67,7 +68,8 @@ const CHUNK_BYTES = (PLAY_RATE * 2 * 40) / 1000;
 /** A turn slower than this gets a waiting line. */
 const FILLER_AFTER_MS = 2_200;
 
-const FILLER: Record<string, string> = { en: "One moment, please.", hi: "एक second, देख रही हूँ।" };
+/** Thinking sounds for a slow turn, by language; the call never uses the same one twice in a row. */
+const THINKING: Record<string, string[]> = { en: ["Hmm...", "Okay...", "Right, okay...", "Mm, I see..."], hi: ["Hmm...", "अच्छा...", "हाँ, okay...", "अच्छा, हम्म..."] };
 const SORRY: Record<string, string> = { en: "Sorry, I didn't catch that. Could you say it again?", hi: "Sorry, मैं ठीक से सुन नहीं पाई। एक बार फिर से बोलिए?" };
 const STILL_THERE: Record<string, string> = { en: "Hello? Are you still there?", hi: "Hello? आप line पर हैं?" };
 const GOODBYE: Record<string, string> = { en: "I'll end the call for now. Call again whenever you like. Thank you!", hi: "अभी के लिए call रख रही हूँ। जब मन हो, फिर से call कर लीजिए। Thank you!" };
@@ -115,6 +117,7 @@ export class StreamCall {
   #idle: ReturnType<typeof setTimeout> | null = null;
   #max: ReturnType<typeof setTimeout> | null = null;
   #idleStage: 0 | 1 = 0;
+  #thought = -1;
   readonly startedAt = new Date();
 
   constructor(deps: StreamCallDeps) {
@@ -212,7 +215,10 @@ export class StreamCall {
     this.#busy += 1;
     const started = Date.now();
     const filler = setTimeout(() => {
-      if (!this.#ended && !this.#playing) void this.#say(null, line(FILLER, this.#language));
+      if (this.#ended || this.#playing) return;
+      const sounds = THINKING[this.#language] ?? THINKING.en!;
+      this.#thought = (this.#thought + 1 + Math.floor(Math.random() * (sounds.length - 1))) % sounds.length;
+      void this.#say(null, sounds[this.#thought]!);
     }, FILLER_AFTER_MS);
     try {
       let heard: { text: string; language: string | null };
