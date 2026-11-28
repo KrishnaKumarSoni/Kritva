@@ -24,10 +24,10 @@ Kritva is a reusable AI negotiation capability for apps and assistants. It repre
 | Mandate intake agent | The principal sets up a mandate by chatting with a separate setup agent (OpenAI Agents SDK, text and images). It infers the roles, what the other side may see and what stays private, asks only for what it can't infer (usually the limit, plus the details the other side will ask about), and fills the same mandate input the mapper reads. A progress bar follows what it has gathered; the finished draft appears in the chat with **Make it live**. Mandates are live, paused, closed or deleted from the list. See `packages/core/src/intake/`. |
 | 14. Demo listing | A clearly labelled demo bed listing built from the confirmed mandate's public content, with "Call seller" opening one browser voice session beside the seller console. "New demo session" starts fresh with the same saved mandate. |
 | Phone calls | A counterparty dials Kritva's Twilio number; Twilio hands the call to OpenAI's realtime SIP endpoint (TwiML `<Dial><Sip>`) and Kritva answers with the same realtime voice and call controller as the browser. The server routes the call to a listing or mandate, decides delivery itself from OpenAI's playback events, and records how each call ended. Tested on a live call on 2026-11-22. Setup, design and findings: `docs/Kritva_Phone_Calls.md`. |
-| Sign-in and the curtain | The principal signs in with an emailed one-time link (Amazon SES, or the server log locally); no password or key on screen. Every load of the console opens with a jet-black curtain that rises on the console, signing out brings it down, and a mandate's first go-live gets a full-screen moment with the line's number and listing code. See `docs/Kritva_Sign_In.md`. |
+| Sign-in and the curtain | The principal signs in with an emailed one-time link (Cloudflare Email Sending, or the server log locally); no password or key on screen. Every load of the console opens with a jet-black curtain that rises on the console, signing out brings it down, and a mandate's first go-live gets a full-screen moment with the line's number and listing code. See `docs/Kritva_Sign_In.md`. |
 | Listing codes and the front desk | One number serves every mandate. Each live mandate has a 4-digit listing code (with a check digit, so a misheard code never reaches another listing), shown on the Mandates page with "Copy for your ad". On a `code` route the agent answers the line, asks for the code in its own words from a plain-text guide, finds the listing, and the call goes on with that mandate as one conversation. See `docs/Kritva_Phone_Calls.md`, section 16. |
 
-Next: deployment on AWS and the final demonstration.
+Live at https://kritva.krishnakumarsoni.com, on Cloudflare (one Worker and one Durable Object; `docs/Kritva_Cloudflare.md`).
 
 ## Repository layout
 
@@ -60,6 +60,7 @@ apps/server/              HTTP API for the slice (Hono); buyer and operator rout
   scripts/voice-check.ts  Epic 13 timing check through the real audio pipeline (no microphone needed)
   scripts/phone-check.ts  phone setup check: SIP URI, routes, and a signed test webhook
   scripts/run-scenarios.ts  the buyer scenarios, through the same routes as the chat page
+apps/worker/              Cloudflare: the Worker (web app + /api) and the Durable Object that runs the server (docs/Kritva_Cloudflare.md)
 apps/web/                 conversation, negotiation console and mandates (React + Vite)
 cases/                    case content, kept outside the core
   bed-sale/mandates/      confirmed mandates: the demo one, plus conditional and exception test ones (test data)
@@ -123,7 +124,7 @@ npm run dev -w @kritva/server
 npm run dev -w @kritva/web
 ```
 
-Open http://localhost:5173 and sign in with your email: locally, the one-time sign-in link is printed in the server's log (set up emailed links with Amazon SES as `docs/Kritva_Sign_In.md` describes). The browser stays signed in for 30 days; each load of the console opens with the curtain. Scripts use the access key printed at server startup (`KRITVA_OPERATOR_KEY` keeps it across restarts). The record is stored in `data/kritva.sqlite`.
+Open http://localhost:5173 and sign in with your email: locally, the one-time sign-in link is printed in the server's log (emailed links run on Cloudflare, as `docs/Kritva_Sign_In.md` describes). The browser stays signed in for 30 days; each load of the console opens with the curtain. Scripts use the access key printed at server startup (`KRITVA_OPERATOR_KEY` keeps it across restarts). The record is stored in `data/kritva.sqlite`.
 
 The console has two views. **Negotiation** shows the conversation (you write as the counterparty, in the mandate's own role names) beside the negotiation panel: status with pause and approvals, a price band with your private limit and target, the offer on the table, the counterparty's best offer and stated budget, and the zone where agreement looks possible, then the strategy (last move and why, counteroffers used, the next allowed concession, the discount earned), the terms side by side, what the counterparty said, and the full record behind one disclosure. Pick a mandate and select **New negotiation** to start fresh. **Mandates** is where instructions are written, reviewed and confirmed. Nothing on screen is specific to one case.
 

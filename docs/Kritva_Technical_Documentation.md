@@ -239,7 +239,7 @@ All dropdowns use the Kritva component (`Select.tsx`). Colors: burnt orange `#CC
 
 ### 12.2 Sign-in
 
-The principal enters an email on the curtain screen. Amazon SES sends a one-time link (15 minutes). Locally, the server log shows it. The link sets the cookie `kritva_session` (HttpOnly, SameSite=Strict, 30 days). Only addresses in `KRITVA_SIGNIN_EMAILS` get a link, and the server keeps only token hashes. Scripts use `Authorization: Bearer <KRITVA_OPERATOR_KEY>`.
+The principal enters an email on the curtain screen. Cloudflare Email Sending sends a one-time link (15 minutes). Locally, the server log shows it. The link sets the cookie `kritva_session` (HttpOnly, SameSite=Strict, 30 days). Only addresses in `KRITVA_SIGNIN_EMAILS` get a link, and the server keeps only token hashes. Scripts use `Authorization: Bearer <KRITVA_OPERATOR_KEY>`.
 
 ## 13. Server API
 
@@ -265,9 +265,9 @@ The server uses port 8787.
 
 ## 15. Deployment
 
-The server runs on one AWS EC2 instance in `us-west-2`, as the systemd service `kritva`, with HTTPS. `scripts/deploy-aws.sh` copies committed `main` to `/opt/kritva`, builds the web application, restarts the service and checks `/api/health`. With `--env`, it also copies `.env` merged with `.env.production`, thus secrets never go through git. The script does not change the SQLite data.
+Kritva runs on Cloudflare at https://kritva.krishnakumarsoni.com (since 2026-11-28; before that, on an AWS EC2 instance from the hackathon). The Worker `kritva` (`apps/worker`) serves the web application as static assets and sends every `/api` request to one Durable Object, which runs the same server as on Node (`apps/server/src/compose.ts`) with the object's own SQLite storage as the database, R2 for browser call recordings and Cloudflare Email Sending for sign-in links. `scripts/deploy-cloudflare.sh` builds committed `main` from a clean copy, deploys it and checks that `/api/health` reports the commit. With `--secrets`, it also sets the secrets from `.env` merged with `.env.production`, thus secrets never go through git. A deploy does not change the data. Details: `docs/Kritva_Cloudflare.md`.
 
-The region is next to OpenAI, because deal turns wait on OpenAI. From there, the server joined phone calls too early and the calls were silent. Thus, `KRITVA_PHONE_SETUP_DELAY_MS` is 1500 on AWS.
+The Durable Object is in US east, next to OpenAI, because deal turns wait on OpenAI (a model call measured about 560 ms from there against about 930 ms from Singapore). A server that close to OpenAI joined phone calls too early and the calls were silent. Thus, `KRITVA_PHONE_SETUP_DELAY_MS` is 1500 in production.
 
 ## 16. Tests and evaluation
 
@@ -312,7 +312,7 @@ CAUTION: In `packages/core`, do not run a bare `npx vitest run`. It also runs li
 ### 17.3 Phone calls and email
 
 - Phone: see `docs/Kritva_Phone_Calls.md`, section 9. `phone-check.ts` checks the setup.
-- Email: run `npm run email:setup -- <address>`, then click the verification email from AWS.
+- Email: sign-in links go through Cloudflare Email Sending, set up for `kritva.krishnakumarsoni.com` (`docs/Kritva_Sign_In.md`, section 4).
 
 CAUTION: A Twilio number, each call minute and each realtime minute cost money.
 

@@ -4,7 +4,7 @@ Kritva is an AI negotiator that represents a person or business (the principal) 
 
 ## Try it live
 
-- URL: https://184-33-88-175.sslip.io
+- URL: https://kritva.krishnakumarsoni.com
 - Sign in: use the **passkey** field below the email field.
 
 ## Test login

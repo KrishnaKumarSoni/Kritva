@@ -37,37 +37,26 @@ POST /api/auth/signout         → the session ends; the cookie is cleared
 | Setting | Default | Meaning |
 |---|---|---|
 | `KRITVA_WEB_URL` | (none) | The console's public address (https), where links point. Locally, the page's own localhost address is used. |
-| `KRITVA_EMAIL_FROM` | (none) | The sender, for example `Kritva <signin@yourdomain.com>`. Setting it turns on emailed links (Amazon SES). |
+| `KRITVA_EMAIL_FROM` | (none) | The sender, for example `Kritva <signin@kritva.krishnakumarsoni.com>`. On a domain set up for Cloudflare Email Sending. |
 | `KRITVA_SIGNIN_EMAILS` | (none) | Who may sign in, comma-separated. Required for emailed links. |
-| `KRITVA_EMAIL_PROVIDER` | `ses` when `KRITVA_EMAIL_FROM` is set, else `console` | `console` prints links in the server log. |
-| `KRITVA_SES_REGION` | the AWS profile's region | Any SES region your account can use. Where the email is sent from does not change how fast the console is. `npm run email:setup` sets it. |
-| AWS credentials | (environment, profile or instance role) | The usual AWS settings; the server needs `ses:SendEmail`. |
+| `KRITVA_EMAIL_PROVIDER` | `cloudflare` on Cloudflare when `KRITVA_EMAIL_FROM` is set, else `console` | `console` prints links in the server log. `cloudflare` needs the Worker's `EMAIL` binding, so it works only on Cloudflare. |
 
 The server prints at startup how sign-in links are delivered and what is missing.
 
-## 4. Email delivery: Amazon SES
+## 4. Email delivery: Cloudflare Email Sending
 
-Chosen because the project runs on AWS (`CLAUDE.md`). Any SES region works (Mumbai is not needed); the sender is one small class (`SesEmailSender` in `apps/server/src/auth.ts`), so another provider is a drop-in replacement.
+Since 2026-11-28 Kritva runs on Cloudflare (`docs/Kritva_Cloudflare.md`), and Cloudflare Email Sending replaced Amazon SES. The Worker has a `send_email` binding named `EMAIL`; `CloudflareEmailSender` in `apps/server/src/auth.ts` sends through it. On Node (local runs) there is no binding, so links go to the server log.
 
-One command does the AWS side and the settings, with the AWS credentials already on the computer (the ones the AWS CLI uses):
+Set up once (done for `kritva.krishnakumarsoni.com`):
 
 ```bash
-npm run email:setup -- you@example.com                    # your AWS profile's region
-npm run email:setup -- you@example.com --region us-east-1 # or name one
+npx wrangler email sending enable kritva.krishnakumarsoni.com
+npx wrangler email sending dns get kritva.krishnakumarsoni.com   # the records Cloudflare added
 ```
 
-It checks SES in that region (sending on, sandbox or not), asks SES to verify the sending and signing-in addresses (AWS emails each a link; click it), and writes `KRITVA_EMAIL_FROM`, `KRITVA_SIGNIN_EMAILS` and `KRITVA_SES_REGION` into `.env`, keeping everything else. Run it again to see what is still missing; then restart the server.
+Sending is enabled on the subdomain only, so Cloudflare's DKIM (`cf-bounce._domainkey`), SPF and bounce MX (`cf-bounce`) and DMARC records live under `kritva.krishnakumarsoni.com` and the apex domain's records are untouched. The sender is `Kritva <signin@kritva.krishnakumarsoni.com>` (a var in `apps/worker/wrangler.jsonc`), and who may sign in is the `KRITVA_SIGNIN_EMAILS` secret. The Workers Paid plan lets it send to any address; the first link sent on 2026-11-28 landed in the Gmail inbox, not spam.
 
-What only you can do:
-- **Click the verification email from AWS.** AWS sends it to prove the inbox is yours; no tool can do that step.
-- **AWS credentials**, if this computer has none: `aws configure` with a user allowed `ses:GetAccount`, `ses:GetEmailIdentity`, `ses:CreateEmailIdentity` and `ses:SendEmail`. On AWS itself, the server's role needs `ses:SendEmail`.
-
-Notes:
-- A new SES account is in the **sandbox**: it sends only to verified addresses. Signing yourself in needs nothing more; others need production access (requested in the SES console).
-- Mail sent through SES **from a gmail.com address can land in spam**. Mark it "Not spam" once, or use an address on a domain you own (`--from signin@yourdomain.com`).
-- For a deployed console, also set `KRITVA_WEB_URL` (https).
-
-Until this is done, links are printed in the server log, which is all a local demo needs.
+Until this is set up, links are printed in the server log, which is all a local demo needs.
 
 ## 5. Demo day
 
@@ -79,7 +68,7 @@ Until this is done, links are printed in the server log, which is all a local de
 
 | File | What it holds |
 |---|---|
-| `apps/server/src/auth.ts` | Links, sessions, the SES and log senders, settings, the `/api/auth` routes, and `signedIn` for the console's routes. |
+| `apps/server/src/auth.ts` | Links, sessions, the Cloudflare Email Sending and log senders, settings, the `/api/auth` routes, and `signedIn` for the console's routes. |
 | `apps/server/src/app.ts` | `/api/operator/*` accepts a signed-in session or the scripts' access key. |
 | `apps/web/src/Stage.tsx` | The curtain: hold, sign-in form, lift; the drop on sign-out. |
 | `apps/web/src/GoLive.tsx` | The go-live moment. |

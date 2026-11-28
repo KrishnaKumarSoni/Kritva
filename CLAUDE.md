@@ -18,4 +18,4 @@ These rules apply to every piece of work in this project.
 ## AI and deployment stack
 
 5. **AI:** OpenAI for all text reasoning and LLM work, with different models used where each fits. OpenAI for voice too, for now.
-6. **Infrastructure:** AWS for deployment and the database. Choose regions for low latency, because latency matters a lot (the target users and demo are in Bangalore, India). Database and service choices are still open: propose industry-standard options when the time comes, and don't decide them silently.
+6. **Infrastructure:** Cloudflare for deployment and the database (since 2026-11-28; the AWS hackathon account is gone): one Worker with one Durable Object, see `docs/Kritva_Cloudflare.md`. Choose regions for low latency, because latency matters a lot (the target users and demo are in Bangalore, India). Database and service choices are still open: propose industry-standard options when the time comes, and don't decide them silently.

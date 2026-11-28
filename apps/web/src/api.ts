@@ -509,7 +509,7 @@ export const api = {
   /** Signing in with an emailed link. */
   auth: {
     me: () => call<{ email: string | null }>("GET", "/api/auth/me"),
-    requestLink: (email: string) => call<{ ok: true; message: string; via?: "console" | "ses" }>("POST", "/api/auth/link", { email }),
+    requestLink: (email: string) => call<{ ok: true; message: string; via?: "console" | "cloudflare" }>("POST", "/api/auth/link", { email }),
     verify: (token: string) => call<{ ok: true; email: string }>("POST", "/api/auth/verify", { token }),
     passkey: (passkey: string) => call<{ ok: true; email: string }>("POST", "/api/auth/passkey", { passkey }),
     signOut: () => call<{ ok: true }>("POST", "/api/auth/signout"),
