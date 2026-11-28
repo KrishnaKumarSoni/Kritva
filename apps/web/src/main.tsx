@@ -10,7 +10,10 @@ import "./styles.css";
 const params = new URLSearchParams(window.location.search);
 const isLanding = window.location.pathname === "/" && !params.has("view") && !/(?:^|[#&])session=/.test(window.location.hash);
 
-const Root = lazy(() => (isLanding ? import("./landing/Landing.tsx").then((m) => ({ default: m.Landing })) : import("./App.tsx").then((m) => ({ default: m.App }))));
+// Two separate imports, not one ternary: the bundler then preloads each page's own CSS and code.
+const Landing = lazy(() => import("./landing/Landing.tsx").then((m) => ({ default: m.Landing })));
+const Console = lazy(() => import("./App.tsx").then((m) => ({ default: m.App })));
+const Root = isLanding ? Landing : Console;
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
