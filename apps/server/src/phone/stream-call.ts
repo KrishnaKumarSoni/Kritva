@@ -16,10 +16,10 @@
  * not recorded, like a breath on the line.
  */
 import { randomUUID } from "node:crypto";
-import { newEventId, type NegotiationEngine, type NegotiationRecord } from "@kritva/core";
+import { DEFAULT_LANGUAGE, newEventId, type NegotiationEngine, type NegotiationRecord } from "@kritva/core";
 import { fromBase64, pcmMs, rms16, sentences, toBase64, concat } from "./audio.ts";
 import type { PhoneSpeech } from "./sarvam.ts";
-import { scriptLanguage } from "../realtime-voice.ts";
+import { heardLanguage, isGreetingOnly, scriptLanguage } from "../realtime-voice.ts";
 import type { EndReason } from "./phone-call.ts";
 
 /** The WebSocket Vobiz opened, as the call sees it. */
@@ -45,6 +45,8 @@ export interface StreamCallDeps {
   vad?: Partial<VadSettings>;
   /** How often the record is checked for new messages to speak. */
   pollMs?: number;
+  /** Languages Kritva speaks on a call (ISO 639-1; KRITVA_VOICE_LANGUAGES). Speech detected as another is heard again as the call's language. */
+  languages?: string[];
 }
 
 interface VadSettings {
@@ -117,13 +119,18 @@ export class StreamCall {
   #idle: ReturnType<typeof setTimeout> | null = null;
   #max: ReturnType<typeof setTimeout> | null = null;
   #idleStage: 0 | 1 = 0;
+  /** They have spoken Hindi or another Indian language on this call: from then on only asking for English switches it. */
+  #spokeIndian = false;
+  readonly #languages: Set<string>;
   #thought = -1;
   readonly startedAt = new Date();
 
   constructor(deps: StreamCallDeps) {
     this.#d = deps;
     this.#vad = { ...VAD, ...deps.vad };
-    this.#language = "hi";
+    // The conversation guide's default language until they speak (Hindi), as on a browser call.
+    this.#language = /english/i.test(DEFAULT_LANGUAGE ?? "") ? "en" : "hi";
+    this.#languages = new Set(deps.languages?.length ? deps.languages : ["en", "hi", "ta", "kn", "te", "ml", "mr", "bn"]);
   }
 
   get sessionId(): string {
@@ -228,11 +235,20 @@ export class StreamCall {
         this.#log({ kind: "vobiz_transcribe_failed", error: String(error).slice(0, 200) });
         return;
       }
+      // Detected as a language Kritva does not speak (a Hindi "हाँजी" heard as Punjabi): hear it again as the call's language.
+      if (heard.language && !this.#languages.has(heard.language)) {
+        const as = this.#language === "en" ? "hi" : this.#language;
+        this.#log({ kind: "vobiz_language_retry", detected: heard.language, as });
+        heard = await this.#d.speech.transcribe(pcm, this.#inRate, as).catch(() => heard);
+      }
       if (heard.text.replace(/[\s.,!?।]/g, "").length < 2) return;
-      if (heard.language) this.#language = heard.language === "hi" ? "hi" : heard.language === "en" ? "en" : this.#language;
+      // The same rules as a browser call: a bare "Hello" or "हाँ जी" switches nothing, and once they have spoken
+      // Hindi the call stays in Hindi unless they ask for English (realtime-voice.ts).
+      if (scriptLanguage(heard.text) !== "en") this.#spokeIndian = true;
+      if (!isGreetingOnly(heard.text)) this.#language = heardLanguage(heard.text, this.#language, this.#spokeIndian);
       const utteranceId = randomUUID();
-      const result = await this.#d.engine.handleCounterpartyMessage({ sessionId: this.#d.sessionId, text: heard.text.slice(0, 2_000), channel: "voice", messageId: `msg_${utteranceId}`, utteranceId, language: heard.language, contactNumber: this.#d.contactNumber ?? null });
-      this.#log({ kind: "vobiz_turn", ms: Date.now() - started, language: heard.language, ok: result.ok, ...(result.ok ? { replied: Boolean(result.reply), endCall: Boolean(result.endCall) } : { code: result.code }) });
+      const result = await this.#d.engine.handleCounterpartyMessage({ sessionId: this.#d.sessionId, text: heard.text.slice(0, 2_000), channel: "voice", messageId: `msg_${utteranceId}`, utteranceId, language: this.#language, contactNumber: this.#d.contactNumber ?? null });
+      this.#log({ kind: "vobiz_turn", ms: Date.now() - started, detected: heard.language, language: this.#language, ok: result.ok, ...(result.ok ? { replied: Boolean(result.reply), endCall: Boolean(result.endCall) } : { code: result.code }) });
       if (!result.ok) {
         if (result.code === "model_unavailable") await this.#line(SORRY, "The turn could not be handled; asking them to repeat.");
         return;

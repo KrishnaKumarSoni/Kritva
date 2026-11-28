@@ -373,6 +373,8 @@ export function scriptLanguage(text: string): string {
   if (/\p{Script=Telugu}/u.test(text)) return "te";
   if (/\p{Script=Malayalam}/u.test(text)) return "ml";
   if (/\p{Script=Bengali}/u.test(text)) return "bn";
+  if (/\p{Script=Gurmukhi}/u.test(text)) return "pa";
+  if (/\p{Script=Gujarati}/u.test(text)) return "gu";
   return "en";
 }
 

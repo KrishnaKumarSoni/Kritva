@@ -168,6 +168,31 @@ describe("A Vobiz call (StreamCall)", () => {
     await t.c.end("server");
   });
 
+  it("hears speech detected as a language Kritva doesn't speak again as the call's language", async () => {
+    const asked: Array<string | undefined> = [];
+    const t = call({ speech: { ...speech, transcribe: async (_p, _r, language) => (asked.push(language), language ? { text: "हाँजी, चलेगा", language: "hi" } : { text: "ਹਾਂਜੀ, ਚਲੇਗਾ", language: "pa" }) } });
+    await t.start();
+    await t.speak(400);
+    await t.speak(800, false);
+    await until(() => t.f.turns.length === 1);
+    expect(asked).toEqual([undefined, "hi"]);
+    expect(t.f.turns[0]).toEqual({ text: "हाँजी, चलेगा", language: "hi" });
+    await t.c.end("server");
+  });
+
+  it("keeps Hindi for a bare greeting and switches only on real English", async () => {
+    const said = ["Hello", "What is the condition of the bed exactly?"];
+    const t = call({ speech: { ...speech, transcribe: async () => ({ text: said.shift()!, language: "en" }) } });
+    await t.start();
+    for (let i = 0; i < 2; i++) {
+      await t.speak(400);
+      await t.speak(800, false);
+      await until(() => t.f.turns.length === i + 1);
+    }
+    expect(t.f.turns.map((x) => x.language)).toEqual(["hi", "en"]);
+    await t.c.end("server");
+  });
+
   it("ignores short noise", async () => {
     const t = call();
     await t.start();

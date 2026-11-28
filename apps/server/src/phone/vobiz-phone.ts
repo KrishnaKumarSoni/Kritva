@@ -67,6 +67,8 @@ export interface VobizPhoneDeps {
   isListed?: (to: string) => boolean;
   /** Loudness that counts as speech on the line (KRITVA_VOBIZ_VAD_THRESHOLD). */
   vadThreshold?: number;
+  /** Languages Kritva speaks on calls (KRITVA_VOICE_LANGUAGES, as for browser calls). */
+  languages?: string[];
 }
 
 export class VobizPhone implements Dialer {
@@ -265,6 +267,7 @@ export class VobizPhone implements Dialer {
       contactNumber: call.number,
       log: (entry) => this.#log({ callId: call.callId, ...entry }),
       vad: this.#d.vadThreshold ? { threshold: this.#d.vadThreshold } : undefined,
+      languages: this.#d.languages,
       onConnected: () => {
         call.state = "connected";
         call.connectedAt = new Date();

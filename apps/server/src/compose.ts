@@ -97,7 +97,7 @@ export function composeServer(host: ServerHost) {
       const s = vobizSetup.settings;
       const listed = (to: string) => library.list().some((m) => library.counterparties(m.mandateId).some((e) => e.phone && normalizeNumber(e.phone, s.countryCode) === to));
       const threshold = Number(env.KRITVA_VOBIZ_VAD_THRESHOLD);
-      vobiz = new VobizPhone({ engine, record, library, listings, groups, liveCalls, settings: s, speech: new SarvamSpeech(sarvam), api: new VobizApi(s.authId, s.authToken), log: (entry) => console.log("[phone]", JSON.stringify(entry)), isListed: boardCalls ? listed : undefined, vadThreshold: Number.isFinite(threshold) && threshold > 0 ? threshold : undefined });
+      vobiz = new VobizPhone({ engine, record, library, listings, groups, liveCalls, settings: s, speech: new SarvamSpeech(sarvam), api: new VobizApi(s.authId, s.authToken), log: (entry) => console.log("[phone]", JSON.stringify(entry)), isListed: boardCalls ? listed : undefined, languages: realtimeSettingsFromEnv().languages, vadThreshold: Number.isFinite(threshold) && threshold > 0 ? threshold : undefined });
       dialer = vobiz;
       console.log(`Phone calls: on (Vobiz line +${s.number}, Sarvam ${sarvam.sttModel} and ${sarvam.ttsModel} "${sarvam.speaker}"). Incoming calls: ${s.inbound ? JSON.stringify(s.inbound) : "declined"}.`);
     } else console.log(`Phone calls: off (Vobiz needs VOBIZ_AUTH_ID, VOBIZ_AUTH_TOKEN, KRITVA_VOBIZ_NUMBER, an https KRITVA_PUBLIC_URL${sarvam ? "" : " and SARVAM_API_KEY"}).`);

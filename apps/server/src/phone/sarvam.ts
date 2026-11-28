@@ -33,8 +33,8 @@ export function sarvamFromEnv(env: NodeJS.ProcessEnv = process.env): SarvamSetti
 
 /** What a call needs from speech: hear an utterance, speak a line. Tests pass a fake. */
 export interface PhoneSpeech {
-  /** Text of one utterance (16-bit mono PCM) and the language it was spoken in (ISO 639-1), if known. */
-  transcribe(pcm: Uint8Array, sampleRate: number): Promise<{ text: string; language: string | null }>;
+  /** Text of one utterance (16-bit mono PCM) and the language it was spoken in (ISO 639-1), if known. With a language, it is heard as that language. */
+  transcribe(pcm: Uint8Array, sampleRate: number, language?: string): Promise<{ text: string; language: string | null }>;
   /** Raw 16-bit mono PCM of the text, spoken in the language (ISO 639-1), at the sample rate. */
   speak(text: string, language: string, sampleRate: number): Promise<Uint8Array>;
 }
@@ -50,18 +50,18 @@ export class SarvamSpeech implements PhoneSpeech {
     this.#base = base;
   }
 
-  async transcribe(pcm: Uint8Array, sampleRate: number) {
+  async transcribe(pcm: Uint8Array, sampleRate: number, language?: string) {
     const form = new FormData();
     form.set("file", new Blob([wav16(pcm, sampleRate) as Uint8Array<ArrayBuffer>], { type: "audio/wav" }), "utterance.wav");
     form.set("model", this.#s.sttModel);
     // "unknown" detects the language per utterance, so a caller can switch between Hindi and English freely.
-    form.set("language_code", "unknown");
+    form.set("language_code", language && LANGUAGES.has(language) ? `${language}-IN` : "unknown");
     if (this.#s.sttModel.startsWith("saaras")) form.set("mode", "codemix");
     const res = await fetch(`${this.#base}/speech-to-text`, { method: "POST", headers: { "api-subscription-key": this.#s.apiKey }, body: form, signal: AbortSignal.timeout(15_000) });
     const body = (await res.json().catch(() => ({}))) as { transcript?: string; language_code?: string | null; error?: { message?: string } };
     if (!res.ok) throw new Error(`Sarvam speech-to-text failed (${res.status}): ${body.error?.message?.slice(0, 200) ?? ""}`);
-    const language = body.language_code?.split("-")[0]?.toLowerCase() ?? null;
-    return { text: (body.transcript ?? "").trim(), language: language && LANGUAGES.has(language) ? language : null };
+    const detected = body.language_code?.split("-")[0]?.toLowerCase() ?? null;
+    return { text: (body.transcript ?? "").trim(), language: detected && LANGUAGES.has(detected) ? detected : null };
   }
 
   async speak(text: string, language: string, sampleRate: number) {
