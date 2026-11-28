@@ -5,6 +5,7 @@
  *   POST /api/auth/verify  {token}  → the link's token is used up; a session cookie is set (30 days)
  *   GET  /api/auth/me               → who is signed in (401 when nobody is)
  *   POST /api/auth/signout          → the session ends and the cookie is cleared
+ *   POST /api/auth/access   {email, name?, company?, note?} → an access request, kept and sent to the operator
  *
  * The link opens the web app at /signin#token=..., and the page posts the token. The token never
  * reaches a server log or a Referer header (it is in the fragment), and an email scanner that opens
@@ -14,7 +15,8 @@
  * - "console" (the default): the link is printed in the server's log. Anyone who can read that log
  *   already controls the server, so any email may ask for a link.
  * - "cloudflare": Cloudflare Email Sending sends the email (the Worker's EMAIL binding, apps/worker).
- *   Then only the emails in KRITVA_SIGNIN_EMAILS may sign in.
+ *   Then only the emails in KRITVA_SIGNIN_EMAILS may sign in. Any other email is told plainly that it
+ *   has no access yet (403 no_access), and the page offers an access request instead.
  *
  * The link always points at KRITVA_WEB_URL, never at the address a request claims to come from, so a
  * stranger cannot make Kritva email the principal a real link that leads to the stranger's site.
@@ -40,9 +42,18 @@ export interface SignInEmail {
   minutes: number;
 }
 
+/** A short plain message to the operator, such as an access request. */
+export interface Notice {
+  to: string;
+  subject: string;
+  text: string;
+}
+
 export interface EmailSender {
   readonly kind: "console" | "cloudflare";
   sendSignIn(email: SignInEmail): Promise<void>;
+  /** Optional: senders without it only log notices. */
+  sendNotice?(notice: Notice): Promise<void>;
 }
 
 /** Prints the link in the server's log. For local use and for a demo laptop. */
@@ -54,6 +65,9 @@ export class ConsoleEmailSender implements EmailSender {
   }
   async sendSignIn(email: SignInEmail): Promise<void> {
     this.#print(`[sign-in] Link for ${email.to} (one use, ${email.minutes} minutes): ${email.link}`);
+  }
+  async sendNotice(notice: Notice): Promise<void> {
+    this.#print(`[notice] To ${notice.to}: ${notice.subject}\n${notice.text}`);
   }
 }
 
@@ -93,6 +107,11 @@ export class CloudflareEmailSender implements EmailSender {
     const message = signInMessage(email);
     await this.#binding.send({ from: this.#from, to: email.to, subject: message.subject, text: message.text, html: message.html });
   }
+  async sendNotice(notice: Notice): Promise<void> {
+    const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const html = `<!doctype html><html><body style="margin:0;padding:32px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#0a0a0a"><pre style="margin:0;font:15px/1.6 inherit;white-space:pre-wrap">${esc(notice.text)}</pre></body></html>`;
+    await this.#binding.send({ from: this.#from, to: notice.to, subject: notice.subject, text: notice.text, html });
+  }
 }
 
 // ---------- Settings ----------
@@ -107,6 +126,8 @@ export interface AuthSettings {
   passkey?: string | null;
   /** Who a passkey sign-in is signed in as. */
   passkeyEmail?: string;
+  /** Who hears about access requests (KRITVA_ACCESS_NOTIFY, else the first address that may sign in). */
+  notify?: string[];
 }
 
 /** The demo passkey when KRITVA_PASSKEY is not set. Set KRITVA_PASSKEY=off to turn passkey sign-in off. */
@@ -148,7 +169,10 @@ export function authFromEnv(env: NodeJS.ProcessEnv = process.env, options: { ema
   const passkey = rawPasskey === "off" ? null : rawPasskey || DEFAULT_PASSKEY;
   const passkeyEmail = normalizeEmail(env.KRITVA_PASSKEY_EMAIL) ?? allowed[0] ?? "jury@kritva.app";
   if (passkey) notes.push(`Sign-in: the passkey also signs in (as ${passkeyEmail}).`);
-  return { settings: { webUrl, allowed, sender, passkey, passkeyEmail }, notes };
+  const listed = (env.KRITVA_ACCESS_NOTIFY ?? "").split(",").map(normalizeEmail).filter((e): e is string => e !== null);
+  const notify = listed.length ? listed : allowed.slice(0, 1);
+  if (notify.length) notes.push(`Sign-in: access requests are sent to ${notify.length} address(es).`);
+  return { settings: { webUrl, allowed, sender, passkey, passkeyEmail, notify }, notes };
 }
 
 function isLocal(url: URL): boolean {
@@ -156,6 +180,24 @@ function isLocal(url: URL): boolean {
 }
 
 // ---------- Storage ----------
+
+export interface AccessRequest {
+  email: string;
+  name: string | null;
+  company: string | null;
+  note: string | null;
+}
+
+/** Access requests one email may send in a day, and all emails in an hour (a form cannot flood the operator). */
+const ACCESS_WINDOW_MS = 24 * 3_600_000;
+const ACCESS_PER_HOUR = 30;
+
+/** A short free-text field: one line, trimmed, capped; null when empty. */
+function field(raw: unknown, max: number, multiline = false): string | null {
+  if (typeof raw !== "string") return null;
+  const value = (multiline ? raw.replace(/\r\n?/g, "\n").replace(/\n{3,}/g, "\n\n") : raw.replace(/\s+/g, " ")).trim().slice(0, max);
+  return value || null;
+}
 
 const hashOf = (value: string) => createHash("sha256").update(value).digest("hex");
 const token = () => randomBytes(32).toString("base64url");
@@ -167,7 +209,28 @@ export class AuthStore {
     this.#db = openSql(source);
     this.#db.exec(`CREATE TABLE IF NOT EXISTS auth_links (token_hash TEXT PRIMARY KEY, email TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, used_at INTEGER);
 CREATE INDEX IF NOT EXISTS auth_links_email ON auth_links (email, created_at);
-CREATE TABLE IF NOT EXISTS auth_sessions (id_hash TEXT PRIMARY KEY, email TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, ended_at INTEGER);`);
+CREATE TABLE IF NOT EXISTS auth_sessions (id_hash TEXT PRIMARY KEY, email TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, ended_at INTEGER);
+CREATE TABLE IF NOT EXISTS access_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, name TEXT, company TEXT, note TEXT, created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS access_requests_email ON access_requests (email, created_at);`);
+  }
+
+  /** Keeps one access request. */
+  addAccessRequest(request: AccessRequest, now: number): void {
+    this.#db.prepare("INSERT INTO access_requests (email, name, company, note, created_at) VALUES (?, ?, ?, ?, ?)").run(request.email, request.name, request.company, request.note, now);
+  }
+
+  /** Access requests since `since`: from one email, or from anyone. */
+  accessRequestsSince(since: number, email: string | null = null): number {
+    const row = email
+      ? this.#db.prepare("SELECT COUNT(*) AS n FROM access_requests WHERE email = ? AND created_at >= ?").get(email, since)
+      : this.#db.prepare("SELECT COUNT(*) AS n FROM access_requests WHERE created_at >= ?").get(since);
+    return Number((row as { n: number }).n);
+  }
+
+  /** The latest access requests, newest first. */
+  accessRequests(limit = 50): Array<AccessRequest & { createdAt: number }> {
+    const rows = this.#db.prepare("SELECT email, name, company, note, created_at FROM access_requests ORDER BY created_at DESC LIMIT ?").all(limit) as Array<{ email: string; name: string | null; company: string | null; note: string | null; created_at: number }>;
+    return rows.map((r) => ({ email: r.email, name: r.name, company: r.company, note: r.note, createdAt: r.created_at }));
   }
 
   /** Links asked for this email since `since` (for the rate limit). */
@@ -257,10 +320,11 @@ export function registerAuthRoutes(app: Hono, deps: AuthDeps): void {
     const body = await c.req.json<{ email?: unknown }>().catch(() => ({}) as { email?: unknown });
     const email = normalizeEmail(body.email);
     if (!email) return c.json({ error: "invalid_email", message: "Enter your email address." }, 400);
-    const sent = { ok: true, message: "If this email can sign in, a link is on its way. It works once, for 15 minutes." };
+    const sent = { ok: true, message: "A sign-in link is on its way. It works once, for 15 minutes." };
     if (deps.settings.allowed.length && !deps.settings.allowed.includes(email)) {
+      // Said plainly, so a visitor is not left waiting for an email that never comes.
       log({ kind: "signin_not_allowed" });
-      return c.json(sent, 202);
+      return c.json({ error: "no_access", message: "This email doesn't have access to Kritva yet. Request access, or use the email your team gave Kritva." }, 403);
     }
     if (deps.store.linksSince(email, now() - LINK_WINDOW_MS) >= LINKS_PER_WINDOW) return c.json({ error: "too_many", message: "That's a lot of links. Use the latest one, or try again in a few minutes." }, 429);
     const base = webUrlFor(c);
@@ -274,6 +338,33 @@ export function registerAuthRoutes(app: Hono, deps: AuthDeps): void {
     }
     log({ kind: "signin_link_sent", via: deps.settings.sender.kind });
     return c.json({ ...sent, via: deps.settings.sender.kind }, 202);
+  });
+
+  app.post("/api/auth/access", async (c) => {
+    c.header("Cache-Control", "no-store");
+    const body = await c.req.json<Record<string, unknown>>().catch(() => ({}) as Record<string, unknown>);
+    const email = normalizeEmail(body.email);
+    if (!email) return c.json({ error: "invalid_email", message: "Enter your email address." }, 400);
+    if (!deps.settings.allowed.length || deps.settings.allowed.includes(email)) return c.json({ ok: true, hasAccess: true, message: "This email already has access. Ask for a sign-in link." });
+    const done = { ok: true, hasAccess: false, message: "Request sent. We reply by email." };
+    // A second request from the same email in a day is answered the same way, and kept only once.
+    if (deps.store.accessRequestsSince(now() - ACCESS_WINDOW_MS, email) > 0) return c.json(done, 202);
+    if (deps.store.accessRequestsSince(now() - 3_600_000) >= ACCESS_PER_HOUR) return c.json({ error: "too_many", message: "Kritva is getting many requests right now. Try again in an hour." }, 429);
+    const request: AccessRequest = { email, name: field(body.name, 120), company: field(body.company, 120), note: field(body.note, 600, true) };
+    deps.store.addAccessRequest(request, now());
+    log({ kind: "access_requested" });
+    const notice = {
+      subject: `Kritva access request: ${email}`,
+      text: [`${request.name ?? "Someone"} asked for access to Kritva.`, "", `Email: ${email}`, `Name: ${request.name ?? "(not given)"}`, `Company: ${request.company ?? "(not given)"}`, `What they want to negotiate: ${request.note ?? "(not given)"}`, "", "To let them sign in, add the email to KRITVA_SIGNIN_EMAILS:", "npx wrangler secret put KRITVA_SIGNIN_EMAILS --config apps/worker/wrangler.jsonc"].join("\n"),
+    };
+    for (const to of deps.settings.notify ?? []) {
+      try {
+        await deps.settings.sender.sendNotice?.({ to, ...notice });
+      } catch {
+        log({ kind: "access_notice_failed" });
+      }
+    }
+    return c.json(done, 202);
   });
 
   app.post("/api/auth/verify", async (c) => {

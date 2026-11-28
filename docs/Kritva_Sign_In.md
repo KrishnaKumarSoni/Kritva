@@ -27,7 +27,8 @@ POST /api/auth/signout         → the session ends; the cookie is cleared
 - **An email scanner that opens the link does not use it up**: the token is only used when the page posts it, and scanners run no script.
 - **Only hashes are stored** (of link tokens and session IDs), in `auth_links` and `auth_sessions` in `data/kritva.sqlite`.
 - **The link always points at `KRITVA_WEB_URL`**, never at the address a request claims to come from. Otherwise a stranger's page could make Kritva email the principal a real link that leads to the stranger's site. Without `KRITVA_WEB_URL`, only a local address (localhost) is accepted.
-- **Who may sign in**: with emailed links, only the addresses in `KRITVA_SIGNIN_EMAILS`. A request for any other address gets the same answer and sends nothing. With links in the server log, any email may ask, because whoever reads that log already controls the server.
+- **Who may sign in**: with emailed links, only the addresses in `KRITVA_SIGNIN_EMAILS`. Any other address sends nothing and is told so plainly (`403 no_access`), so a visitor never waits for an email that will not come. This shows whether an address is on the list; it gives no access, because a link only ever goes to the address itself. With links in the server log, any email may ask, because whoever reads that log already controls the server.
+- **Access requests**: after `no_access`, the sign-in page offers a short form (name, company, what they want to negotiate). `POST /api/auth/access` keeps it in `access_requests` and emails it to `KRITVA_ACCESS_NOTIFY`, or else to the first address in `KRITVA_SIGNIN_EMAILS`. One request per email a day is kept and sent; at most 30 an hour in all. To let someone in, add their email to `KRITVA_SIGNIN_EMAILS`.
 - **Limits**: 5 links per address per 15 minutes; a link works once.
 - **Scripts and tools** keep using the access key (`Authorization: Bearer <KRITVA_OPERATOR_KEY>`); the server prints a random one at startup when none is set. The console never asks for it.
 - The web app and the API must share one origin (the Vite dev proxy does this locally), because the cookie is `SameSite=Strict`.
@@ -39,6 +40,7 @@ POST /api/auth/signout         → the session ends; the cookie is cleared
 | `KRITVA_WEB_URL` | (none) | The console's public address (https), where links point. Locally, the page's own localhost address is used. |
 | `KRITVA_EMAIL_FROM` | (none) | The sender, for example `Kritva <signin@kritva.krishnakumarsoni.com>`. On a domain set up for Cloudflare Email Sending. |
 | `KRITVA_SIGNIN_EMAILS` | (none) | Who may sign in, comma-separated. Required for emailed links. |
+| `KRITVA_ACCESS_NOTIFY` | the first address in `KRITVA_SIGNIN_EMAILS` | Who gets access requests by email, comma-separated. |
 | `KRITVA_EMAIL_PROVIDER` | `cloudflare` on Cloudflare when `KRITVA_EMAIL_FROM` is set, else `console` | `console` prints links in the server log. `cloudflare` needs the Worker's `EMAIL` binding, so it works only on Cloudflare. |
 
 The server prints at startup how sign-in links are delivered and what is missing.

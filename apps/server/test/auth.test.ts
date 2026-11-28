@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MandateRevisions, NegotiationEngine, NegotiationRecord, SqliteRecordBackend, type StructuredLlm } from "@kritva/core";
 import { createApp } from "../src/app.ts";
-import { AuthStore, authFromEnv, CloudflareEmailSender, ConsoleEmailSender, signInMessage, type AuthSettings, type EmailSender, type SignInEmail } from "../src/auth.ts";
+import { AuthStore, authFromEnv, CloudflareEmailSender, ConsoleEmailSender, signInMessage, type AuthSettings, type EmailSender, type Notice, type SignInEmail } from "../src/auth.ts";
 import { loadConfirmedMandates } from "../src/main-helpers.ts";
 
 const CASES = resolve(import.meta.dirname, "../../../cases");
@@ -15,10 +15,15 @@ const KEY = "scripts-key";
 class Outbox implements EmailSender {
   readonly kind = "cloudflare" as const;
   readonly sent: SignInEmail[] = [];
+  readonly notices: Notice[] = [];
   fail = false;
   async sendSignIn(email: SignInEmail) {
     if (this.fail) throw new Error("Email Sending said no");
     this.sent.push(email);
+  }
+  async sendNotice(notice: Notice) {
+    if (this.fail) throw new Error("Email Sending said no");
+    this.notices.push(notice);
   }
 }
 
@@ -30,7 +35,7 @@ function setup(settings: Partial<AuthSettings> = {}) {
   const engine = new NegotiationEngine({ record, llm, locale: "en-IN" });
   const outbox = new Outbox();
   const store = new AuthStore(db);
-  const auth = { store, settings: { webUrl: "https://kritva.example", allowed: ["krishna@example.com"], sender: outbox as EmailSender, ...settings } };
+  const auth = { store, settings: { webUrl: "https://kritva.example", allowed: ["krishna@example.com"], sender: outbox as EmailSender, notify: ["krishna@example.com"], ...settings } };
   const app = createApp({ record, engine, revisions: new MandateRevisions({ record, engine, mappingLlm: llm }), mandates: loadConfirmedMandates(CASES), locale: "en-IN", operatorKey: KEY, auth });
   const request = async (method: string, path: string, init: { body?: unknown; cookie?: string; headers?: Record<string, string> } = {}) => {
     const headers: Record<string, string> = { "content-type": "application/json", ...init.headers };
@@ -83,11 +88,12 @@ describe("Sign-in: the emailed link", () => {
     expect((await t.request("POST", "/api/auth/verify", { body: { token } })).status).toBe(400);
   });
 
-  it("sends nothing to an address that may not sign in, and answers the same way", async () => {
+  it("sends nothing to an address that may not sign in, and says so plainly", async () => {
     const t = setup();
     const asked = await t.request("POST", "/api/auth/link", { body: { email: "stranger@example.com" } });
-    expect(asked.status).toBe(202);
-    expect(asked.json.message).toMatch(/If this email can sign in/);
+    expect(asked.status).toBe(403);
+    expect(asked.json.error).toBe("no_access");
+    expect(asked.json.message).toMatch(/doesn't have access/);
     expect(t.outbox.sent).toHaveLength(0);
     expect((await t.request("POST", "/api/auth/link", { body: { email: "not an email" } })).status).toBe(400);
   });
@@ -162,5 +168,46 @@ describe("Sign-in: settings", () => {
     const message = signInMessage({ to: "a@b.co", link: "https://kritva.example/signin#token=abc", minutes: 15 });
     expect(message.text).toContain("https://kritva.example/signin#token=abc");
     expect(message.html).toContain('href="https://kritva.example/signin#token=abc"');
+  });
+});
+
+describe("Sign-in: access requests", () => {
+  it("keeps a request from an email without access and tells the operator once", async () => {
+    const t = setup();
+    const body = { email: " Asha@Vendor.example ", name: "Asha Rao", company: "Rao Traders", note: "Freight rates\nfor 12 routes" };
+    const asked = await t.request("POST", "/api/auth/access", { body });
+    expect(asked.status).toBe(202);
+    expect(asked.json).toMatchObject({ ok: true, hasAccess: false });
+    expect(t.store.accessRequests()).toEqual([expect.objectContaining({ email: "asha@vendor.example", name: "Asha Rao", company: "Rao Traders", note: "Freight rates\nfor 12 routes" })]);
+    expect(t.outbox.notices).toHaveLength(1);
+    expect(t.outbox.notices[0]).toMatchObject({ to: "krishna@example.com", subject: "Kritva access request: asha@vendor.example" });
+    expect(t.outbox.notices[0]!.text).toContain("KRITVA_SIGNIN_EMAILS");
+    // The same email again the same day: the same answer, nothing new kept or sent.
+    expect((await t.request("POST", "/api/auth/access", { body })).status).toBe(202);
+    expect(t.store.accessRequests()).toHaveLength(1);
+    expect(t.outbox.notices).toHaveLength(1);
+  });
+
+  it("tells an email that already has access to ask for a link, and keeps nothing", async () => {
+    const t = setup();
+    const asked = await t.request("POST", "/api/auth/access", { body: { email: "krishna@example.com" } });
+    expect(asked.status).toBe(200);
+    expect(asked.json.hasAccess).toBe(true);
+    expect(t.store.accessRequests()).toHaveLength(0);
+    expect(t.outbox.notices).toHaveLength(0);
+  });
+
+  it("refuses a missing email, and keeps a request when the notice cannot be sent", async () => {
+    const t = setup();
+    expect((await t.request("POST", "/api/auth/access", { body: { name: "No email" } })).status).toBe(400);
+    t.outbox.fail = true;
+    expect((await t.request("POST", "/api/auth/access", { body: { email: "late@vendor.example" } })).status).toBe(202);
+    expect(t.store.accessRequests()).toHaveLength(1);
+  });
+
+  it("sends requests to KRITVA_ACCESS_NOTIFY, else to the first address that may sign in", () => {
+    expect(authFromEnv({ KRITVA_SIGNIN_EMAILS: "owner@example.com,second@example.com" }).settings.notify).toEqual(["owner@example.com"]);
+    expect(authFromEnv({ KRITVA_SIGNIN_EMAILS: "owner@example.com", KRITVA_ACCESS_NOTIFY: "Sales@Example.com, ops@example.com" }).settings.notify).toEqual(["sales@example.com", "ops@example.com"]);
+    expect(authFromEnv({}).settings.notify).toEqual([]);
   });
 });

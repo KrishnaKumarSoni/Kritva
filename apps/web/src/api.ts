@@ -500,8 +500,8 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
     }
     await new Promise((resolve) => setTimeout(resolve, 700 * 2 ** attempt));
   }
-  const json = (await res.json().catch(() => ({}))) as { message?: string };
-  if (!res.ok) throw new ApiError(res.status, json.message ?? `Request failed (${res.status}). Try again.`);
+  const json = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
+  if (!res.ok) throw new ApiError(res.status, json.message ?? `Request failed (${res.status}). Try again.`, typeof json.error === "string" ? json.error : null);
   return json as T;
 }
 
@@ -512,6 +512,8 @@ export const api = {
     requestLink: (email: string) => call<{ ok: true; message: string; via?: "console" | "cloudflare" }>("POST", "/api/auth/link", { email }),
     verify: (token: string) => call<{ ok: true; email: string }>("POST", "/api/auth/verify", { token }),
     passkey: (passkey: string) => call<{ ok: true; email: string }>("POST", "/api/auth/passkey", { passkey }),
+    /** An email without access asks for it; the operator is told by email. */
+    requestAccess: (request: { email: string; name?: string; company?: string; note?: string }) => call<{ ok: true; hasAccess: boolean; message: string }>("POST", "/api/auth/access", request),
     signOut: () => call<{ ok: true }>("POST", "/api/auth/signout"),
   },
   listSessions: () => call<SessionRow[]>("GET", "/api/operator/sessions"),

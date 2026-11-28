@@ -26,7 +26,7 @@ const CASES: Case[] = [
     side: "Buy",
     title: "Negotiate with the suppliers your team never reaches.",
     body: "A buying team negotiates with its top suppliers only. The rest stay on standard terms. Kritva asks each supplier for better terms, inside the limits you set.",
-    facts: ["Walmart left about 20% of its 100,000+ suppliers on standard terms (HBR).", "1 mandate covers 1 deal. Kritva talks to up to 5 suppliers at once.", "You approve before Kritva commits."],
+    facts: ["Suppliers on standard terms get a real negotiation.", "Kritva talks to up to 5 suppliers at once for each deal.", "You approve before Kritva commits."],
     board: { title: "Packaging film, 12-month contract", side: "buy", unit: "a kg", limit: 142, rows: [["Shree Polymers", "Phone", 138], ["Apex Films", "Chat", 145], ["Kaveri Pack", "Phone", 149]] },
   },
   {
@@ -35,7 +35,7 @@ const CASES: Case[] = [
     side: "Sell",
     title: "Answer every quote request the same day.",
     body: "3 people get 40 quote requests a day, so most buyers wait. Kritva answers each buyer at once. Each discount stays inside the band you set, and each buyer gets the same rules.",
-    facts: ["Sales reps sell for only 28% of their week (Salesforce).", "Kritva trades terms, such as volume for price.", "Kritva never invents a price or a deadline."],
+    facts: ["Your team keeps its time for the deals that need a person.", "Kritva trades terms, such as volume for price.", "Kritva never invents a price or a deadline."],
     board: { title: "500 steel storage racks", side: "sell", unit: "a rack", limit: 4_200, rows: [["Metro Retail", "Chat", 4_350], ["Nova Stores", "Phone", 4_100], ["GreenMart", "Browser call", 4_250]] },
   },
   {
@@ -44,7 +44,7 @@ const CASES: Case[] = [
     side: "Buy + sell",
     title: "Call every transporter on your list at the same time.",
     body: "A broker runs 10 loads a day, with 2 negotiations for each load. Kritva calls the transporters at once and holds your margin on each trip.",
-    facts: ["A freight broker takes 8 to 15% of the trip cost (TruckGuru).", "Competing bids cut one firm's freight cost by 4.9% (SuperProcure).", "Kritva speaks Hindi and English on the phone."],
+    facts: ["Every quote lands on one board, with its gap to your margin.", "Competing quotes, not one call at a time.", "Kritva speaks Hindi and English on the phone."],
     board: { title: "Bengaluru to Pune, 1 truck, 20 tonnes", side: "buy", unit: "a trip", limit: 38_000, rows: [["Raj Roadlines", "Phone", 36_500], ["Deccan Carriers", "Phone", 39_000], ["KSR Logistics", "Chat", 37_800]] },
   },
   {
@@ -62,7 +62,7 @@ const CASES: Case[] = [
     side: "Sell or buy",
     title: "Sell to every caller at once, not one by one.",
     body: "Put 1 code in your ad. Buyers call Kritva's number or open a chat link. Kritva talks to all of them at once and asks you before it agrees.",
-    facts: ["1 life event can mean 4 to 15 negotiations.", "Kritva says it is an AI when asked. It never claims to be human.", "The other buyers get a polite close."],
+    facts: ["One ad, every caller, one board.", "Kritva says it is an AI when asked. It never claims to be human.", "The other buyers get a polite close."],
     board: { title: "King-size bed, 1 year old, Koramangala", side: "sell", unit: "", limit: 16_000, rows: [["Priya", "Phone", 17_500], ["Rahul", "Chat", 15_000], ["Ananya", "Phone", 16_800]] },
   },
 ];

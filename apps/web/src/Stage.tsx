@@ -68,7 +68,7 @@ export function Stage({ mode, linkError, dropIn = false, onLifted }: { mode: Sta
   );
 }
 
-type FormState = { kind: "idle" } | { kind: "sending" } | { kind: "sent"; email: string; inLog: boolean } | { kind: "error"; message: string };
+type FormState = { kind: "idle" } | { kind: "sending" } | { kind: "sent"; email: string; inLog: boolean } | { kind: "error"; message: string } | { kind: "no_access"; email: string } | { kind: "requested"; email: string };
 
 /** Email in, a one-time sign-in link out. */
 function SignInForm({ linkError }: { linkError: string | null }) {
@@ -92,7 +92,9 @@ function SignInForm({ linkError }: { linkError: string | null }) {
       const sent = await api.auth.requestLink(value);
       setState({ kind: "sent", email: value, inLog: sent.via === "console" });
     } catch (e) {
-      setState({ kind: "error", message: e instanceof ApiError ? e.message : "Something went wrong. Try again." });
+      // An email that is not on the list hears so at once, with a way to ask for access.
+      if (e instanceof ApiError && e.code === "no_access") setState({ kind: "no_access", email: value });
+      else setState({ kind: "error", message: e instanceof ApiError ? e.message : "Something went wrong. Try again." });
     }
   };
 
@@ -100,7 +102,24 @@ function SignInForm({ linkError }: { linkError: string | null }) {
   return (
     <motion.div className="stage-signin" {...enter} transition={{ duration: 0.4, ease: [0.2, 0, 0, 1], delay: reduced ? 0 : 0.15 }}>
       <AnimatePresence mode="wait" initial={false}>
-        {state.kind === "sent" ? (
+        {state.kind === "no_access" ? (
+          <motion.div key="no-access" {...enter} transition={{ duration: 0.25 }}>
+            <AccessRequest
+              email={state.email}
+              onSent={() => setState({ kind: "requested", email: state.email })}
+              onHasAccess={() => setState({ kind: "idle" })}
+              onBack={() => setState({ kind: "idle" })}
+            />
+          </motion.div>
+        ) : state.kind === "requested" ? (
+          <motion.div key="requested" className="stage-sent" {...enter} transition={{ duration: 0.25 }} role="status">
+            <p className="stage-title">Request sent.</p>
+            <p className="stage-text">We review each request and reply to {state.email}. When your access is ready, sign in here with that email.</p>
+            <button type="button" className="stage-link" onClick={() => setState({ kind: "idle" })}>
+              Back to sign in
+            </button>
+          </motion.div>
+        ) : state.kind === "sent" ? (
           <motion.div key="sent" className="stage-sent" {...enter} transition={{ duration: 0.25 }} role="status">
             <p className="stage-title">Check your email.</p>
             <p className="stage-text">
@@ -152,8 +171,78 @@ function SignInForm({ linkError }: { linkError: string | null }) {
           </motion.form>
         )}
       </AnimatePresence>
-      {state.kind !== "sent" && <PasskeyForm />}
+      {(state.kind === "idle" || state.kind === "sending" || state.kind === "error") && <PasskeyForm />}
     </motion.div>
+  );
+}
+
+/** An email without access: say so plainly, and let the visitor ask for it in one step. */
+function AccessRequest({ email, onSent, onHasAccess, onBack }: { email: string; onSent: () => void; onHasAccess: () => void; onBack: () => void }) {
+  const [name, setName] = useState("");
+  const [company, setCompany] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const titleRef = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => {
+    titleRef.current?.focus();
+  }, []);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.auth.requestAccess({ email, name: name.trim() || undefined, company: company.trim() || undefined, note: note.trim() || undefined });
+      if (result.hasAccess) onHasAccess();
+      else onSent();
+    } catch (e) {
+      setBusy(false);
+      setError(e instanceof ApiError ? e.message : "Unable to send your request. Check your connection and try again.");
+    }
+  };
+
+  return (
+    <form className="stage-form stage-access" onSubmit={submit} noValidate>
+      <p ref={titleRef} className="stage-title" tabIndex={-1}>
+        No access yet for this email.
+      </p>
+      <p className="stage-text">
+        Kritva is open to invited teams for now, and {email} is not on the list. Request access and we reply by email. If your team already uses Kritva, sign in with the email it gave Kritva.
+      </p>
+      <div className="stage-access-fields">
+        <label className="stage-label" htmlFor="access-name">
+          <span>Your name</span>
+          <input id="access-name" className="stage-box" type="text" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} disabled={busy} maxLength={120} />
+        </label>
+        <label className="stage-label" htmlFor="access-company">
+          <span>
+            Company <span className="stage-optional">(optional)</span>
+          </span>
+          <input id="access-company" className="stage-box" type="text" autoComplete="organization" value={company} onChange={(e) => setCompany(e.target.value)} disabled={busy} maxLength={120} />
+        </label>
+        <label className="stage-label stage-label-wide" htmlFor="access-note">
+          <span>
+            What do you want Kritva to negotiate? <span className="stage-optional">(optional)</span>
+          </span>
+          <textarea id="access-note" className="stage-box stage-box-area" rows={3} placeholder="For example: freight rates with 10 transporters each week" value={note} onChange={(e) => setNote(e.target.value)} disabled={busy} maxLength={600} />
+        </label>
+      </div>
+      {error && (
+        <p className="stage-error" role="alert">
+          {error}
+        </p>
+      )}
+      <button type="submit" className="button button-accent stage-access-submit" disabled={busy}>
+        {busy ? <span className="spinner" aria-hidden="true" /> : null}
+        {busy ? "Sending" : "Request access"}
+        {!busy && <ArrowRightIcon width={14} height={14} aria-hidden="true" />}
+      </button>
+      <button type="button" className="stage-link" onClick={onBack}>
+        Use a different email
+      </button>
+    </form>
   );
 }
 

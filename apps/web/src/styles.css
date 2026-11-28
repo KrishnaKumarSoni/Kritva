@@ -241,7 +241,8 @@ input {
   padding: var(--space-6) var(--space-4);
   background: var(--stone-950);
   color: var(--stone-0);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   will-change: transform;
 }
 .stage-inner {
@@ -350,7 +351,79 @@ input {
     color: var(--stone-0);
   }
 }
+/* Access request: an email without access asks for it on the curtain. */
+.stage-access {
+  text-align: start;
+}
+.stage-access .stage-title,
+.stage-access .stage-text {
+  text-align: center;
+}
+.stage-access .stage-title:focus {
+  outline: none;
+}
+.stage-access-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+.stage-label {
+  display: grid;
+  gap: 6px;
+  font-size: var(--text-ui);
+  font-weight: 500;
+  color: rgb(255 255 255 / 0.85);
+}
+.stage-label-wide {
+  grid-column: 1 / -1;
+}
+.stage-optional {
+  font-weight: 400;
+  color: rgb(255 255 255 / 0.6);
+}
+.stage-box {
+  width: 100%;
+  min-height: var(--control-h);
+  padding: 8px var(--space-3);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: rgb(255 255 255 / 0.06);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.14);
+  color: var(--stone-0);
+  font: inherit;
+  font-size: max(16px, var(--text-input));
+  line-height: 1.45;
+  transition-property: box-shadow;
+  transition-duration: 150ms;
+  transition-timing-function: var(--ease-out);
+}
+.stage-box:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.6), 0 0 0 3px rgb(255 255 255 / 0.18);
+}
+.stage-box::placeholder {
+  color: rgb(255 255 255 / 0.4);
+}
+.stage-box-area {
+  resize: vertical;
+  min-height: 84px;
+}
+.stage-access-submit {
+  justify-self: center;
+  margin-top: var(--space-2);
+}
+.stage-access-submit:focus-visible {
+  outline: 2px solid var(--stone-0);
+  outline-offset: 2px;
+}
 @media (max-width: 30rem) {
+  .stage-access-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .stage-access-submit {
+    justify-self: stretch;
+  }
   .stage-field {
     flex-direction: column;
     border-radius: var(--radius-lg);

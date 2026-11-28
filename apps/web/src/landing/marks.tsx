@@ -31,12 +31,6 @@ export const BlockIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="m6.5 6.5 11 11" />
   </svg>
 );
-export const XSmallIcon = (p: SVGProps<SVGSVGElement>) => (
-  <svg {...base(p)}>
-    <circle cx="12" cy="12" r="8" />
-    <path d="m9.5 9.5 5 5M14.5 9.5l-5 5" />
-  </svg>
-);
 export const LanguageIcon = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}>
     <circle cx="12" cy="12" r="8" />
@@ -54,29 +48,6 @@ export function Rings({ count = 9, step = 70, start = 60, color = "#cc5500", opa
       {Array.from({ length: count }, (_, i) => (
         <circle key={i} cx={c} cy={c} r={start + step * i} fill="none" stroke={color} strokeWidth={1} strokeOpacity={opacity * (1 - i / (count + 1))} />
       ))}
-    </svg>
-  );
-}
-
-/** Harvey-ball marks for the comparison table. */
-export function Mark({ kind }: { kind: "yes" | "trusted" | "price" | "no" }) {
-  const r = 7;
-  return (
-    <svg className="lp-mark" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-      {kind === "yes" && <circle cx="8" cy="8" r={r} fill="currentColor" />}
-      {kind === "no" && <circle cx="8" cy="8" r={r - 0.5} fill="none" stroke="currentColor" strokeWidth="1.25" />}
-      {kind === "trusted" && (
-        <>
-          <circle cx="8" cy="8" r={r - 0.5} fill="none" stroke="currentColor" strokeWidth="1.25" />
-          <path d={`M8 1.5 A6.5 6.5 0 0 1 8 14.5 Z`} fill="currentColor" />
-        </>
-      )}
-      {kind === "price" && (
-        <>
-          <circle cx="8" cy="8" r={r - 0.5} fill="none" stroke="currentColor" strokeWidth="1.25" />
-          <path d="M8 8 L8 1.5 A6.5 6.5 0 0 1 14.5 8 Z" fill="currentColor" />
-        </>
-      )}
     </svg>
   );
 }
