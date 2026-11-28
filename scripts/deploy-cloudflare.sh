@@ -76,8 +76,9 @@ if [[ "$secrets" == yes ]]; then
   "${wrangler[@]}" secret bulk "$build/secrets.json"
 fi
 
-echo "Waiting for ${URL} to serve ${sha:0:7}..."
-for _ in $(seq 1 30); do
+# The server object picks up a new version once its old instance winds down, which took about 5 minutes once.
+echo "Waiting for ${URL} to serve ${sha:0:7} (up to 6 minutes)..."
+for _ in $(seq 1 90); do
   live="$(curl -fsS -m 10 "${URL}/api/health" 2>/dev/null | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).commit' 2>/dev/null || true)"
   if [[ "$live" == "$sha" ]]; then
     echo "Live: ${URL} (${sha:0:7})"

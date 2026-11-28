@@ -324,6 +324,12 @@ export class VobizPhone implements Dialer {
   }
 
   #newCall(sessionId: string, direction: Call["direction"], number: string | null): Call {
+    // Calls that ended hours ago are forgotten here, not by a timer: a pending timer would keep the server object in memory.
+    const old = Date.now() - 6 * 3_600_000;
+    for (const ended of [...this.#calls.values()].filter((c) => c.endedAt && c.endedAt.getTime() < old)) {
+      this.#calls.delete(ended.callId);
+      this.#byToken.delete(ended.token);
+    }
     const call: Call = { callId: `vc_${randomBytes(9).toString("base64url")}`, token: randomBytes(18).toString("base64url"), sessionId, direction, number, state: "queued", outcome: null, callUuid: null, startedAt: new Date(), answeredAt: null, connectedAt: null, endedAt: null, endReason: null, stream: null };
     this.#calls.set(call.callId, call);
     this.#byToken.set(call.token, call);
@@ -340,11 +346,7 @@ export class VobizPhone implements Dialer {
     call.outcome = outcome;
     call.endedAt = new Date();
     call.endReason = reason;
-    // The token stays known for a while, so a late webhook finds its call; old calls are forgotten.
-    setTimeout(() => {
-      this.#byToken.delete(call.token);
-      this.#calls.delete(call.callId);
-    }, 6 * 3_600_000);
+    call.stream = null;
     this.#log({ kind: "vobiz_call_over", callId: call.callId, direction: call.direction, outcome, reason });
   }
 
