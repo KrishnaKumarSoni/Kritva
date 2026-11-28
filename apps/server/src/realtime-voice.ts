@@ -14,7 +14,7 @@
 import { readFileSync } from "node:fs";
 import type { Hono } from "hono";
 import type { NegotiationEngine, NegotiationRecord, PayloadOf, ReplyViolation } from "@kritva/core";
-import { CONVERSATION_MISTAKES, CONVERSATION_TONE, contactState, DEFAULT_LANGUAGE, findAmounts } from "@kritva/core";
+import { CONVERSATION_MISTAKES, CONVERSATION_TONE, contactState, DEFAULT_LANGUAGE, findAmounts, textFile } from "@kritva/core";
 import type { LiveCalls } from "./live-calls.ts";
 
 // ---------- Settings ----------
@@ -134,36 +134,50 @@ export class OpenAIRealtimeConnector implements RealtimeConnector, RealtimeCallC
     if (!res.ok) throw new RealtimeCallError(res.status, await res.text());
   }
 
-  attach(callId: string): Promise<RealtimeLink> {
-    const url = `${this.#base.replace(/^http/, "ws")}/realtime?call_id=${encodeURIComponent(callId)}`;
-    // Node's WebSocket (undici) accepts headers as an extension of the standard constructor.
-    const ws = new WebSocket(url, { headers: { Authorization: `Bearer ${this.#apiKey}` } } as unknown as string[]);
+  async attach(callId: string): Promise<RealtimeLink> {
+    const query = `/realtime?call_id=${encodeURIComponent(callId)}`;
+    const headers = { Authorization: `Bearer ${this.#apiKey}` };
+    // On Cloudflare (WebSocketPair exists) a client socket with headers opens through fetch; it is open once fetch returns.
+    const onWorkers = typeof (globalThis as { WebSocketPair?: unknown }).WebSocketPair === "function";
+    let ws: WebSocket;
+    if (onWorkers) {
+      const res = await fetch(`${this.#base}${query}`, { headers: { ...headers, Upgrade: "websocket" }, signal: AbortSignal.timeout(10_000) });
+      const socket = (res as Response & { webSocket?: (WebSocket & { accept(): void }) | null }).webSocket;
+      if (!socket) throw new Error(`Realtime sideband failed (${res.status}).`);
+      socket.accept();
+      ws = socket;
+    } else {
+      // Node's WebSocket (undici) accepts headers as an extension of the standard constructor.
+      ws = new WebSocket(`${this.#base.replace(/^http/, "ws")}${query}`, { headers } as unknown as string[]);
+    }
+    const OPEN = 1;
     const link: RealtimeLink = {
       send: (event) => {
-        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(event));
+        if (ws.readyState === OPEN) ws.send(JSON.stringify(event));
       },
       close: () => ws.close(),
       onEvent: null,
       onClose: null,
     };
-    ws.onmessage = (m) => {
+    ws.addEventListener("message", (m) => {
       try {
         link.onEvent?.(JSON.parse(String(m.data)) as RealtimeEvent);
       } catch (error) {
         console.error("realtime event failed", error);
       }
-    };
-    ws.onclose = () => link.onClose?.();
+    });
+    ws.addEventListener("close", () => link.onClose?.());
+    if (onWorkers) return link;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("Realtime sideband did not open.")), 10_000);
-      ws.onopen = () => {
+      ws.addEventListener("open", () => {
         clearTimeout(timer);
         resolve(link);
-      };
-      ws.onerror = () => {
+      });
+      ws.addEventListener("error", () => {
         clearTimeout(timer);
         reject(new Error("Realtime sideband failed."));
-      };
+      });
     });
   }
 }
@@ -199,7 +213,7 @@ export const END_CALL_TOOL = {
     additionalProperties: false,
   },
 } as const;
-const ENDING_GUIDE = readFileSync(new URL("./voice-ending-guide.md", import.meta.url), "utf8").trim();
+const ENDING_GUIDE = textFile("voice-ending-guide.md", () => readFileSync(new URL("./voice-ending-guide.md", import.meta.url), "utf8")).trim();
 
 /** How Kritva picks and switches language on a call. Shared by every voice prompt, so a call sounds like one person throughout. */
 export const LANGUAGE_RULES = `Language: follow the language rules in "How you sound" below. Before they have spoken, use its default language${DEFAULT_LANGUAGE ? ` (${DEFAULT_LANGUAGE})` : ""}. From their first words, reply in the language they speak (your short acknowledgement before a deal turn too), in its own script (Hindi in Devanagari, never Urdu script; Tamil in Tamil script; English in English), and switch the moment they switch or ask for another language, for every turn after that, including a repeat. If they mix Hindi and English, reply in the same natural mix. Do not switch language because of an accent, a name, a filler word or borrowed English words. On a call in Hindi (or another Indian language), English words inside it ("mesh back", "price", "delivery", "okay", "yes") are still that language: keep speaking it. Once they have spoken Hindi (or another Indian language) on the call, stay in it for the rest of the call, even when they then say English words or whole English sentences: switch to English only if they ask for English.`;
@@ -368,7 +382,7 @@ export function scriptLanguage(text: string): string {
  * word for word only when its line is empty or fails a check.
  */
 type LineKind = "correction" | "retry" | "break_in";
-const LINES_GUIDE = readFileSync(new URL("./voice-lines-guide.md", import.meta.url), "utf8").trim();
+const LINES_GUIDE = textFile("voice-lines-guide.md", () => readFileSync(new URL("./voice-lines-guide.md", import.meta.url), "utf8")).trim();
 const LINES = Object.fromEntries(
   LINES_GUIDE.split(/^## /m).slice(1).map((part) => {
     const [name = "", ...rest] = part.split("\n");
@@ -398,7 +412,7 @@ function defaultLanguageCode(): string {
 
 /** quietMs: a pause worth reporting while waiting; overQuietMs: a quiet line worth reporting once the negotiation has finished. */
 export const WAIT_SENSOR = { quietMs: 4_000, sampleMs: 500, overQuietMs: 6_000 };
-const WAITING_GUIDE = readFileSync(new URL("./voice-waiting-guide.md", import.meta.url), "utf8").trim();
+const WAITING_GUIDE = textFile("voice-waiting-guide.md", () => readFileSync(new URL("./voice-waiting-guide.md", import.meta.url), "utf8")).trim();
 export const STAY_QUIET_TOOL = {
   type: "function",
   name: "stay_quiet",

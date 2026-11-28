@@ -1,0 +1,21 @@
+{
+  "name": "@kritva/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bundle-files": "node scripts/bundle-files.ts",
+    "build": "npm run build -w @kritva/web --prefix ../.. && npm run bundle-files",
+    "dev": "npm run bundle-files && wrangler dev",
+    "deploy": "npm run build && wrangler deploy",
+    "typecheck": "npm run bundle-files && tsc --noEmit"
+  },
+  "dependencies": {
+    "@kritva/core": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2",
+    "wrangler": "4.169.0"
+  }
+}

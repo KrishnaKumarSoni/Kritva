@@ -1,0 +1,4 @@
+# Built by scripts/bundle-files.ts from cases/ and the guides, on every build
+src/generated/
+.wrangler/
+.dev.vars

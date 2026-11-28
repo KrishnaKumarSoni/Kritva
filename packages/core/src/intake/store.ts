@@ -3,7 +3,7 @@
  * agent fills the mandate input. A conversation is working state, not authority: nothing in it is
  * used by a negotiation until the principal makes the mapped draft live.
  */
-import { DatabaseSync } from "node:sqlite";
+import { openSql, type SqlDatabase, type SqlSource } from "../record/sql.ts";
 import type { LibraryInput } from "../mandate/library.ts";
 
 /** What the intake agent has gathered, item by item. */
@@ -95,11 +95,10 @@ CREATE INDEX IF NOT EXISTS intake_by_mandate ON intake_conversations (mandate_id
 `;
 
 export class SqliteIntakeStore implements IntakeStore {
-  readonly #db: DatabaseSync;
+  readonly #db: SqlDatabase;
 
-  constructor(path: string) {
-    this.#db = new DatabaseSync(path);
-    this.#db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;");
+  constructor(source: SqlSource) {
+    this.#db = openSql(source);
     this.#db.exec(SCHEMA);
   }
 

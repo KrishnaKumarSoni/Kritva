@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MandateRevisions, NegotiationEngine, NegotiationRecord, SqliteRecordBackend, type StructuredLlm } from "@kritva/core";
 import { createApp } from "../src/app.ts";
-import { AuthStore, authFromEnv, ConsoleEmailSender, signInMessage, type AuthSettings, type EmailSender, type SignInEmail } from "../src/auth.ts";
+import { AuthStore, authFromEnv, CloudflareEmailSender, ConsoleEmailSender, signInMessage, type AuthSettings, type EmailSender, type SignInEmail } from "../src/auth.ts";
 import { loadConfirmedMandates } from "../src/main-helpers.ts";
 
 const CASES = resolve(import.meta.dirname, "../../../cases");
@@ -13,11 +13,11 @@ const KEY = "scripts-key";
 
 /** Keeps the emails it was asked to send. */
 class Outbox implements EmailSender {
-  readonly kind = "ses" as const;
+  readonly kind = "cloudflare" as const;
   readonly sent: SignInEmail[] = [];
   fail = false;
   async sendSignIn(email: SignInEmail) {
-    if (this.fail) throw new Error("SES said no");
+    if (this.fail) throw new Error("Email Sending said no");
     this.sent.push(email);
   }
 }
@@ -132,14 +132,27 @@ describe("Sign-in: the emailed link", () => {
 });
 
 describe("Sign-in: settings", () => {
-  it("prints links in the log unless SES is set up with who may sign in", () => {
+  it("prints links in the log unless Cloudflare Email Sending is set up with who may sign in", () => {
+    const binding = { send: async () => ({ messageId: "m1" }) };
+    const env = { KRITVA_EMAIL_FROM: "signin@kritva.example", KRITVA_SIGNIN_EMAILS: "Krishna@Example.com, bad", KRITVA_WEB_URL: "https://kritva.example/" };
     expect(authFromEnv({}).settings.sender.kind).toBe("console");
-    expect(authFromEnv({ KRITVA_EMAIL_FROM: "Kritva <signin@kritva.example>" }).settings.sender.kind).toBe("console");
-    const ses = authFromEnv({ KRITVA_EMAIL_FROM: "signin@kritva.example", KRITVA_SIGNIN_EMAILS: "Krishna@Example.com, bad", KRITVA_WEB_URL: "https://kritva.example/" });
-    expect(ses.settings.sender.kind).toBe("ses");
-    expect(ses.settings.allowed).toEqual(["krishna@example.com"]);
-    expect(ses.settings.webUrl).toBe("https://kritva.example");
+    expect(authFromEnv({ KRITVA_EMAIL_FROM: "Kritva <signin@kritva.example>" }, { emailBinding: binding }).settings.sender.kind).toBe("console");
+    // Off Cloudflare there is no binding, so the link stays in the log even with everything else set.
+    expect(authFromEnv(env).settings.sender.kind).toBe("console");
+    const cloudflare = authFromEnv(env, { emailBinding: binding });
+    expect(cloudflare.settings.sender.kind).toBe("cloudflare");
+    expect(cloudflare.settings.allowed).toEqual(["krishna@example.com"]);
+    expect(cloudflare.settings.webUrl).toBe("https://kritva.example");
     expect(authFromEnv({ KRITVA_WEB_URL: "http://kritva.example" }).settings.webUrl).toBeNull();
+  });
+
+  it("Cloudflare Email Sending gets the sender's name and address, and the link in text and HTML", async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    const sender = new CloudflareEmailSender({ send: async (m) => void sent.push(m) }, "Kritva <signin@kritva.example>");
+    await sender.sendSignIn({ to: "a@b.co", link: "https://kritva.example/signin#token=abc", minutes: 15 });
+    expect(sent[0]).toMatchObject({ from: { name: "Kritva", email: "signin@kritva.example" }, to: "a@b.co", subject: "Your Kritva sign-in link" });
+    expect(String(sent[0]!.text)).toContain("https://kritva.example/signin#token=abc");
+    expect(String(sent[0]!.html)).toContain("https://kritva.example/signin#token=abc");
   });
 
   it("the log sender prints the link; the email carries it in text and HTML", async () => {

@@ -29,6 +29,8 @@ export * from "./record/events.ts";
 export { SessionContext, CORRECTABLE_TYPES } from "./record/rules.ts";
 export { NegotiationRecord, GroupConflict, newEventId, type RecordBackend, type Viewer, type AppendResult, type StartResult, type RecordError, type SessionRow } from "./record/store.ts";
 export { SqliteRecordBackend } from "./record/sqlite.ts";
+export { openSql, type SqlDatabase, type SqlSource, type SqlStatement, type SqlValue } from "./record/sql.ts";
+export { registerTextFiles, textFile } from "./text-files.ts";
 export { DealGroups, GROUP_PAYLOADS, type GroupState, type GroupMember, type GroupStartResult, type JoinVia } from "./record/groups.ts";
 export { NegotiationEngine, type TurnResult, type TurnError, type EngineOptions, type DecisionResult } from "./negotiation/engine.ts";
 export { projectBoard, latestOffer, liveOffer, scoreOffer, gapToLimit, contactState, DEAL_ELSEWHERE_REASON, type Board, type BoardRow, type BoardOffer, type BoardStatus } from "./negotiation/board.ts";

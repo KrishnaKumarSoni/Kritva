@@ -5,7 +5,7 @@
  * append-only: there is no update or delete path, and the database rejects duplicate
  * IDs and duplicate sequence numbers within a session.
  */
-import { DatabaseSync } from "node:sqlite";
+import { openSql, type SqlDatabase, type SqlSource } from "./sql.ts";
 import type { EventRow, GroupEventRow, RecordBackend, SessionRow } from "./store.ts";
 
 const SCHEMA = `
@@ -49,29 +49,15 @@ BEGIN SELECT RAISE(ABORT, 'group events are append-only'); END;
 `;
 
 export class SqliteRecordBackend implements RecordBackend {
-  readonly #db: DatabaseSync;
-  #depth = 0;
+  readonly #db: SqlDatabase;
 
-  constructor(path: string) {
-    this.#db = new DatabaseSync(path);
-    this.#db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA foreign_keys = ON;");
+  constructor(source: SqlSource) {
+    this.#db = openSql(source);
     this.#db.exec(SCHEMA);
   }
 
   transaction<T>(fn: () => T): T {
-    if (this.#depth > 0) return fn();
-    this.#db.exec("BEGIN IMMEDIATE");
-    this.#depth += 1;
-    try {
-      const result = fn();
-      this.#db.exec("COMMIT");
-      return result;
-    } catch (error) {
-      this.#db.exec("ROLLBACK");
-      throw error;
-    } finally {
-      this.#depth -= 1;
-    }
+    return this.#db.transaction(fn);
   }
 
   insertSession(row: SessionRow): void {
@@ -125,7 +111,7 @@ export class SqliteRecordBackend implements RecordBackend {
   }
 
   close(): void {
-    if (this.#db.isOpen) this.#db.close();
+    this.#db.close();
   }
 }
 

@@ -3,8 +3,9 @@
  * read as written and placed in the writer's instructions. Limits are enforced in code, not here.
  */
 import { readFileSync } from "node:fs";
+import { textFile } from "../text-files.ts";
 
-export const CONVERSATION_GUIDE = readFileSync(new URL("./conversation-guide.md", import.meta.url), "utf8").trim();
+export const CONVERSATION_GUIDE = textFile("conversation-guide.md", () => readFileSync(new URL("./conversation-guide.md", import.meta.url), "utf8")).trim();
 
 /** One "## " section of the guide, without its heading. */
 export function guideSection(title: string): string {

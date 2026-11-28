@@ -13,14 +13,15 @@
  * Delivery:
  * - "console" (the default): the link is printed in the server's log. Anyone who can read that log
  *   already controls the server, so any email may ask for a link.
- * - "ses": Amazon SES sends the email. Then only the emails in KRITVA_SIGNIN_EMAILS may sign in.
+ * - "cloudflare": Cloudflare Email Sending sends the email (the Worker's EMAIL binding, apps/worker).
+ *   Then only the emails in KRITVA_SIGNIN_EMAILS may sign in.
  *
  * The link always points at KRITVA_WEB_URL, never at the address a request claims to come from, so a
  * stranger cannot make Kritva email the principal a real link that leads to the stranger's site.
  * Without KRITVA_WEB_URL, only a local address (localhost) is accepted.
  */
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { DatabaseSync } from "node:sqlite";
+import { openSql, type SqlDatabase, type SqlSource } from "@kritva/core";
 import type { Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 
@@ -40,7 +41,7 @@ export interface SignInEmail {
 }
 
 export interface EmailSender {
-  readonly kind: "console" | "ses";
+  readonly kind: "console" | "cloudflare";
   sendSignIn(email: SignInEmail): Promise<void>;
 }
 
@@ -70,32 +71,27 @@ export function signInMessage(email: SignInEmail): { subject: string; text: stri
   return { subject, text, html };
 }
 
+/** A Cloudflare Email Sending binding (`send_email` in apps/worker/wrangler.jsonc); only the call Kritva makes. */
+export interface EmailBinding {
+  send(message: { from: string | { email: string; name: string }; to: string; subject: string; text: string; html: string }): Promise<unknown>;
+}
+
 /**
- * Amazon SES (v2 API). Credentials and, unless KRITVA_SES_REGION names one, the region come from the
- * usual AWS settings (environment, profile or the instance's role). Any SES region works: where the
- * email is sent from does not change how fast the console is.
+ * Cloudflare Email Sending, through the Worker's binding. The sender must be on a domain onboarded for
+ * sending (`wrangler email sending enable <domain>`). KRITVA_EMAIL_FROM may be "Name <address>".
  */
-export class SesEmailSender implements EmailSender {
-  readonly kind = "ses" as const;
-  #client: Promise<{ send(command: unknown): Promise<unknown> }> | null = null;
-  #command: Promise<new (input: unknown) => unknown> | null = null;
-  readonly #options: { from: string; region: string | null };
-  constructor(options: { from: string; region: string | null }) {
-    this.#options = options;
+export class CloudflareEmailSender implements EmailSender {
+  readonly kind = "cloudflare" as const;
+  readonly #binding: EmailBinding;
+  readonly #from: string | { email: string; name: string };
+  constructor(binding: EmailBinding, from: string) {
+    this.#binding = binding;
+    const named = /^\s*(.*?)\s*<([^>]+)>\s*$/.exec(from);
+    this.#from = named?.[1] ? { name: named[1].replace(/^"|"$/g, ""), email: named[2]!.trim() } : (named?.[2] ?? from).trim();
   }
   async sendSignIn(email: SignInEmail): Promise<void> {
-    // Loaded only when SES is used, so local runs never need the AWS SDK.
-    this.#client ??= import("@aws-sdk/client-sesv2").then((m) => new m.SESv2Client(this.#options.region ? { region: this.#options.region } : {}));
-    this.#command ??= import("@aws-sdk/client-sesv2").then((m) => m.SendEmailCommand as unknown as new (input: unknown) => unknown);
-    const [client, SendEmail] = await Promise.all([this.#client, this.#command]);
     const message = signInMessage(email);
-    await client.send(
-      new SendEmail({
-        FromEmailAddress: this.#options.from,
-        Destination: { ToAddresses: [email.to] },
-        Content: { Simple: { Subject: { Data: message.subject, Charset: "UTF-8" }, Body: { Text: { Data: message.text, Charset: "UTF-8" }, Html: { Data: message.html, Charset: "UTF-8" } } } },
-      }),
-    );
+    await this.#binding.send({ from: this.#from, to: email.to, subject: message.subject, text: message.text, html: message.html });
   }
 }
 
@@ -124,7 +120,7 @@ export function normalizeEmail(raw: unknown): string | null {
 }
 
 /** Sign-in settings from the environment, with what the operator should know about them. */
-export function authFromEnv(env: NodeJS.ProcessEnv = process.env): { settings: AuthSettings; notes: string[] } {
+export function authFromEnv(env: NodeJS.ProcessEnv = process.env, options: { emailBinding?: EmailBinding | null } = {}): { settings: AuthSettings; notes: string[] } {
   const notes: string[] = [];
   const allowed = (env.KRITVA_SIGNIN_EMAILS ?? "").split(",").map(normalizeEmail).filter((e): e is string => e !== null);
   const rawUrl = env.KRITVA_WEB_URL?.trim().replace(/\/+$/, "") || null;
@@ -139,14 +135,15 @@ export function authFromEnv(env: NodeJS.ProcessEnv = process.env): { settings: A
     }
   }
   const from = env.KRITVA_EMAIL_FROM?.trim() || null;
-  const useSes = (env.KRITVA_EMAIL_PROVIDER ?? (from ? "ses" : "console")) === "ses";
+  const binding = options.emailBinding ?? null;
+  const useCloudflare = (env.KRITVA_EMAIL_PROVIDER ?? (from && binding ? "cloudflare" : "console")) === "cloudflare";
   let sender: EmailSender = new ConsoleEmailSender();
-  if (useSes && !from) notes.push("KRITVA_EMAIL_PROVIDER=ses needs KRITVA_EMAIL_FROM; sign-in links go to the server log instead.");
-  else if (useSes && !allowed.length) notes.push("Emailed sign-in needs KRITVA_SIGNIN_EMAILS (who may sign in); sign-in links go to the server log instead.");
-  const region = env.KRITVA_SES_REGION?.trim() || null;
-  if (useSes && from && allowed.length) sender = new SesEmailSender({ from, region });
-  notes.unshift(sender.kind === "ses" ? `Sign-in: links are emailed through Amazon SES (${region ?? env.AWS_REGION ?? env.AWS_DEFAULT_REGION ?? "the AWS profile's region"}) from ${from}, to ${allowed.length} allowed address(es).` : "Sign-in: links are printed in this log (set KRITVA_EMAIL_FROM and KRITVA_SIGNIN_EMAILS to email them).");
-  if (sender.kind === "ses" && !webUrl) notes.push("Set KRITVA_WEB_URL (https) so emailed links open the console from anywhere.");
+  if (useCloudflare && !binding) notes.push("KRITVA_EMAIL_PROVIDER=cloudflare needs the Worker's EMAIL binding (it runs only on Cloudflare); sign-in links go to the server log instead.");
+  else if (useCloudflare && !from) notes.push("KRITVA_EMAIL_PROVIDER=cloudflare needs KRITVA_EMAIL_FROM; sign-in links go to the server log instead.");
+  else if (useCloudflare && !allowed.length) notes.push("Emailed sign-in needs KRITVA_SIGNIN_EMAILS (who may sign in); sign-in links go to the server log instead.");
+  if (useCloudflare && binding && from && allowed.length) sender = new CloudflareEmailSender(binding, from);
+  notes.unshift(sender.kind === "cloudflare" ? `Sign-in: links are emailed through Cloudflare Email Sending from ${from}, to ${allowed.length} allowed address(es).` : "Sign-in: links are printed in this log (set KRITVA_EMAIL_FROM and KRITVA_SIGNIN_EMAILS on Cloudflare to email them).");
+  if (sender.kind === "cloudflare" && !webUrl) notes.push("Set KRITVA_WEB_URL (https) so emailed links open the console from anywhere.");
   const rawPasskey = env.KRITVA_PASSKEY?.trim();
   const passkey = rawPasskey === "off" ? null : rawPasskey || DEFAULT_PASSKEY;
   const passkeyEmail = normalizeEmail(env.KRITVA_PASSKEY_EMAIL) ?? allowed[0] ?? "jury@kritva.app";
@@ -164,12 +161,11 @@ const hashOf = (value: string) => createHash("sha256").update(value).digest("hex
 const token = () => randomBytes(32).toString("base64url");
 
 export class AuthStore {
-  readonly #db: DatabaseSync;
+  readonly #db: SqlDatabase;
 
-  constructor(path: string) {
-    this.#db = new DatabaseSync(path);
-    this.#db.exec(`PRAGMA journal_mode = WAL;
-CREATE TABLE IF NOT EXISTS auth_links (token_hash TEXT PRIMARY KEY, email TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, used_at INTEGER);
+  constructor(source: SqlSource) {
+    this.#db = openSql(source);
+    this.#db.exec(`CREATE TABLE IF NOT EXISTS auth_links (token_hash TEXT PRIMARY KEY, email TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, used_at INTEGER);
 CREATE INDEX IF NOT EXISTS auth_links_email ON auth_links (email, created_at);
 CREATE TABLE IF NOT EXISTS auth_sessions (id_hash TEXT PRIMARY KEY, email TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, ended_at INTEGER);`);
   }
@@ -191,8 +187,8 @@ CREATE TABLE IF NOT EXISTS auth_sessions (id_hash TEXT PRIMARY KEY, email TEXT N
     const row = this.#db.prepare("SELECT email, expires_at, used_at FROM auth_links WHERE token_hash = ?").get(hashOf(t)) as { email: string; expires_at: number; used_at: number | null } | undefined;
     if (!row || row.used_at !== null || row.expires_at < now) return null;
     // Only one request can use it, even two at once.
-    const used = this.#db.prepare("UPDATE auth_links SET used_at = ? WHERE token_hash = ? AND used_at IS NULL").run(now, hashOf(t));
-    return Number(used.changes) === 1 ? row.email : null;
+    const used = this.#db.prepare("UPDATE auth_links SET used_at = ? WHERE token_hash = ? AND used_at IS NULL RETURNING email").get(now, hashOf(t));
+    return used ? row.email : null;
   }
 
   createSession(email: string, now: number): { id: string; expiresAt: number } {

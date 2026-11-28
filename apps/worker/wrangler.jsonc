@@ -1,0 +1,37 @@
+// Kritva on Cloudflare (docs/Kritva_Cloudflare.md). Deploy with scripts/deploy-cloudflare.sh, never by hand.
+// Secrets (OpenAI, Twilio, the operator key, who may sign in, phone numbers) are set with
+// `wrangler secret`, never here; this file holds only settings that are safe to read.
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "kritva",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "kritva.krishnakumarsoni.com", "custom_domain": true }],
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api", "/api/*"]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "KRITVA", "class_name": "KritvaServer" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["KritvaServer"] }],
+  "r2_buckets": [{ "binding": "RECORDINGS", "bucket_name": "kritva-recordings" }],
+  "send_email": [{ "name": "EMAIL" }],
+  "limits": { "cpu_ms": 60000 },
+  "observability": { "enabled": true },
+  "vars": {
+    // The server object is created near OpenAI (US east), measured fastest for the model calls on every turn.
+    "KRITVA_LOCATION_HINT": "enam",
+    "KRITVA_PUBLIC_URL": "https://kritva.krishnakumarsoni.com",
+    "KRITVA_WEB_URL": "https://kritva.krishnakumarsoni.com",
+    "KRITVA_EMAIL_PROVIDER": "cloudflare",
+    "KRITVA_EMAIL_FROM": "Kritva <signin@kritva.krishnakumarsoni.com>",
+    "KRITVA_BOARD_CALLS": "on",
+    "KRITVA_PHONE_SETUP_DELAY_MS": "1500"
+  }
+}

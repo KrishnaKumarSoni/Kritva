@@ -15,11 +15,11 @@
  * Everything Kritva says is the agent's choice; this file never writes a line for it.
  */
 import { readFileSync } from "node:fs";
-import { CONVERSATION_MISTAKES, CONVERSATION_TONE, listingCodeDigits } from "@kritva/core";
+import { CONVERSATION_MISTAKES, CONVERSATION_TONE, listingCodeDigits, textFile } from "@kritva/core";
 import { END_CALL_TOOL, LANGUAGE_RULES, realtimeSessionWith, RealtimeCallError, scriptLanguage, VOICE_RULES, type RealtimeCallControl, type RealtimeEvent, type RealtimeLink, type RealtimeSettings, type SessionOptions } from "../realtime-voice.ts";
 import type { EndReason } from "./phone-call.ts";
 
-const GUIDE = readFileSync(new URL("../voice-front-desk-guide.md", import.meta.url), "utf8").trim();
+const GUIDE = textFile("voice-front-desk-guide.md", () => readFileSync(new URL("../voice-front-desk-guide.md", import.meta.url), "utf8")).trim();
 const FOUND_HEADING = "Once the listing is found";
 
 /**

@@ -20,7 +20,7 @@ import type { OutboundDialer } from "./phone/outbound.ts";
 import type { FollowUpCalls } from "./phone/follow-up.ts";
 import { maskNumber } from "./phone/sip-headers.ts";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Value as TermValue } from "@kritva/core";
 import {
   formatValue,
@@ -56,6 +56,26 @@ import { registerGroupRoutes, startNegotiation, type Dialer } from "./group-rout
 import { registerNegotiationLog } from "./negotiation-log.ts";
 import type { LiveCalls } from "./live-calls.ts";
 
+/** Where browser call recordings are kept: a folder on Node, an R2 bucket on Cloudflare. `file` is a relative path such as "<session>/<rec>.webm". */
+export interface RecordingStore {
+  put(file: string, audio: Uint8Array, contentType: string): Promise<void>;
+  get(file: string): Promise<Uint8Array<ArrayBuffer> | null>;
+}
+
+/** Recordings as files under a folder. */
+export function folderRecordings(dir: string): RecordingStore {
+  return {
+    async put(file, audio) {
+      await mkdir(dirname(join(dir, file)), { recursive: true });
+      await writeFile(join(dir, file), audio);
+    },
+    async get(file) {
+      const audio = await readFile(join(dir, file)).catch(() => null);
+      return audio ? new Uint8Array(audio) : null;
+    },
+  };
+}
+
 export interface MandateEntry {
   id: string;
   title: string;
@@ -85,8 +105,10 @@ export interface AppDeps {
   phone?: { settings: PhoneSettings; connector: RealtimeConnector & RealtimeCallControl; log?: (entry: Record<string, unknown>) => void; pollMs?: number; acceptBackoffMs?: number[]; hangUpOnExit?: boolean; outbound?: PhoneDeps["outbound"]; twilio?: TwilioWebhookAuth | null } | null;
   /** Call-backs after the principal decides, through Twilio. Off when absent: follow-ups then go to the chat. */
   followUps?: FollowUpCalls | null;
-  /** Where browser call recordings are kept. Off when absent. */
+  /** Where browser call recordings are kept (a folder). Off when absent, unless `recordings` is given. */
   recordingsDir?: string | null;
+  /** Where browser call recordings are kept, when not a folder (R2 on Cloudflare). Wins over recordingsDir. */
+  recordings?: RecordingStore | null;
   /** Twilio credentials, to play a call-back's recording through the console. */
   twilio?: TwilioCredentials | null;
   /** Kritva's outbound dialer (phone/outbound.ts), built in main.ts with outboundDialer() and shared by the phone routes and the counterparties' board. */
@@ -106,13 +128,15 @@ export interface AppDeps {
 export function createApp(deps: AppDeps): Hono {
   const { record, engine, mandates, locale, revisions } = deps;
   const app = new Hono();
+  const recordings = deps.recordings ?? (deps.recordingsDir ? folderRecordings(deps.recordingsDir) : null);
 
   app.onError((error, c) => {
     console.error(error);
     return c.json({ error: "internal_error", message: "Something went wrong. Nothing further was recorded." }, 500);
   });
 
-  app.get("/api/health", (c) => c.json({ ok: true }));
+  // The deployed commit (KRITVA_COMMIT, set by scripts/deploy-cloudflare.sh), so what is live can be checked.
+  app.get("/api/health", (c) => c.json({ ok: true, commit: process.env.KRITVA_COMMIT ?? null }));
 
   // ---------- Operator (principal) ----------
 
@@ -157,7 +181,7 @@ export function createApp(deps: AppDeps): Hono {
   /** A browser call's recording, uploaded by the buyer's page when the call ends. Kept for the principal. */
   app.post("/api/buyer/sessions/:id/voice/recording", async (c) => {
     const id = c.req.param("id");
-    if (!deps.recordingsDir) return c.json({ error: "recording_off" }, 501);
+    if (!recordings) return c.json({ error: "recording_off" }, 501);
     const ctx = await record.context(id).catch(() => null);
     if (!ctx?.mandate) return c.json({ error: "session_not_found" }, 404);
     // Only right after a call in this session, once per call.
@@ -172,8 +196,7 @@ export function createApp(deps: AppDeps): Hono {
     const recId = `rec_${(callStart?.id ?? last.id).replace(/[^\w-]/g, "")}`.slice(0, 128);
     if (ctx.events.some((e) => e.id === recId)) return c.json({ ok: true, duplicate: true });
     const file = `${id.replace(/[^\w-]/g, "")}/${recId}.${type.split("/")[1]}`;
-    await mkdir(join(deps.recordingsDir, id.replace(/[^\w-]/g, "")), { recursive: true });
-    await writeFile(join(deps.recordingsDir, file), audio);
+    await recordings.put(file, audio, type);
     const ms = Number(c.req.header("X-Duration-Ms"));
     const saved = await record.append(id, { id: recId, type: "recording_saved", channel: null, payload: { source: "browser", file, contentType: type, durationMs: Number.isFinite(ms) && ms >= 0 ? Math.min(Math.round(ms), 86_400_000) : null } }, { kind: "system", partyId: null });
     return saved.ok ? c.json({ ok: true }) : c.json({ error: saved.error.code }, 409);
@@ -185,9 +208,9 @@ export function createApp(deps: AppDeps): Hono {
     const rec = state?.recordings.find((r) => r.id === c.req.param("recId"));
     if (!rec) return c.json({ error: "not_found" }, 404);
     if (rec.source === "browser") {
-      if (!deps.recordingsDir || rec.file.includes("..")) return c.json({ error: "not_found" }, 404);
-      const audio = await readFile(join(deps.recordingsDir, rec.file)).catch(() => null);
-      return audio ? c.body(new Uint8Array(audio), 200, { "Content-Type": rec.contentType, "Cache-Control": "no-store" }) : c.json({ error: "not_found" }, 404);
+      if (!recordings || rec.file.includes("..")) return c.json({ error: "not_found" }, 404);
+      const audio = await recordings.get(rec.file).catch(() => null);
+      return audio ? c.body(audio, 200, { "Content-Type": rec.contentType, "Cache-Control": "no-store" }) : c.json({ error: "not_found" }, 404);
     }
     if (rec.source !== "twilio" || !isTwilioRecordingUrl(rec.file)) return c.json({ error: "not_found" }, 404);
     const audio = deps.twilio ? await new TwilioTelephony(deps.twilio).recording(rec.file) : null;

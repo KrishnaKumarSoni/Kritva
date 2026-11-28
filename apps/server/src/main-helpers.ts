@@ -3,19 +3,55 @@ import { join } from "node:path";
 import { MINIMAL_GUIDANCE, parseGuidance, validateConfirmedMandate, type FulfillmentTerms, type MandateLibrary, type StrategyGuidance } from "@kritva/core";
 import type { MandateEntry } from "./app.ts";
 
+/**
+ * How the case configuration is read: from disk on Node, or from the snapshot of cases/ bundled into
+ * the Cloudflare Worker (apps/worker), which has no disk to read.
+ */
+export interface CaseFiles {
+  /** Names of the subdirectories of a directory. */
+  dirs(dir: string): string[];
+  read(path: string): string;
+  exists(path: string): boolean;
+}
+
+export const diskCaseFiles: CaseFiles = {
+  dirs: (dir) => readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name),
+  read: (path) => readFileSync(path, "utf8"),
+  exists: (path) => existsSync(path),
+};
+
+/** Case files held in memory, keyed by their path under `root` (such as "cases/bed-sale/case.json"). */
+export function snapshotCaseFiles(root: string, files: Record<string, string>): CaseFiles {
+  const byPath = new Map(Object.entries(files).map(([rel, text]) => [join(root, rel), text]));
+  return {
+    dirs: (dir) => {
+      const prefix = join(dir, "/");
+      const names = new Set<string>();
+      for (const path of byPath.keys()) if (path.startsWith(prefix) && path.slice(prefix.length).includes("/")) names.add(path.slice(prefix.length).split("/")[0]!);
+      return [...names].sort();
+    },
+    read: (path) => {
+      const text = byPath.get(join(path));
+      if (text === undefined) throw new Error(`Case file not bundled: ${path}`);
+      return text;
+    },
+    exists: (path) => byPath.has(join(path)),
+  };
+}
+
 /** Loads every confirmed mandate listed in cases/<case>/case.json. Invalid ones are skipped. */
-export function loadConfirmedMandates(casesDir: string): MandateEntry[] {
+export function loadConfirmedMandates(casesDir: string, files: CaseFiles = diskCaseFiles): MandateEntry[] {
   const entries: MandateEntry[] = [];
-  for (const caseDir of readdirSync(casesDir, { withFileTypes: true })) {
-    if (!caseDir.isDirectory()) continue;
-    const caseFile = JSON.parse(readFileSync(join(casesDir, caseDir.name, "case.json"), "utf8")) as {
+  for (const caseName of files.dirs(casesDir)) {
+    const caseDir = { name: caseName };
+    const caseFile = JSON.parse(files.read(join(casesDir, caseDir.name, "case.json"))) as {
       description?: string;
       mandates?: Record<string, { file: string; description?: string; label?: string }>;
     };
     for (const [name, spec] of Object.entries(caseFile.mandates ?? {})) {
       const path = join(casesDir, caseDir.name, spec.file);
-      if (!existsSync(path)) continue;
-      const checked = validateConfirmedMandate(JSON.parse(readFileSync(path, "utf8")));
+      if (!files.exists(path)) continue;
+      const checked = validateConfirmedMandate(JSON.parse(files.read(path)));
       if (!checked.ok) {
         console.warn(`Skipping ${caseDir.name}/${name}: not a valid confirmed mandate.`);
         continue;
@@ -30,27 +66,27 @@ export function loadConfirmedMandates(casesDir: string): MandateEntry[] {
  * Each case opts into its own strategy guidance. KRITVA_GUIDANCE=none uses the built-in defaults.
  */
 /** cases/default-strategy-guidance.json: the strategy document's controls, used when a case has no guidance of its own. */
-export function loadDefaultGuidance(root: string): StrategyGuidance | undefined {
+export function loadDefaultGuidance(root: string, files: CaseFiles = diskCaseFiles): StrategyGuidance | undefined {
   if (process.env.KRITVA_GUIDANCE === "none") return undefined;
   const path = join(root, "cases", "default-strategy-guidance.json");
-  if (!existsSync(path)) return undefined;
-  return parseGuidance(JSON.parse(readFileSync(path, "utf8")));
+  if (!files.exists(path)) return undefined;
+  return parseGuidance(JSON.parse(files.read(path)));
 }
 
-export function loadCaseGuidance(root: string): Map<string, StrategyGuidance> {
+export function loadCaseGuidance(root: string, files: CaseFiles = diskCaseFiles): Map<string, StrategyGuidance> {
   const guidance = new Map<string, StrategyGuidance>();
   if (process.env.KRITVA_GUIDANCE === "none") return guidance;
   const casesDir = join(root, "cases");
-  for (const dir of readdirSync(casesDir, { withFileTypes: true })) {
-    if (!dir.isDirectory()) continue;
-    const config = JSON.parse(readFileSync(join(casesDir, dir.name, "case.json"), "utf8")) as { strategyGuidance?: string };
+  for (const name of files.dirs(casesDir)) {
+    const dir = { name };
+    const config = JSON.parse(files.read(join(casesDir, dir.name, "case.json"))) as { strategyGuidance?: string };
     if (!config.strategyGuidance) continue;
     const path = join(casesDir, dir.name, config.strategyGuidance);
-    if (!existsSync(path)) {
+    if (!files.exists(path)) {
       console.warn(`Strategy guidance ${path} not found; using the built-in minimal guidance for ${dir.name}.`);
       continue;
     }
-    guidance.set(dir.name, parseGuidance(JSON.parse(readFileSync(path, "utf8"))));
+    guidance.set(dir.name, parseGuidance(JSON.parse(files.read(path))));
   }
   return guidance;
 }
@@ -69,17 +105,17 @@ export interface CaseExample {
 }
 
 /** Example inputs for the mandate library, read from each case's case.json "example" block. Case content stays in cases/. */
-export function loadExamples(casesDir: string): CaseExample[] {
+export function loadExamples(casesDir: string, files: CaseFiles = diskCaseFiles): CaseExample[] {
   const out: CaseExample[] = [];
-  for (const dir of readdirSync(casesDir, { withFileTypes: true })) {
-    if (!dir.isDirectory()) continue;
-    const caseFile = JSON.parse(readFileSync(join(casesDir, dir.name, "case.json"), "utf8")) as {
+  for (const name of files.dirs(casesDir)) {
+    const dir = { name };
+    const caseFile = JSON.parse(files.read(join(casesDir, dir.name, "case.json"))) as {
       sources?: Record<string, { file: string }>;
       example?: { title: string; principalRole: string; counterpartyRole: string; publicSource: string; privateSource: string | null };
     };
     const ex = caseFile.example;
     if (!ex) continue;
-    const read = (key: string | null) => (key && caseFile.sources?.[key] ? readFileSync(join(casesDir, dir.name, caseFile.sources[key]!.file), "utf8").trim() : "");
+    const read = (key: string | null) => (key && caseFile.sources?.[key] ? files.read(join(casesDir, dir.name, caseFile.sources[key]!.file)).trim() : "");
     out.push({ id: dir.name, title: ex.title, principalRole: ex.principalRole, counterpartyRole: ex.counterpartyRole, publicText: read(ex.publicSource), privateText: read(ex.privateSource) });
   }
   return out;
@@ -104,11 +140,11 @@ export interface ListingConfig {
  * mandate library once (as revision 1), so the listing, "Call Seller" and "Change instructions" all
  * use one case-level mandate. Nothing is built from the public listing text.
  */
-export function loadListings(casesDir: string, mandates: MandateEntry[], examples: CaseExample[], library: MandateLibrary | null): ListingConfig[] {
+export function loadListings(casesDir: string, mandates: MandateEntry[], examples: CaseExample[], library: MandateLibrary | null, files: CaseFiles = diskCaseFiles): ListingConfig[] {
   const out: ListingConfig[] = [];
-  for (const dir of readdirSync(casesDir, { withFileTypes: true })) {
-    if (!dir.isDirectory()) continue;
-    const caseFile = JSON.parse(readFileSync(join(casesDir, dir.name, "case.json"), "utf8")) as { listing?: Omit<ListingConfig, "caseId"> & { mandateFile: string; libraryTitle: string } };
+  for (const name of files.dirs(casesDir)) {
+    const dir = { name };
+    const caseFile = JSON.parse(files.read(join(casesDir, dir.name, "case.json"))) as { listing?: Omit<ListingConfig, "caseId"> & { mandateFile: string; libraryTitle: string } };
     const l = caseFile.listing;
     if (!l) continue;
     const entry = mandates.find((m) => m.id === l.mandateFile);
@@ -127,18 +163,18 @@ export function loadListings(casesDir: string, mandates: MandateEntry[], example
  * guidance. The app, the scenario runner and the replay tests all build from this one function, so
  * a scenario run uses the same configuration as the chat page.
  */
-export function loadCaseRuntime(root: string, library: MandateLibrary | null) {
+export function loadCaseRuntime(root: string, library: MandateLibrary | null, files: CaseFiles = diskCaseFiles) {
   const casesDir = join(root, "cases");
-  const mandates = loadConfirmedMandates(casesDir);
-  const examples = loadExamples(casesDir);
-  const listings = loadListings(casesDir, mandates, examples, library);
+  const mandates = loadConfirmedMandates(casesDir, files);
+  const examples = loadExamples(casesDir, files);
+  const listings = loadListings(casesDir, mandates, examples, library, files);
   return {
     mandates,
     examples,
     listings,
-    guidanceByCase: loadCaseGuidance(root),
+    guidanceByCase: loadCaseGuidance(root, files),
     /** The strategy for every mandate without its own guidance, such as those made through the intake chat. */
-    defaultGuidance: loadDefaultGuidance(root),
+    defaultGuidance: loadDefaultGuidance(root, files),
     subjectFacts: new Map(listings.flatMap((l) => (l.subjectFactId ? [[l.caseId, l.subjectFactId] as const] : []))),
     listingDetails: new Map(listings.map((listing) => [listing.caseId, listing])),
   };
