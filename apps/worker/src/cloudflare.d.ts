@@ -21,6 +21,21 @@ declare module "cloudflare:workers" {
   }
 }
 
+/** The server side of a WebSocket accepted in the Worker (only what the phone stream uses). */
+interface WorkerWebSocket {
+  accept(): void;
+  send(data: string): void;
+  close(code?: number, reason?: string): void;
+  addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
+  addEventListener(type: "close" | "error", listener: () => void): void;
+}
+
+/** A pair of connected WebSockets: [0] goes back to the client in the 101 response, [1] stays here. */
+declare class WebSocketPair {
+  0: WorkerWebSocket;
+  1: WorkerWebSocket;
+}
+
 /** A Durable Object namespace binding (only what index.ts uses). */
 interface DurableObjectNamespace {
   idFromName(name: string): unknown;

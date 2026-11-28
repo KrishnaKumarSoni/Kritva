@@ -63,7 +63,7 @@ import { parseEnv } from "node:util";
 const [root, out] = process.argv.slice(2);
 const read = (f) => (existsSync(`${root}/${f}`) ? parseEnv(readFileSync(`${root}/${f}`, "utf8")) : {});
 const config = JSON.parse(readFileSync("apps/worker/wrangler.jsonc", "utf8").split("\n").filter((l) => !l.trim().startsWith("//")).join("\n"));
-const localOnly = /^(PORT|KRITVA_HOST|KRITVA_DATA_DIR|KRITVA_PHONE_LOG_FILE|KRITVA_SES_REGION|KRITVA_COMMIT|VOBIZ_\w+|AWS_\w+)$/;
+const localOnly = /^(PORT|KRITVA_HOST|KRITVA_DATA_DIR|KRITVA_PHONE_LOG_FILE|KRITVA_SES_REGION|KRITVA_COMMIT|VOBIZ_TRUNK_ID|AWS_\w+)$/;
 const merged = { ...read(".env"), ...read(".env.production") };
 const secrets = Object.fromEntries(Object.entries(merged).filter(([k, v]) => v !== "" && !(k in config.vars) && !localOnly.test(k)));
 writeFileSync(out, JSON.stringify(secrets));

@@ -19,6 +19,10 @@ import { hangUpPending } from "./group-routes.ts";
 import { FollowUpCalls, followUpSettingsFromEnv } from "./phone/follow-up.ts";
 import { normalizeNumber, sipUri, twilioFromEnv } from "./phone/config.ts";
 import { AuthStore, authFromEnv, type EmailBinding } from "./auth.ts";
+import type { Dialer } from "./group-routes.ts";
+import { sarvamFromEnv, SarvamSpeech } from "./phone/sarvam.ts";
+import { VobizApi, vobizSettingsFromEnv } from "./phone/vobiz.ts";
+import { VobizPhone } from "./phone/vobiz-phone.ts";
 
 export interface ServerHost {
   /** The repository root: cases/ is read under it. */
@@ -42,8 +46,8 @@ export function composeServer(host: ServerHost) {
   // open negotiations at once, so a mistake can't run up model use (docs/Kritva_Multiple_Counterparties.md).
   const groups = new DealGroups(record, { maxOpen: maxCounterparties(env.KRITVA_MAX_COUNTERPARTIES) });
   const liveCalls = new LiveCalls();
-  // Kritva calling counterparties (src/phone/outbound.ts): set once the phone setup is read, below.
-  let dialer: OutboundDialer | null = null;
+  // Kritva calling counterparties: set once the phone setup is read, below (Vobiz, or Twilio's outbound.ts).
+  let dialer: Dialer | null = null;
   const mappingLlm = createMappingLlmFromEnv();
   // Case-level mandates live in their own tables, so they exist before any session starts.
   // The library maps the intake agent's plain-prose brief, which low reasoning effort handles as well as the
@@ -80,16 +84,34 @@ export function composeServer(host: ServerHost) {
   // The intake agent: a separate chat agent that gathers a new or changed mandate before any negotiation.
   const intake = new IntakeService({ store: new SqliteIntakeStore(host.sql), agent: createIntakeAgentFromEnv(), library, defaultCurrency: env.KRITVA_DEFAULT_CURRENCY ?? "Indian rupees (₹)", counterpartyCap: maxCounterparties(env.KRITVA_MAX_COUNTERPARTIES) });
   // Phone calls (docs/Kritva_Phone_Calls.md), and Kritva's outbound dialer, shared by the phone routes and the counterparties' board.
-  const phone = phoneFromEnv();
-  // With board calls on, numbers on the principal's counterparty lists may be called too (besides KRITVA_PHONE_OUTBOUND_ALLOW).
+  // Vobiz with Sarvam speech (section 17) when both are set up, or KRITVA_TELEPHONY=vobiz; otherwise Twilio into OpenAI's SIP.
   const boardCalls = env.KRITVA_BOARD_CALLS === "on";
-  const listedNumber = (to: string) => library.list().some((m) => library.counterparties(m.mandateId).some((e) => e.phone && normalizeNumber(e.phone, phone?.settings.countryCode) === to));
-  dialer = outboundDialer(phone, engine, boardCalls ? listedNumber : undefined);
+  const sarvam = sarvamFromEnv(env);
+  const telephony = env.KRITVA_TELEPHONY?.trim() || (sarvam && env.VOBIZ_AUTH_ID ? "vobiz" : "twilio");
+  let vobiz: VobizPhone | null = null;
+  let phone: ReturnType<typeof phoneFromEnv> = null;
+  if (telephony === "vobiz") {
+    const vobizSetup = vobizSettingsFromEnv(env, listings[0]?.caseId ?? null);
+    for (const problem of vobizSetup.problems) console.log(`Phone calls (Vobiz): ${problem}`);
+    if (vobizSetup.settings && sarvam) {
+      const s = vobizSetup.settings;
+      const listed = (to: string) => library.list().some((m) => library.counterparties(m.mandateId).some((e) => e.phone && normalizeNumber(e.phone, s.countryCode) === to));
+      const threshold = Number(env.KRITVA_VOBIZ_VAD_THRESHOLD);
+      vobiz = new VobizPhone({ engine, record, library, listings, groups, liveCalls, settings: s, speech: new SarvamSpeech(sarvam), api: new VobizApi(s.authId, s.authToken), log: (entry) => console.log("[phone]", JSON.stringify(entry)), isListed: boardCalls ? listed : undefined, vadThreshold: Number.isFinite(threshold) && threshold > 0 ? threshold : undefined });
+      dialer = vobiz;
+      console.log(`Phone calls: on (Vobiz line +${s.number}, Sarvam ${sarvam.sttModel} and ${sarvam.ttsModel} "${sarvam.speaker}"). Incoming calls: ${s.inbound ? JSON.stringify(s.inbound) : "declined"}.`);
+    } else console.log(`Phone calls: off (Vobiz needs VOBIZ_AUTH_ID, VOBIZ_AUTH_TOKEN, KRITVA_VOBIZ_NUMBER, an https KRITVA_PUBLIC_URL${sarvam ? "" : " and SARVAM_API_KEY"}).`);
+  } else {
+    phone = phoneFromEnv();
+    // With board calls on, numbers on the principal's counterparty lists may be called too (besides KRITVA_PHONE_OUTBOUND_ALLOW).
+    const listedNumber = (to: string) => library.list().some((m) => library.counterparties(m.mandateId).some((e) => e.phone && normalizeNumber(e.phone, phone?.settings.countryCode) === to));
+    dialer = outboundDialer(phone, engine, boardCalls ? listedNumber : undefined);
+  }
   if (dialer && boardCalls) console.log("Board calls: on. Numbers on counterparty lists may be called.");
   // Call-backs after the principal decides (Twilio). Without them, every follow-up goes to the counterparty's chat.
   const followUpConfig = followUpSettingsFromEnv(env, phone ? sipUri(phone.settings) : null);
   const followUps = phone && followUpConfig.settings ? new FollowUpCalls({ record, engine, settings: followUpConfig.settings, twilio: phone.twilio, log: (entry) => console.log("[follow-up]", JSON.stringify(entry)) }) : null;
-  console.log(followUps ? "Call-backs: on (Twilio)." : `Call-backs: off${phone ? `. ${followUpConfig.problems.join(" ")}` : " (phone calls are off)"}. Follow-ups go to the buyer's chat.`);
+  console.log(followUps ? "Call-backs: on (Twilio)." : `Call-backs: off${phone ? `. ${followUpConfig.problems.join(" ")}` : vobiz ? " (not on Vobiz yet)" : " (phone calls are off)"}. Follow-ups go to the buyer's chat.`);
   const configuredKey = env.KRITVA_OPERATOR_KEY?.trim();
   // The access key is for scripts and tools; people sign in to the console with an emailed link.
   const operatorKey = configuredKey || randomBytes(24).toString("base64url");
@@ -118,14 +140,15 @@ export function composeServer(host: ServerHost) {
     phone,
     groups,
     liveCalls,
-    dialer,
+    dialer: phone ? (dialer as OutboundDialer | null) : null,
+    vobiz,
     // The deal board places calls only when KRITVA_BOARD_CALLS=on.
     boardCalls,
     followUps,
     recordings: host.recordings,
     twilio: twilioFromEnv(env),
   });
-  return { app, operatorKey, operatorKeyConfigured: Boolean(configuredKey), webUrl: signIn.settings.webUrl };
+  return { app, vobiz, operatorKey, operatorKeyConfigured: Boolean(configuredKey), webUrl: signIn.settings.webUrl };
 }
 
 /** The data folder of a Node run, for the default paths. */

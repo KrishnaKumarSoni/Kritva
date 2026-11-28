@@ -9,6 +9,7 @@ import type { Hono } from "hono";
 import { bundledCases } from "./texts.ts";
 import { durableSql } from "./durable-sql.ts";
 import { composeServer } from "../../server/src/compose.ts";
+import { VOBIZ_STREAM_PATH, type VobizPhone } from "../../server/src/phone/vobiz-phone.ts";
 import { snapshotCaseFiles } from "../../server/src/main-helpers.ts";
 import type { RecordingStore } from "../../server/src/app.ts";
 import type { EmailBinding } from "../../server/src/auth.ts";
@@ -36,12 +37,13 @@ function r2Recordings(bucket: R2Bucket): RecordingStore {
 
 export class KritvaServer extends DurableObject<Env> {
   #app: Hono | null = null;
+  #vobiz: VobizPhone | null = null;
 
   #server(): Hono {
     if (this.#app) return this.#app;
     // The server reads its settings from process.env, as on Node: the Worker's vars and secrets.
     for (const [key, value] of Object.entries(this.env)) if (typeof value === "string") process.env[key] = value;
-    const { app } = composeServer({
+    const { app, vobiz } = composeServer({
       root: ROOT,
       caseFiles: snapshotCaseFiles(ROOT, bundledCases),
       sql: durableSql(this.ctx.storage),
@@ -49,10 +51,32 @@ export class KritvaServer extends DurableObject<Env> {
       emailBinding: this.env.EMAIL ?? null,
     });
     this.#app = app;
+    this.#vobiz = vobiz;
     return app;
   }
 
   async fetch(request: Request): Promise<Response> {
-    return this.#server().fetch(request);
+    const app = this.#server();
+    const url = new URL(request.url);
+    if (url.pathname === VOBIZ_STREAM_PATH && request.headers.get("Upgrade")?.toLowerCase() === "websocket") return this.#phoneStream(url.searchParams.get("t"));
+    return app.fetch(request);
+  }
+
+  /**
+   * A phone call's media stream (Vobiz, phone/vobiz-phone.ts). The socket is accepted here, without
+   * hibernation, so the object stays in memory for the whole call and the call's state with it.
+   */
+  #phoneStream(token: string | null): Response {
+    if (!this.#vobiz) return new Response("phone calls are off", { status: 404 });
+    const pair = new WebSocketPair();
+    const client = pair[0];
+    const server = pair[1];
+    const handlers = this.#vobiz.acceptStream(token, { send: (text) => server.send(text), close: () => server.close(1000, "call ended") });
+    if (!handlers) return new Response("unknown call", { status: 403 });
+    server.accept();
+    server.addEventListener("message", (event) => handlers.message(typeof event.data === "string" ? event.data : new TextDecoder().decode(event.data as ArrayBuffer)));
+    server.addEventListener("close", () => handlers.closed());
+    server.addEventListener("error", () => handlers.closed());
+    return new Response(null, { status: 101, webSocket: client } as ResponseInit & { webSocket: WorkerWebSocket });
   }
 }

@@ -18,6 +18,7 @@ import { registerPhoneRoutes, type LiveCallRegistry, type PhoneDeps } from "./ph
 import { isTwilioRecordingUrl, TwilioTelephony, type TwilioCredentials, type TwilioWebhookAuth } from "./phone/twilio.ts";
 import type { OutboundDialer } from "./phone/outbound.ts";
 import type { FollowUpCalls } from "./phone/follow-up.ts";
+import type { VobizPhone } from "./phone/vobiz-phone.ts";
 import { maskNumber } from "./phone/sip-headers.ts";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -113,6 +114,8 @@ export interface AppDeps {
   twilio?: TwilioCredentials | null;
   /** Kritva's outbound dialer (phone/outbound.ts), built in main.ts with outboundDialer() and shared by the phone routes and the counterparties' board. */
   dialer?: OutboundDialer | null;
+  /** Phone calls on Vobiz with Sarvam speech (phone/vobiz-phone.ts): its webhooks, the console's call routes, and the board's dialer. */
+  vobiz?: VobizPhone | null;
   /** Voice calls connected now (browser and phone), with the counterparty's number while each lasts; the engine's break-in uses it too. */
   liveCalls?: (LiveCallRegistry & Partial<Pick<LiveCalls, "sessions">>) | null;
   /** The access key for scripts and tools (Authorization: Bearer ...). In-process tools can call the app as the operator. */
@@ -154,7 +157,7 @@ export function createApp(deps: AppDeps): Hono {
   }
 
   if (deps.library) registerLibraryRoutes(app, { library: deps.library, record, engine, locale, examples: deps.examples ?? [], groups: deps.groups ?? null });
-  if (deps.library && deps.groups) registerGroupRoutes(app, { record, library: deps.library, groups: deps.groups, locale, liveCalls: deps.liveCalls?.sessions ? () => deps.liveCalls!.sessions!() : undefined, dialer: deps.dialer ?? null, boardCalls: deps.boardCalls === true, endSession: (sessionId) => engine.endNegotiation({ sessionId, reason: "The principal reset this mandate to start over." }) });
+  if (deps.library && deps.groups) registerGroupRoutes(app, { record, library: deps.library, groups: deps.groups, locale, liveCalls: deps.liveCalls?.sessions ? () => deps.liveCalls!.sessions!() : undefined, dialer: deps.vobiz ?? deps.dialer ?? null, boardCalls: deps.boardCalls === true, endSession: (sessionId) => engine.endNegotiation({ sessionId, reason: "The principal reset this mandate to start over." }) });
   if (deps.library && deps.intake) registerIntakeRoutes(app, { intake: deps.intake, library: deps.library, record, engine, locale });
   registerNegotiationLog(app, { record, library: deps.library ?? null, groups: deps.groups ?? null, mandates, liveCalls: deps.liveCalls?.sessions ? () => deps.liveCalls!.sessions!() : undefined });
   registerVoiceRoutes(app, {
@@ -177,6 +180,7 @@ export function createApp(deps: AppDeps): Hono {
     registerPhoneRoutes(app, { record, engine, library: deps.library ?? null, groups: deps.groups ?? null, listings: deps.listings ?? [], connector: deps.phone.connector, settings: deps.phone.settings, realtime: deps.realtime?.settings ?? realtimeSettingsFromEnv(), log: deps.phone.log, pollMs: deps.phone.pollMs, acceptBackoffMs: deps.phone.acceptBackoffMs, hangUpOnExit: deps.phone.hangUpOnExit, outbound: deps.phone.outbound ?? null, twilio: deps.phone.twilio ?? null, dialer: deps.dialer ?? null, liveCalls: deps.liveCalls ?? null, followUps: deps.followUps ?? null });
   }
   deps.followUps?.register(app);
+  deps.vobiz?.register(app);
 
   /** A browser call's recording, uploaded by the buyer's page when the call ends. Kept for the principal. */
   app.post("/api/buyer/sessions/:id/voice/recording", async (c) => {

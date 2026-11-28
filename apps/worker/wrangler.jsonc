@@ -32,6 +32,10 @@
     "KRITVA_EMAIL_PROVIDER": "cloudflare",
     "KRITVA_EMAIL_FROM": "Kritva <signin@kritva.krishnakumarsoni.com>",
     "KRITVA_BOARD_CALLS": "on",
-    "KRITVA_PHONE_SETUP_DELAY_MS": "1500"
+    "KRITVA_PHONE_SETUP_DELAY_MS": "1500",
+    // Phone calls: Vobiz carries the line, Sarvam hears and speaks, Kritva's engine decides every word (docs/Kritva_Phone_Calls.md, section 17).
+    "KRITVA_TELEPHONY": "vobiz",
+    "KRITVA_VOBIZ_NUMBER": "+918064264194",
+    "KRITVA_VOBIZ_INBOUND": "bed-sale"
   }
 }
