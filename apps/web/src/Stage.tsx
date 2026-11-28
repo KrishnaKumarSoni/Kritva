@@ -170,7 +170,9 @@ function PasskeyForm() {
     setError(null);
     try {
       await api.auth.passkey(value);
-      window.location.assign("/");
+      // "/" is the landing page now: from /signin go to the console; anywhere else, reload the page in place.
+      if (window.location.pathname === "/signin") window.location.assign("/negotiations");
+      else window.location.reload();
     } catch (e) {
       setBusy(false);
       setError(e instanceof ApiError ? e.message : "Something went wrong. Try again.");
