@@ -56,7 +56,7 @@ curl -s https://kritva.krishnakumarsoni.com/api/health
 
 Safe settings are `vars` in `apps/worker/wrangler.jsonc`: the public URL, the email sender, board calls, the phone setup delay and the location hint.
 
-Secrets are set with `wrangler secret`, never in git. `scripts/deploy-cloudflare.sh --secrets` reads `.env` and then `.env.production` (later wins), skips local-only settings (`PORT`, `KRITVA_HOST`, `KRITVA_DATA_DIR`, `KRITVA_PHONE_LOG_FILE`, old `VOBIZ_*` and AWS ones) and anything already in `vars`, and sends the rest with `wrangler secret bulk`. Values are never printed. Set today: `OPENAI_API_KEY`, `OPENAI_PROJECT_ID`, `OPENAI_WEBHOOK_SECRET`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `KRITVA_OPERATOR_KEY`, `KRITVA_SIGNIN_EMAILS`, `KRITVA_PHONE_ROUTES`, `KRITVA_PHONE_CALLER_ID`, `KRITVA_PHONE_OUTBOUND_ALLOW`, `KRITVA_PHONE_SIP_HOST`, `KRITVA_PHONE_TRACE`. To change one:
+Secrets are set with `wrangler secret`, never in git. `scripts/deploy-cloudflare.sh --secrets` reads `.env` and then `.env.production` (later wins), skips local-only settings (`PORT`, `KRITVA_HOST`, `KRITVA_DATA_DIR`, `KRITVA_PHONE_LOG_FILE`, old `VOBIZ_*` and AWS ones) and anything already in `vars`, and sends the rest with `wrangler secret bulk`. Values are never printed. Set today: `OPENAI_API_KEY`, `SARVAM_API_KEY`, `VOBIZ_AUTH_ID`, `VOBIZ_AUTH_TOKEN`, `OPENAI_PROJECT_ID`, `OPENAI_WEBHOOK_SECRET`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `KRITVA_OPERATOR_KEY`, `KRITVA_SIGNIN_EMAILS`, `KRITVA_PHONE_ROUTES`, `KRITVA_PHONE_CALLER_ID`, `KRITVA_PHONE_OUTBOUND_ALLOW`, `KRITVA_PHONE_SIP_HOST`, `KRITVA_PHONE_TRACE`. To change one:
 
 ```bash
 npx wrangler secret put OPENAI_API_KEY --config apps/worker/wrangler.jsonc
@@ -66,12 +66,7 @@ The jury passkey is the built-in default (`kritva-jury-2026`, see `JURY.md`); se
 
 ## 4. Phone calls
 
-Two addresses outside Cloudflare must point at the Worker for phone calls:
-
-- **OpenAI webhook** (project "Tinkering", event `realtime.call.incoming`): `https://kritva.krishnakumarsoni.com/api/webhooks/openai`. Every phone call, inbound and outbound, needs it. Its signing secret is `OPENAI_WEBHOOK_SECRET`.
-- **Twilio number's Voice URL** (inbound calls only): `https://kritva.krishnakumarsoni.com/api/phone/twilio/voice` (POST).
-
-Outbound calls need nothing else: each call's TwiML and status URLs are built from `KRITVA_PUBLIC_URL`. The address is now fixed, so the quick tunnel the AWS box needed is gone.
+Phone calls run on Vobiz with Sarvam speech, and the media stream comes into the Durable Object as a WebSocket (`docs/Kritva_Phone_Calls.md`, section 17). Kritva's Vobiz number `+91 80 6426 4194` is linked to the Vobiz application `kritva`, whose answer and hangup URLs are `https://kritva.krishnakumarsoni.com/api/phone/vobiz/answer` and `…/hangup`. Outbound calls carry their own URLs. Nothing points at OpenAI's SIP webhook or Twilio any more; that path stays in the code behind `KRITVA_TELEPHONY=twilio`.
 
 ## 5. Local development
 

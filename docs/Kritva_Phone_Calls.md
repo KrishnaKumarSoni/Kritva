@@ -1,5 +1,7 @@
 # Kritva phone calls
 
+**Since 2026-11-28, phone calls run on Vobiz with Sarvam speech (section 17).** Sections 1 to 16 describe the earlier Twilio and OpenAI SIP path, which stays in the code behind `KRITVA_TELEPHONY=twilio`.
+
 Engineering design and setup for real phone calls with Kritva's realtime voice: Twilio carries the phone leg and hands each call to OpenAI's realtime SIP endpoint. Written 2026-11-22; moved to Twilio the same day (section 10 says why and what the earlier calls taught). The browser call this builds on is described in `docs/Kritva_Realtime_Voice.md`; read that first.
 
 Interaction design (what Kritva says when, how a declined call sounds, whether a call ends itself after a deal) is deliberately left open. Where this document makes a placeholder choice, it says so (section 13).
@@ -351,3 +353,60 @@ The record of the negotiation shows the whole call: Kritva's first line, each ca
 - **Keypad digits**: OpenAI reports DTMF on SIP calls (added November 2025; its guide calls the event `transport.dtmf.received`, its reference `input_audio_buffer.dtmf_event_received`; both are read). Whether Twilio passes keypad tones through `<Dial><Sip>` as RFC 2833 events is not yet tried. One call with `KRITVA_PHONE_TRACE=1`, pressing keys, shows it in the log (`front_desk_keypad`). If it works, a listing's call button can carry the code (`tel:+19125021960,4821`).
 - Not tried on a live call yet: the hand-over (`session.update` mid-call that changes tools and instructions) works on the fake connection in the tests; the first live call should be watched with the trace on.
 - Tests: `apps/server/test/phone.test.ts` ("the front desk asks for the listing code") and `packages/core/test/unit/listing-code.test.ts`.
+
+## 17. Vobiz with Sarvam speech (current, since 2026-11-28)
+
+The user chose this on 2026-11-28 when moving to Cloudflare: Vobiz carries the line, Sarvam hears and speaks, and Kritva's negotiation engine decides every word. Sarvam's hosted voice agents were considered and not used, because Kritva could then not check what was said on the line or when an offer was heard.
+
+### 17.1 How a call works
+
+```
+Kritva → Vobiz Make Call API (from +91 80 6426 4194)              or: a caller dials +91 80 6426 4194
+       → they answer; Vobiz POSTs the answer URL (signed)            → the number's application "kritva" POSTs the answer URL
+Kritva  POST /api/phone/vobiz/answer[?t=<call token>]
+       → <Stream bidirectional keepCallAlive contentType="audio/x-l16;rate=8000">wss://…/api/phone/vobiz/stream?t=<token></Stream>
+Vobiz  → WebSocket to the Worker → the KritvaServer Durable Object (apps/worker/src/server.ts) → StreamCall
+StreamCall (apps/server/src/phone/stream-call.ts)
+  start  → voice_connection connected (transport phone) → engine.greet → the greeting is spoken
+  media  → 20 ms PCM frames → loudness detector → one utterance → Sarvam Saaras (language per utterance)
+         → engine.handleCounterpartyMessage (channel voice, with the language) → the reply is recorded
+  speak  → every new outbound voice message in the record, word for word → Sarvam Bulbul → playAudio + checkpoint
+  heard  → playedStream (or the end of its playing time) → engine.reportDelivery delivered
+  talked over → clearAudio → reportDelivery interrupted, with the part heard
+  end    → silence (still there?, then goodbye), the time limit, the engine's endCall, or the caller hanging up
+         → "stop" (Vobiz hangs up: nothing follows <Stream>) → voice_connection ended with the reason
+```
+
+- **Nothing unchecked is said.** Only messages the engine recorded on the voice channel are spoken: replies, the greeting, follow-ups after the principal decides, and the call's own amount-free lines (still there, goodbye, time up, please repeat), which go through `engine.recordVoiceLine`. A short waiting line ("एक second, देख रही हूँ") fills a turn slower than 2.2 s; it names no amount and is not recorded.
+- **Language.** Saaras detects the language of each utterance (`language_code: unknown`, codemix mode), and the engine replies in it. The voice follows the reply's script: Devanagari, with English words mixed in, is spoken as Hindi; Latin script as Indian English.
+- **Security.** Every Vobiz webhook's `X-Vobiz-Signature-V3` is checked (HMAC-SHA256 with the account's auth token over the public URL and nonce). The media stream's handshake carries no credentials, so its URL holds a one-time token issued in that call's answer XML; an unknown or reused token is refused.
+- **Numbers** stay in memory only and are masked in logs and views, as before.
+
+### 17.2 Settings
+
+| Setting | Where | Value |
+|---|---|---|
+| `KRITVA_TELEPHONY` | var | `vobiz` (`twilio` for the old path) |
+| `KRITVA_VOBIZ_NUMBER` | var | `+918064264194`, Kritva's line: caller ID out, number in |
+| `KRITVA_VOBIZ_INBOUND` | var | What incoming calls reach: `bed-sale` (a listing) or `mandate:man_…`; `off` declines them |
+| `VOBIZ_AUTH_ID`, `VOBIZ_AUTH_TOKEN` | secrets | The Vobiz account's API credentials (also the webhook signing key) |
+| `SARVAM_API_KEY` | secret | Sarvam API key `kritva-cloudflare` (indus.sarvam.ai, free plan on 2026-11-28) |
+| `KRITVA_SARVAM_STT_MODEL`, `KRITVA_SARVAM_TTS_MODEL`, `KRITVA_SARVAM_SPEAKER`, `KRITVA_SARVAM_PACE` | optional | Defaults `saaras:v3`, `bulbul:v3`, `simran` (a woman's voice for every language), `1` |
+| `KRITVA_VOBIZ_VAD_THRESHOLD` | optional | Loudness that counts as speech (default 450); raise it on noisy lines |
+| `KRITVA_PHONE_OUTBOUND_ALLOW`, `KRITVA_PHONE_MAX_CALLS`, `KRITVA_PHONE_IDLE_SECONDS`, `KRITVA_PHONE_MAX_MINUTES` | as before | Who may be called, calls at once (3), silence (30 s), time limit (10 min) |
+
+### 17.3 Vobiz setup (done 2026-11-28, through the Vobiz API)
+
+- Application `kritva` (app_id `64081588193478372`): answer URL `https://kritva.krishnakumarsoni.com/api/phone/vobiz/answer`, hangup URL `…/api/phone/vobiz/hangup`, both POST.
+- `+91 80 6426 4194` was moved off the old SIP trunk (`8553ee4d-7b76-45e8-8715-5364168f7e54`, from the earlier OpenAI SIP setup) and linked to that application. To go back: `DELETE /numbers/%2B918064264194/application`, then `POST /numbers/%2B918064264194/assign` with that `trunk_group_id`.
+- Outbound calls need nothing else: each call carries its own answer, ring and hangup URLs.
+
+### 17.4 Measured (2026-11-28, a simulated call against production)
+
+A script played Vobiz's side: a signed answer webhook, the media stream, and a caller's Hindi line generated by Sarvam ("…अठारह हज़ार में दे देंगे?"). Kritva greeted in Hindi, said the waiting line 3.8 s after the caller stopped, and spoke the engine's counter ("…मैं ₹19,000 में दे सकती हूँ…") 8.3 s after. The record showed the phone connection, the greeting heard, the caller's words, the reply, and the end. Of the 8.3 s, the engine's turn is about 5 s (as in chat) and Sarvam's speech about 2 s; streaming speech from Sarvam and a faster turn are the next latency steps.
+
+### 17.5 Not yet on Vobiz
+
+- Call-backs after the principal decides (`phone/follow-up.ts` is Twilio-only): follow-ups go to the chat.
+- The front desk that asks for a listing code: incoming calls go straight to `KRITVA_VOBIZ_INBOUND`.
+- Local runs: the media stream is a WebSocket served only on Cloudflare (`npm run dev -w @kritva/worker` runs it locally); the Node server answers it with 426.
